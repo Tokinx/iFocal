@@ -22,7 +22,7 @@ const translateModelSelect = document.getElementById('translateModelSelect');
 const saveGlobalBtn = document.getElementById('saveGlobalBtn');
 const globalStatusEl = document.getElementById('globalStatus');
 
-// 数据形态
+// 数据形态说明
 // channels: Array<{ name, type, apiUrl, apiKey, models: string[] }>
 // defaultModel: { channel, model }
 // translateModel: { channel, model }
@@ -77,7 +77,6 @@ function renderChannels(channels) {
         const list = Array.isArray(items.channels) ? items.channels : [];
         const filtered = list.filter(c => c.name !== name);
         const next = { channels: filtered };
-        // 清理默认/翻译/活动模型引用
         if (items.defaultModel && items.defaultModel.channel === name) next.defaultModel = null;
         if (items.translateModel && items.translateModel.channel === name) next.translateModel = null;
         if (items.activeModel && items.activeModel.channel === name) next.activeModel = null;
@@ -98,7 +97,7 @@ function renderChannels(channels) {
 function renderModelSelects(channels, defaultModel, translateModel) {
   const pairs = [];
   channels.forEach(ch => (ch.models || []).forEach(m => pairs.push({ channel: ch.name, model: m })));
-  const toOption = (p) => `<option value="${p.channel}|${p.model}">${p.channel} • ${p.model}</option>`;
+  const toOption = (p) => `<option value="${p.channel}|${p.model}">${p.model} (${p.channel})</option>`;
   const html = pairs.map(toOption).join('');
   defaultModelSelect.innerHTML = `<option value="">（未设置）</option>` + html;
   translateModelSelect.innerHTML = `<option value="">（未设置）</option>` + html;
@@ -112,7 +111,6 @@ function loadAll() {
     const channels = Array.isArray(items.channels) ? items.channels : [];
     renderChannels(channels);
     renderModelSelects(channels, items.defaultModel || null, items.translateModel || null);
-    // 兼容旧键名：优先 actionKey，否则回退 hoverKey/selectKey
     const ak = items.actionKey || items.hoverKey || items.selectKey;
     if (ak && actionKeyInput) actionKeyInput.value = ak;
     if (items.hoverKey && !ak && actionKeyInput) actionKeyInput.value = items.hoverKey;
@@ -163,10 +161,9 @@ function saveGlobal() {
 // 保存基础设置
 function saveOptions() {
   const actionKey = (actionKeyInput && actionKeyInput.value || '').trim() || 'Alt';
-  const translateTargetLang = (translateTargetLangInput.value || '').trim() || '中文';
+  const translateTargetLang = (translateTargetLangInput.value || '').trim() || 'zh-CN';
   const displayMode = displayModeSelect.value || 'insert';
   const wrapperStyle = (wrapperStyleInput && wrapperStyleInput.value || '').trim();
-  // 存储合并后的快捷键；为兼容旧字段，同步写入 hoverKey/selectKey
   chrome.storage.sync.set({ actionKey, hoverKey: actionKey, selectKey: actionKey, translateTargetLang, displayMode, wrapperStyle }, () => {
     statusEl.textContent = '设置已保存';
     setTimeout(() => { statusEl.textContent = ''; }, 1500);
@@ -228,7 +225,6 @@ function saveEdit() {
     nextList[idx] = updated;
 
     const next = { channels: nextList };
-    // 同步更新模型引用中的 channel 名称
     ['defaultModel', 'translateModel', 'activeModel'].forEach(k => {
       const pair = items[k];
       if (pair && pair.channel === original) {
@@ -304,7 +300,7 @@ if (saveTemplatesBtn) saveTemplatesBtn.addEventListener('click', saveTemplates);
 if (resetTemplatesBtn) resetTemplatesBtn.addEventListener('click', resetTemplates);
 document.addEventListener('DOMContentLoaded', loadTemplates);
 
-// 测试渠道有效性（简单调用首个模型或下拉选择）
+// 测试渠道有效性
 function testChannel(name) {
   if (!name) return;
   channelStatusEl.textContent = `正在测试: ${name} …`;

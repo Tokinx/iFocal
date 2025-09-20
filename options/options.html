@@ -97,7 +97,17 @@ gpt-4o
       <p>页面翻译快捷键：<input type="text" id="actionKey" placeholder="如 Alt"></p>
       <p>全局快捷键请在 <a href="chrome://extensions/shortcuts" target="_blank">chrome://extensions/shortcuts</a> 中配置。</p>
       <h3 class="mt-2">翻译与显示</h3>
-      <p>翻译目标语言：<input type="text" id="translateTargetLang" placeholder="如 中文 / English / 日本語"></p>
+      <p>翻译目标语言：
+        <select id="translateTargetLang" class="select">
+          <option value="zh-CN">zh-CN</option>
+          <option value="en">en</option>
+          <option value="ja">ja</option>
+          <option value="ko">ko</option>
+          <option value="fr">fr</option>
+          <option value="es">es</option>
+          <option value="de">de</option>
+        </select>
+      </p>
       <p>
         结果显示方式：
         <select id="displayMode">
@@ -158,4 +168,3 @@ font-family: inherit;"></textarea>
   <script src="options.js"></script>
 </body>
 </html>
-

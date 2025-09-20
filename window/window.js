@@ -23,7 +23,7 @@ function parsePair(value) {
 function renderModels(channels, active, fallback) {
   const pairs = [];
   channels.forEach(ch => (ch.models || []).forEach(m => pairs.push({ channel: ch.name, model: m })));
-  modelSelect.innerHTML = pairs.map(p => `<option value="${p.channel}|${p.model}">${p.channel} • ${p.model}</option>`).join('');
+  modelSelect.innerHTML = pairs.map(p => `<option value="${p.channel}|${p.model}">${p.model} (${p.channel})</option>`).join('');
   const prefer = joinPair(active) || joinPair(fallback);
   if (prefer) modelSelect.value = prefer;
 }
@@ -39,7 +39,7 @@ function startStream(task) {
   const text = mainInput.value.trim();
   if (!text) return;
   if (currentPort) { try { currentPort.disconnect(); } catch {} currentPort = null; }
-  resultArea.textContent = task === 'summarize' ? '正在总结…\n' : '正在翻译…\n';
+  resultArea.textContent = '';
   const pair = parsePair(modelSelect.value);
   const msg = { type: 'start', task, text };
   if (pair) Object.assign(msg, { channel: pair.channel, model: pair.model });
@@ -49,7 +49,7 @@ function startStream(task) {
     if (m.type === 'delta') {
       resultArea.textContent += m.text;
     } else if (m.type === 'done') {
-      // no-op
+      // done
     } else if (m.type === 'error') {
       resultArea.textContent += `\n[错误] ${m.error}`;
     }
@@ -64,10 +64,11 @@ modelSelect.addEventListener('change', () => {
 
 document.addEventListener('DOMContentLoaded', () => {
   loadModels();
-  // 默认任务类型
   if (taskSelect && !taskSelect.value) taskSelect.value = 'translate';
 });
+
 runBtn.addEventListener('click', () => {
   const task = (taskSelect && taskSelect.value) || 'translate';
   startStream(task);
 });
+
