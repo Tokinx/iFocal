@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>FloatingCopilot 全局助手</title>
+  <link rel="stylesheet" href="window.css">
+</head>
+<body>
+  <div id="app">
+    <textarea id="main-input" placeholder="在此输入要处理的文本..."></textarea>
+    <div id="controls">
+      <label for="modelSelect">模型：</label>
+      <select id="modelSelect"></select>
+      <label for="taskSelect" style="margin-left:8px;">任务：</label>
+      <select id="taskSelect">
+        <option value="translate">翻译</option>
+        <option value="summarize">总结</option>
+        <option value="rewrite">改写</option>
+        <option value="polish">润色</option>
+      </select>
+      <button id="run-btn" style="margin-left:8px;">执行</button>
+    </div>
+    <div id="result-area" class="loading"></div>
+  </div>
+  <script src="window.js"></script>
+</body>
+</html>

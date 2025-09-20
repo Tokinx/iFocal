@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "FloatingCopilot",
+  "version": "0.1.0",
+  "description": "多模式智能 AI 助手：支持划词、悬浮与全局快捷键，调用 AI 进行翻译、总结等。",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content/content.js"
+      ],
+      "css": [
+        "content/content.css"
+      ]
+    }
+  ],
+  "options_page": "options/options.html",
+  "action": {
+    "default_popup": "options/options.html"
+  },
+  "commands": {
+    "open-global-window": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+O"
+      },
+      "description": "打开 FloatingCopilot 全局助手窗口"
+    }
+  }
+}

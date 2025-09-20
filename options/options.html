@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>FloatingCopilot 设置</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <h1>FloatingCopilot 设置</h1>
+
+  <div class="container">
+    <h2>AI 渠道管理</h2>
+    <table id="channelsTable" style="width:100%; border-collapse: collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left; border-bottom:1px solid #ccc;">名称</th>
+          <th style="text-align:left; border-bottom:1px solid #ccc;">类型</th>
+          <th style="text-align:left; border-bottom:1px solid #ccc;">模型</th>
+          <th style="text-align:left; border-bottom:1px solid #ccc;">测试模型</th>
+          <th style="text-align:left; border-bottom:1px solid #ccc;">操作</th>
+        </tr>
+      </thead>
+      <tbody id="channelsTbody"></tbody>
+    </table>
+  </div>
+
+  <div class="container" id="editContainer" style="display:none;">
+    <h2>编辑渠道</h2>
+    <input type="hidden" id="editOriginalName" />
+    <p>
+      接口类型：
+      <select id="editChannelType">
+        <option value="openai">OpenAI</option>
+        <option value="gemini">Google Gemini</option>
+        <option value="openai-compatible">OpenAI 兼容</option>
+      </select>
+    </p>
+    <p>渠道名称（唯一）：<input type="text" id="editChannelName"></p>
+    <p>API URL：<input type="text" id="editApiUrl"></p>
+    <p>API KEY：<input type="password" id="editApiKey" placeholder="留空表示不变"></p>
+    <p>Models（用逗号分隔）：<input type="text" id="editModels"></p>
+    <button id="saveEditBtn">保存修改</button>
+    <button id="cancelEditBtn">取消</button>
+    <span id="editStatus" style="margin-left:8px;color:green;"></span>
+  </div>
+
+  <div class="container">
+    <h2>添加渠道</h2>
+    <p>
+      接口类型：
+      <select id="channelType">
+        <option value="openai">OpenAI</option>
+        <option value="gemini">Google Gemini</option>
+        <option value="openai-compatible">OpenAI 兼容</option>
+      </select>
+    </p>
+    <p>渠道名称（唯一）：<input type="text" id="channelName" placeholder="如 my-openai"></p>
+    <p>API URL：<input type="text" id="apiUrl" placeholder="可留空使用默认，或填自定义"></p>
+    <p>API KEY：<input type="password" id="apiKey" placeholder="在此输入 API Key"></p>
+    <p>Models（用逗号分隔）：<input type="text" id="models" placeholder="如 gpt-4o-mini, gpt-4o"></p>
+    <button id="addChannelBtn">添加渠道</button>
+    <span id="channelStatus" style="margin-left:8px;color:green;"></span>
+  </div>
+
+  <div class="container">
+    <h2>默认模型设置</h2>
+    <p>
+      默认模型：
+      <select id="defaultModelSelect"></select>
+    </p>
+    <p>
+      翻译模型：
+      <select id="translateModelSelect"></select>
+    </p>
+    <button id="saveGlobalBtn">保存全局设置</button>
+    <span id="globalStatus" style="margin-left:8px;color:green;"></span>
+  </div>
+
+  <div class="container">
+    <h2>快捷键设置</h2>
+    <p>悬浮触发键：<input type="text" id="hoverKey" placeholder="如 Alt"></p>
+    <p>全局快捷键请在 <a href="chrome://extensions/shortcuts" target="_blank">chrome://extensions/shortcuts</a> 中配置。</p>
+    <h3>翻译与显示</h3>
+    <p>翻译目标语言：<input type="text" id="translateTargetLang" placeholder="如 中文 / English / 日本語"></p>
+    <p>
+      结果显示方式：
+      <select id="displayMode">
+        <option value="insert">段落下方插入</option>
+        <option value="overlay">悬浮卡片</option>
+      </select>
+    </p>
+    <button id="save">保存设置</button>
+    <span id="status" style="margin-left:8px;color:green;"></span>
+  </div>
+
+  <div class="container">
+    <h2>Prompt 模板</h2>
+    <p>可使用占位符：<code>{{targetLang}}</code> 与 <code>{{text}}</code>。</p>
+    <p>
+      翻译模板：
+      <textarea id="tplTranslate" style="width:100%;height:90px;" placeholder="请将以下内容高质量翻译为{{targetLang}}，只返回译文：\n\n{{text}}"></textarea>
+    </p>
+    <p>
+      总结模板：
+      <textarea id="tplSummarize" style="width:100%;height:90px;" placeholder="请用{{targetLang}}总结以下内容的要点，只返回总结：\n\n{{text}}"></textarea>
+    </p>
+    <p>
+      改写模板：
+      <textarea id="tplRewrite" style="width:100%;height:90px;" placeholder="请用{{targetLang}}改写以下内容，使其表达清晰准确且保持原意：\n\n{{text}}"></textarea>
+    </p>
+    <p>
+      润色模板：
+      <textarea id="tplPolish" style="width:100%;height:90px;" placeholder="请用{{targetLang}}润色以下内容，使其更加自然流畅并提升可读性：\n\n{{text}}"></textarea>
+    </p>
+    <button id="saveTemplatesBtn">保存模板</button>
+    <button id="resetTemplatesBtn">恢复默认</button>
+    <span id="tplStatus" style="margin-left:8px;color:green;"></span>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>

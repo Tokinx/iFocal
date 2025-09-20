@@ -1,0 +1,26 @@
+/* options/options.css */
+body {
+  font-family: sans-serif;
+  padding: 10px 20px;
+  min-width: 400px;
+}
+
+h1, h2 {
+  border-bottom: 1px solid #ccc;
+  padding-bottom: 5px;
+}
+
+.container {
+  margin-bottom: 20px;
+}
+
+textarea, input[type="text"] {
+  width: 95%;
+  padding: 8px;
+  margin-top: 5px;
+}
+
+button {
+  padding: 10px 15px;
+  cursor: pointer;
+}
