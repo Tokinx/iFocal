@@ -41,7 +41,9 @@
       <p>渠道名称（唯一）：<input type="text" id="editChannelName"></p>
       <p>API URL：<input type="text" id="editApiUrl"></p>
       <p>API KEY：<input type="password" id="editApiKey" placeholder="留空表示不变"></p>
-      <p>Models（用逗号分隔）：<input type="text" id="editModels"></p>
+      <p>Models（每行一个）：
+        <textarea id="editModels" style="width:100%;height:80px;" placeholder="每行一个模型"></textarea>
+      </p>
       <div class="flex items-center gap-2 mt-2">
         <button id="saveEditBtn" class="btn btn-primary">保存修改</button>
         <button id="cancelEditBtn" class="btn btn-ghost">取消</button>
@@ -62,7 +64,12 @@
       <p>渠道名称（唯一）：<input type="text" id="channelName" placeholder="如 my-openai"></p>
       <p>API URL：<input type="text" id="apiUrl" placeholder="可留空使用默认，或填自定义"></p>
       <p>API KEY：<input type="password" id="apiKey" placeholder="在此输入 API Key"></p>
-      <p>Models（用逗号分隔）：<input type="text" id="models" placeholder="如 gpt-4o-mini, gpt-4o"></p>
+      <p>Models（每行一个）：
+        <textarea id="models" style="width:100%;height:80px;" placeholder="例如：
+gpt-4o-mini
+gpt-4o
+..."></textarea>
+      </p>
       <div class="flex items-center gap-2 mt-2">
         <button id="addChannelBtn" class="btn btn-primary">添加渠道</button>
         <span id="channelStatus" class="text-sm subtle"></span>
@@ -87,7 +94,7 @@
 
     <div class="glass rounded-xl p-4 shadow">
       <h2 class="text-base font-semibold mb-2">快捷键与显示</h2>
-      <p>悬浮触发键：<input type="text" id="hoverKey" placeholder="如 Alt"></p>
+      <p>页面翻译快捷键：<input type="text" id="actionKey" placeholder="如 Alt"></p>
       <p>全局快捷键请在 <a href="chrome://extensions/shortcuts" target="_blank">chrome://extensions/shortcuts</a> 中配置。</p>
       <h3 class="mt-2">翻译与显示</h3>
       <p>翻译目标语言：<input type="text" id="translateTargetLang" placeholder="如 中文 / English / 日本語"></p>
@@ -98,6 +105,14 @@
           <option value="overlay">悬浮卡片</option>
         </select>
       </p>
+      <h3 class="mt-2">译文样式（floating-copilot-target-wrapper）</h3>
+      <p class="text-sm subtle">可填写 CSS 声明，将用于悬浮翻译插入的包裹节点内联样式。</p>
+      <textarea id="wrapperStyle" style="width:100%;height:90px;" placeholder="background-image: linear-gradient(to right, rgba(71,71,71,.5) 30%, rgba(255,255,255,0) 0%);
+background-position: bottom;
+background-size: 5px 1px;
+background-repeat: repeat-x;
+padding-bottom: 3px;
+font-family: inherit;"></textarea>
       <div class="flex items-center gap-2 mt-2">
         <button id="save" class="btn btn-primary">保存设置</button>
         <span id="status" class="text-sm subtle"></span>

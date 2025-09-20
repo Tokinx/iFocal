@@ -1,11 +1,12 @@
 // options/options.js（UTF-8）
 
 // DOM 元素
-const hoverKeyInput = document.getElementById('hoverKey');
 const translateTargetLangInput = document.getElementById('translateTargetLang');
 const displayModeSelect = document.getElementById('displayMode');
 const saveButton = document.getElementById('save');
 const statusEl = document.getElementById('status');
+const actionKeyInput = document.getElementById('actionKey');
+const wrapperStyleInput = document.getElementById('wrapperStyle');
 
 const channelTypeEl = document.getElementById('channelType');
 const channelNameEl = document.getElementById('channelName');
@@ -28,7 +29,7 @@ const globalStatusEl = document.getElementById('globalStatus');
 
 function splitModels(input) {
   return (input || '')
-    .split(',')
+    .split(/\r?\n|,/) // 支持按行或逗号分隔
     .map(s => s.trim())
     .filter(Boolean);
 }
@@ -76,7 +77,7 @@ function renderChannels(channels) {
         const list = Array.isArray(items.channels) ? items.channels : [];
         const filtered = list.filter(c => c.name !== name);
         const next = { channels: filtered };
-        // 清理默认/翻译模型引用
+        // 清理默认/翻译/活动模型引用
         if (items.defaultModel && items.defaultModel.channel === name) next.defaultModel = null;
         if (items.translateModel && items.translateModel.channel === name) next.translateModel = null;
         if (items.activeModel && items.activeModel.channel === name) next.activeModel = null;
@@ -107,13 +108,17 @@ function renderModelSelects(channels, defaultModel, translateModel) {
 }
 
 function loadAll() {
-  chrome.storage.sync.get(['channels', 'defaultModel', 'translateModel', 'hoverKey', 'translateTargetLang', 'displayMode'], (items) => {
+  chrome.storage.sync.get(['channels', 'defaultModel', 'translateModel', 'actionKey', 'hoverKey', 'selectKey', 'translateTargetLang', 'displayMode', 'wrapperStyle'], (items) => {
     const channels = Array.isArray(items.channels) ? items.channels : [];
     renderChannels(channels);
     renderModelSelects(channels, items.defaultModel || null, items.translateModel || null);
-    if (items.hoverKey) hoverKeyInput.value = items.hoverKey;
+    // 兼容旧键名：优先 actionKey，否则回退 hoverKey/selectKey
+    const ak = items.actionKey || items.hoverKey || items.selectKey;
+    if (ak && actionKeyInput) actionKeyInput.value = ak;
+    if (items.hoverKey && !ak && actionKeyInput) actionKeyInput.value = items.hoverKey;
     if (items.translateTargetLang) translateTargetLangInput.value = items.translateTargetLang;
     if (items.displayMode) displayModeSelect.value = items.displayMode;
+    if (wrapperStyleInput) wrapperStyleInput.value = items.wrapperStyle || 'background-image: linear-gradient(to right, rgba(71, 71, 71, 0.5) 30%, rgba(255, 255, 255, 0) 0%);\nbackground-position: bottom;\nbackground-size: 5px 1px;\nbackground-repeat: repeat-x;\npadding-bottom: 3px;\nfont-family: inherit;';
   });
 }
 
@@ -155,12 +160,14 @@ function saveGlobal() {
   });
 }
 
-// 保存基础设置（仅 hoverKey）
+// 保存基础设置
 function saveOptions() {
-  const hoverKey = (hoverKeyInput.value || '').trim() || 'Alt';
+  const actionKey = (actionKeyInput && actionKeyInput.value || '').trim() || 'Alt';
   const translateTargetLang = (translateTargetLangInput.value || '').trim() || '中文';
   const displayMode = displayModeSelect.value || 'insert';
-  chrome.storage.sync.set({ hoverKey, translateTargetLang, displayMode }, () => {
+  const wrapperStyle = (wrapperStyleInput && wrapperStyleInput.value || '').trim();
+  // 存储合并后的快捷键；为兼容旧字段，同步写入 hoverKey/selectKey
+  chrome.storage.sync.set({ actionKey, hoverKey: actionKey, selectKey: actionKey, translateTargetLang, displayMode, wrapperStyle }, () => {
     statusEl.textContent = '设置已保存';
     setTimeout(() => { statusEl.textContent = ''; }, 1500);
   });
@@ -192,7 +199,7 @@ function startEdit(name) {
     editChannelTypeEl.value = ch.type || 'openai';
     editChannelNameEl.value = ch.name;
     editApiUrlEl.value = ch.apiUrl || '';
-    editModelsEl.value = (ch.models || []).join(', ');
+    editModelsEl.value = (ch.models || []).join('\n');
     editApiKeyEl.value = '';
     editContainer.style.display = '';
   });
@@ -297,7 +304,7 @@ if (saveTemplatesBtn) saveTemplatesBtn.addEventListener('click', saveTemplates);
 if (resetTemplatesBtn) resetTemplatesBtn.addEventListener('click', resetTemplates);
 document.addEventListener('DOMContentLoaded', loadTemplates);
 
-// 测试渠道有效性（简单调用首个模型）
+// 测试渠道有效性（简单调用首个模型或下拉选择）
 function testChannel(name) {
   if (!name) return;
   channelStatusEl.textContent = `正在测试: ${name} …`;
@@ -313,3 +320,4 @@ function testChannel(name) {
     setTimeout(() => channelStatusEl.textContent = '', 3000);
   });
 }
+

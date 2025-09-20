@@ -33,6 +33,27 @@
   backdrop-filter: saturate(180%) blur(12px);
 }
 
+/* 默认译文包裹样式（可被面板自定义样式覆盖） */
+.floating-copilot-target-wrapper {
+  background-image: linear-gradient(to right, rgba(71, 71, 71, 0.5) 30%, rgba(255, 255, 255, 0) 0%);
+  background-position: bottom;
+  background-size: 5px 1px;
+  background-repeat: repeat-x;
+  padding-bottom: 3px;
+  font-family: inherit;
+}
+
+@keyframes fc-spin { to { transform: rotate(360deg); } }
+.fc-spinner {
+  width: 16px; height: 16px;
+  border: 2px solid rgba(0,0,0,0.15);
+  border-top-color: #0f172a;
+  border-radius: 50%;
+  animation: fc-spin 1s linear infinite;
+  display: inline-block;
+  vertical-align: text-bottom;
+}
+
 .floating-copilot-overlay .close-btn {
   position: absolute;
   top: 4px;
