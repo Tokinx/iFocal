@@ -113,7 +113,7 @@ function getSelectionRect() {
 function createOverlayAt(x, y) {
   if (lastOverlay && lastOverlay.root && lastOverlay.root.remove) lastOverlay.root.remove();
   const root = document.createElement('div');
-  root.className = 'floating-copilot-overlay';
+  root.className = 'floating-copilot-overlay glass rounded-xl shadow-lg p-3 text-sm bg-white/70 backdrop-blur-md border';
   root.style.left = Math.max(8, Math.floor(x)) + 'px';
   root.style.top = Math.max(8, Math.floor(y)) + 'px';
   const close = document.createElement('span');
@@ -142,7 +142,7 @@ function showBlockResult(blockEl, text) {
     const old = blockEl.__fc_result;
     if (old && old.parentNode) old.parentNode.removeChild(old);
     const box = document.createElement('div');
-    box.className = 'floating-copilot-result';
+    box.className = 'floating-copilot-result glass rounded-xl p-3';
     const close = document.createElement('span');
     close.textContent = '×';
     close.style.cursor = 'pointer';

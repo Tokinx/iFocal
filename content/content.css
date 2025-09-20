@@ -22,13 +22,15 @@
   position: fixed;
   z-index: 2147483647;
   max-width: 420px;
-  background: #fff;
-  border: 1px solid rgba(0,0,0,0.15);
-  border-radius: 6px;
+  background: rgba(255,255,255,0.6);
+  border: 1px solid rgba(255,255,255,0.35);
+  border-radius: 12px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.15);
   padding: 10px 12px;
-  color: #222;
-  line-height: 1.5;
+  color: #0f172a;
+  line-height: 1.55;
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
+  backdrop-filter: saturate(180%) blur(12px);
 }
 
 .floating-copilot-overlay .close-btn {

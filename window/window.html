@@ -3,25 +3,28 @@
 <head>
   <meta charset="UTF-8">
   <title>FloatingCopilot 全局助手</title>
+  <link rel="stylesheet" href="../styles/tailwind.css">
+  <link rel="stylesheet" href="../styles/theme.css">
   <link rel="stylesheet" href="window.css">
 </head>
-<body>
-  <div id="app">
-    <textarea id="main-input" placeholder="在此输入要处理的文本..."></textarea>
-    <div id="controls">
-      <label for="modelSelect">模型：</label>
-      <select id="modelSelect"></select>
-      <label for="taskSelect" style="margin-left:8px;">任务：</label>
-      <select id="taskSelect">
+<body class="bg-slate-50">
+  <div id="app" class="glass rounded-xl shadow-lg p-3">
+    <textarea id="main-input" class="w-full text-sm" placeholder="在此输入要处理的文本..."></textarea>
+    <div id="controls" class="flex items-center gap-2 py-2 border-0">
+      <label for="modelSelect" class="text-sm subtle">模型：</label>
+      <select id="modelSelect" class="text-sm"></select>
+      <label for="taskSelect" class="text-sm subtle" style="margin-left:8px;">任务：</label>
+      <select id="taskSelect" class="text-sm">
         <option value="translate">翻译</option>
         <option value="summarize">总结</option>
         <option value="rewrite">改写</option>
         <option value="polish">润色</option>
       </select>
-      <button id="run-btn" style="margin-left:8px;">执行</button>
+      <button id="run-btn" class="btn btn-primary" style="margin-left:8px;">执行</button>
     </div>
-    <div id="result-area" class="loading"></div>
+    <div id="result-area" class="text-sm"></div>
   </div>
   <script src="window.js"></script>
 </body>
 </html>
+
