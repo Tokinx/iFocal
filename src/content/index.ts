@@ -1,4 +1,7 @@
 ﻿import './style.css';
+import { createApp, ref } from 'vue';
+import { Select, SelectTrigger, SelectContent, SelectValue, SelectItem } from '@/sidebar/components/ui/select';
+import { Button } from '@/sidebar/components/ui/button';
 
 (function injectFallbackStyles() {
   try {
@@ -217,7 +220,7 @@ function toggleHoverTranslate(blockEl: HTMLElement) {
         const reqPair = cfg.activeModel || null;
         const pair = pickPair(cfg, 'translate', reqPair);
         const lang = cfg.translateTargetLang || 'zh-CN';
-        attachOverlayHeader(overlay, cfg, pair, lang, source);
+        attachOverlayHeaderVue(overlay, cfg, pair, lang, source);
         startStreamForOverlay(overlay, 'translate', source, pair, lang);
       });
       return;
@@ -294,7 +297,7 @@ function triggerSelectionTranslate() {
     const reqPair = cfg.activeModel || null;
     const pair = pickPair(cfg, 'translate', reqPair);
     const lang = cfg.translateTargetLang || 'zh-CN';
-    attachOverlayHeader(overlay, cfg, pair, lang, lastSelectionText);
+    attachOverlayHeaderVue(overlay, cfg, pair, lang, lastSelectionText);
     startStreamForOverlay(overlay, 'translate', lastSelectionText, pair, lang);
   });
 }
@@ -347,7 +350,7 @@ function startStreamForOverlay(overlay: OverlayHandle, task: string, text: strin
   port.postMessage(payload);
 }
 
-function attachOverlayHeader(overlay: OverlayHandle, cfg: StorageConfig, pair: ChannelPair, lang: string, text: string) {
+function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair: ChannelPair, lang: string, text: string) {
   const header = document.createElement('div');
   header.style.cursor = 'move';
   header.style.display = 'flex';
@@ -489,5 +492,65 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 
 
+
+
+
+
+
+function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair: ChannelPair, lang: string, text: string) {
+  const header = document.createElement('div');
+  header.style.cursor = 'move';
+  header.style.display = 'flex';
+  header.style.alignItems = 'center';
+  header.style.justifyContent = 'space-between';
+  header.style.marginBottom = '8px';
+  overlay.root.insertBefore(header, overlay.root.firstChild);
+
+  const channels = Array.isArray(cfg.channels) ? cfg.channels : [];
+  const modelPairs = channels.flatMap((ch) => (ch.models || []).map((m) => ({ value: ch.name + "|" + m, label: m + " (" + ch.name + ")" })));
+  const languages = ['zh-CN','en','ja','ko','fr','es','de'];
+
+  const app = createApp({
+    setup() {
+      const selectedModel = ref<string>(pair && (pair.channel && pair.model) ? (pair.channel + "|" + pair.model) : (modelPairs[0]?.value || ""));
+      const selectedLang = ref<string>(lang || 'zh-CN');
+      function applyChanges(){ const np = parsePair(selectedModel.value); if (np) startStreamForOverlay(overlay,'translate',text,np,selectedLang.value); }
+      return { selectedModel, selectedLang, modelPairs, languages, applyChanges };
+    },
+    template: 
+      <div class="flex w-full items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <Select v-model="selectedModel" class="w-48" @update:modelValue="applyChanges">
+            <SelectTrigger><SelectValue placeholder="Model" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="m in modelPairs" :key="m.value" :value="m.value">{{ m.label }}</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select v-model="selectedLang" class="w-32" @update:modelValue="applyChanges">
+            <SelectTrigger><SelectValue placeholder="Lang" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="code in languages" :key="code" :value="code">{{ code }}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <Button size="icon" variant="outline" @click=".closest('.floating-copilot-overlay')?.remove()">×</Button>
+      </div>
+    
+  });
+  app.component('Select', Select);
+  app.component('SelectTrigger', SelectTrigger);
+  app.component('SelectContent', SelectContent);
+  app.component('SelectValue', SelectValue);
+  app.component('SelectItem', SelectItem);
+  app.component('Button', Button);
+  app.mount(header);
+
+  let dragging=false, sx=0, sy=0, sl=0, st=0;
+  const mm=(e: MouseEvent)=>{ if(!dragging) return; overlay.root.style.left=(sl+(e.clientX-sx))+'px'; overlay.root.style.top=(st+(e.clientY-sy))+'px'; };
+  const mu=()=>{ dragging=false; document.removeEventListener('mousemove',mm); document.removeEventListener('mouseup',mu); };
+  header.addEventListener('mousedown',(e)=>{ dragging=true; sx=(e as MouseEvent).clientX; sy=(e as MouseEvent).clientY; sl=parseInt(overlay.root.style.left)||0; st=parseInt(overlay.root.style.top)||0; document.addEventListener('mousemove',mm); document.addEventListener('mouseup',mu); });
+  const outside=(e: MouseEvent)=>{ if (!overlay.root.contains(e.target as Node)) { if (overlay._port) { try{overlay._port.disconnect();}catch{} overlay._port=null; overlay.root.remove(); document.removeEventListener('mousedown',outside,true); } };
+  setTimeout(()=>document.addEventListener('mousedown',outside,true),0);
+}
 
 

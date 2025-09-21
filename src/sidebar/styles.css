@@ -1,4 +1,4 @@
-@tailwind base;
+﻿@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
@@ -10,7 +10,7 @@
   --card-foreground: 15 23 42;
   --popover: 255 255 255;
   --popover-foreground: 15 23 42;
-  --primary: 51 65 85; /* slate-700 作为主色 */
+  --primary: 51 65 85; /* slate-700 浣滀负涓昏壊 */
   --primary-foreground: 255 255 255;
   --secondary: 241 245 249; /* slate-100 */
   --secondary-foreground: 15 23 42;
@@ -29,32 +29,32 @@
 body {@apply bg-white text-slate-900;}
 
 .bg-background {
-  background-color: rgb(var(--background));
+  background-color: hsl(var(--background));
 }
 
 .text-foreground {
-  color: rgb(var(--foreground));
+  color: hsl(var(--foreground));
 }
 
 .bg-popover {
-  background-color: rgb(var(--popover));
+  background-color: hsl(var(--popover));
 }
 
 .text-popover-foreground {
-  color: rgb(var(--popover-foreground));
+  color: hsl(var(--popover-foreground));
 }
 
 
 .bg-primary {
-  background-color: rgb(var(--primary));
+  background-color: hsl(var(--primary));
 }
 
 .text-primary-foreground {
-  color: rgb(var(--primary-foreground));
+  color: hsl(var(--primary-foreground));
 }
 
 .text-muted-foreground {
-  color: rgb(var(--muted-foreground));
+  color: hsl(var(--muted-foreground));
 }
 
 /* radius utility based on --radius for components */
@@ -124,4 +124,6 @@ body {@apply bg-white text-slate-900;}
     @apply bg-background text-foreground;
   }
 }
+
+
 
