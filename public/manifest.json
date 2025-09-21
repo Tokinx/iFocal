@@ -12,19 +12,19 @@
     "<all_urls>"
   ],
   "background": {
-    "service_worker": "dist/background.js",
+    "service_worker": "background.js",
     "type": "module"
   ],
   "action": {
     "default_title": "打开 FloatingCopilot 辅助侧边栏"
   ],
   "side_panel": {
-    "default_path": "dist/sidebar.html"
+    "default_path": "sidebar.html"
   ],
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["dist/content.js"],
+      "js": ["content.js"],
       "run_at": "document_idle"
     }
   ],
@@ -37,7 +37,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["dist/assets/*"],
+      "resources": ["assets/*"],
       "matches": ["<all_urls>"]
     }
   ]
