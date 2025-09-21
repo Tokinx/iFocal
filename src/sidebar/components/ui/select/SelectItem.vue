@@ -1,54 +1,42 @@
-﻿<template>
-  <div
-    :class="[
-      'px-3 py-2 cursor-pointer text-sm',
-      selected ? 'bg-accent' : (highlighted ? 'bg-accent/70' : ''),
-      disabled ? 'opacity-50 pointer-events-none' : ''
-    ]"
-    role="option"
-    :aria-selected="selected"
-    @mouseenter="onHover"
-    @mouseleave="ctx.setHighlight(-1)"
-    @click="choose"
-  >
-    <slot />
-  </div>
-</template>
-
 <script setup lang="ts">
-import { computed, inject, onMounted, onBeforeUnmount, ref, useSlots } from 'vue';
-import { SelectCtxKey } from './context';
-const props = defineProps<{ value: string | number; disabled?: boolean }>();
-const ctx = inject(SelectCtxKey);
-if (!ctx) throw new Error('SelectItem must be used within Select');
+import type { SelectItemProps } from "reka-ui"
+import type { HTMLAttributes } from "vue"
+import { reactiveOmit } from "@vueuse/core"
+import { Check } from "lucide-vue-next"
+import {
+  SelectItem,
+  SelectItemIndicator,
 
-const slots = useSlots();
-const index = ref(-1);
+  SelectItemText,
+  useForwardProps,
+} from "reka-ui"
+import { cn } from "@/lib/utils"
 
-onMounted(() => {
-  if (props.disabled) return;
-  const label = extractLabel();
-  index.value = ctx.register({ value: props.value, label });
-});
+const props = defineProps<SelectItemProps & { class?: HTMLAttributes["class"] }>()
 
-const selected = computed(() => String(props.value) === String(ctx.modelValue.value));
-const disabled = computed(() => !!props.disabled);
-const highlighted = computed(() => ctx.highlight.value === index.value);
+const delegatedProps = reactiveOmit(props, "class")
 
-function extractLabel(): string {
-  const nodes = slots.default?.() ?? [];
-  return nodes.map(n => (typeof n.children === 'string' ? n.children : '')).join('').trim() || String(props.value);
-}
-
-function choose(){
-  if (disabled.value) return;
-  ctx.setValue(props.value);
-  ctx.close();
-}
-
-function onHover(){
-  if (disabled.value) return;
-  if (index.value >= 0) ctx.setHighlight(index.value);
-}
+const forwardedProps = useForwardProps(delegatedProps)
 </script>
 
+<template>
+  <SelectItem
+    v-bind="forwardedProps"
+    :class="
+      cn(
+        'relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+        props.class,
+      )
+    "
+  >
+    <span class="absolute right-2 flex h-3.5 w-3.5 items-center justify-center">
+      <SelectItemIndicator>
+        <Check class="h-4 w-4" />
+      </SelectItemIndicator>
+    </span>
+
+    <SelectItemText>
+      <slot />
+    </SelectItemText>
+  </SelectItem>
+</template>

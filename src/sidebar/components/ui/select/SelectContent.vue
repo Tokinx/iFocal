@@ -1,36 +1,50 @@
-﻿<template>
-  <div
-    v-if="ctx.open.value"
-    ref="menu"
-    class="absolute z-50 mt-1 w-full rounded-md border bg-popover text-foreground shadow-md"
-    role="listbox"
-  >
-    <div class="max-h-60 overflow-auto py-1">
-      <slot />
-    </div>
-  </div>
-</template>
-
 <script setup lang="ts">
-import { inject, onBeforeUnmount, onMounted, ref } from 'vue';
-import { SelectCtxKey } from './context';
+import type { SelectContentEmits, SelectContentProps } from "reka-ui"
+import type { HTMLAttributes } from "vue"
+import { reactiveOmit } from "@vueuse/core"
+import {
+  SelectContent,
 
-const ctx = inject(SelectCtxKey);
-if (!ctx) throw new Error('SelectContent must be used within Select');
+  SelectPortal,
+  SelectViewport,
+  useForwardPropsEmits,
+} from "reka-ui"
+import { cn } from "@/lib/utils"
+import { SelectScrollDownButton, SelectScrollUpButton } from "."
 
-const menu = ref<HTMLElement | null>(null);
+defineOptions({
+  inheritAttrs: false,
+})
 
-function handleDocumentMouseDown(event: MouseEvent) {
-  const root = menu.value?.parentElement;
-  if (!root) return;
-  if (!root.contains(event.target as Node)) ctx.close();
-}
+const props = withDefaults(
+  defineProps<SelectContentProps & { class?: HTMLAttributes["class"] }>(),
+  {
+    position: "popper",
+  },
+)
+const emits = defineEmits<SelectContentEmits>()
 
-onMounted(() => {
-  document.addEventListener('mousedown', handleDocumentMouseDown, true);
-});
+const delegatedProps = reactiveOmit(props, "class")
 
-onBeforeUnmount(() => {
-  document.removeEventListener('mousedown', handleDocumentMouseDown, true);
-});
+const forwarded = useForwardPropsEmits(delegatedProps, emits)
 </script>
+
+<template>
+  <SelectPortal>
+    <SelectContent
+      v-bind="{ ...forwarded, ...$attrs }" :class="cn(
+        'relative z-50 max-h-96 min-w-32 overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
+        position === 'popper'
+          && 'data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1',
+        props.class,
+      )
+      "
+    >
+      <SelectScrollUpButton />
+      <SelectViewport :class="cn('p-1', position === 'popper' && 'h-[--reka-select-trigger-height] w-full min-w-[--reka-select-trigger-width]')">
+        <slot />
+      </SelectViewport>
+      <SelectScrollDownButton />
+    </SelectContent>
+  </SelectPortal>
+</template>
