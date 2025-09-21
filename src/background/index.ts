@@ -5,9 +5,13 @@ let selectionBuffer = '';
 
 chrome.runtime.onInstalled.addListener(async () => {
   try {
-    if ((chrome as any).sidePanel?.setOptions) { await (chrome as any).sidePanel.setOptions({ enabled: true, path: SIDEBAR_PATH }); }
+    if ((chrome as any).sidePanel?.setOptions) {
+      await (chrome as any).sidePanel.setOptions({ enabled: true, path: SIDEBAR_PATH });
+    } else {
+      console.info('[FloatingCopilot] sidePanel API not available, using popup fallback');
+    }
   } catch (error) {
-    console.warn('[FloatingCopilot] sidePanel API unavailable', error);
+    console.warn('[FloatingCopilot] sidePanel.setOptions failed, using popup fallback', error);
   }
   try {
     chrome.contextMenus.create({ id: 'floating-copilot-selection', title: 'Use FloatingCopilot', contexts: ['selection'] });
@@ -19,10 +23,14 @@ chrome.runtime.onInstalled.addListener(async () => {
 chrome.action.onClicked.addListener(async (tab) => {
   if (!tab?.id) return;
   try {
-    if ((chrome as any).sidePanel?.open) { await (chrome as any).sidePanel.open({ tabId: tab.id }); } else { throw new Error('sidePanel API not available'); }
+    if ((chrome as any).sidePanel?.open) {
+      await (chrome as any).sidePanel.open({ tabId: tab.id });
+      return;
+    }
+    openOrFocusSidebarPopup();
   } catch (error) {
-    console.error('[FloatingCopilot] failed to open side panel', error);
-    try { chrome.tabs.create({ url: chrome.runtime.getURL(SIDEBAR_PATH) }); } catch {}
+    console.warn('[FloatingCopilot] sidePanel open failed, using popup fallback', error);
+    openOrFocusSidebarPopup();
   }
 });
 
@@ -383,6 +391,21 @@ function openOrFocusGlobalWindow() {
       chrome.tabs.update(tab.id!, { active: true });
     } else {
       chrome.windows.create({ url, type: 'popup', width: 400, height: 600, focused: true });
+    }
+  });
+}
+
+function openOrFocusSidebarPopup() {
+  const url = chrome.runtime.getURL(SIDEBAR_PATH);
+  chrome.windows.getAll({ populate: true }, (wins) => {
+    const tabMatch = (t: chrome.tabs.Tab) => t.url === url;
+    const found = wins.find(w => (w.tabs || []).some(tabMatch));
+    if (found && found.id) {
+      chrome.windows.update(found.id, { focused: true });
+      const t = found.tabs?.find(tabMatch);
+      if (t?.id) chrome.tabs.update(t.id, { active: true });
+    } else {
+      chrome.windows.create({ url, type: 'popup', width: 420, height: 640, focused: true });
     }
   });
 }

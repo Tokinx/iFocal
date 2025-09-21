@@ -2,18 +2,31 @@
 @tailwind components;
 @tailwind utilities;
 
+/* shadcn-vue theme: new-york, color: slate, radius: 0.5 */
 :root {
   --background: 255 255 255;
-  --foreground: 15 23 42;
-  --primary: 59 130 246;
+  --foreground: 15 23 42; /* slate-900 */
+  --card: 255 255 255;
+  --card-foreground: 15 23 42;
+  --popover: 255 255 255;
+  --popover-foreground: 15 23 42;
+  --primary: 51 65 85; /* slate-700 作为主色 */
   --primary-foreground: 255 255 255;
-  --muted: 148 163 184;
-  --ring: 59 130 246;
+  --secondary: 241 245 249; /* slate-100 */
+  --secondary-foreground: 15 23 42;
+  --muted: 100 116 139; /* slate-500 */
+  --muted-foreground: 100 116 139;
+  --accent: 226 232 240; /* slate-200 */
+  --accent-foreground: 15 23 42;
+  --destructive: 220 38 38; /* red-600 */
+  --destructive-foreground: 255 255 255;
+  --border: 226 232 240; /* slate-200 */
+  --input: 226 232 240;
+  --ring: 51 65 85; /* slate-700 */
+  --radius: 0.5rem;
 }
 
-body {
-  @apply bg-white text-slate-900;
-}
+body {@apply bg-white text-slate-900;}
 
 .bg-background {
   background-color: rgb(var(--background));
@@ -22,6 +35,15 @@ body {
 .text-foreground {
   color: rgb(var(--foreground));
 }
+
+.bg-popover {
+  background-color: rgb(var(--popover));
+}
+
+.text-popover-foreground {
+  color: rgb(var(--popover-foreground));
+}
+
 
 .bg-primary {
   background-color: rgb(var(--primary));
@@ -32,5 +54,9 @@ body {
 }
 
 .text-muted-foreground {
-  color: rgb(var(--muted));
+  color: rgb(var(--muted-foreground));
 }
+
+/* radius utility based on --radius for components */
+.rounded-md { border-radius: var(--radius); }
+

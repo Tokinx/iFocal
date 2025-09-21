@@ -27,7 +27,12 @@ export default defineConfig({
           return 'assets/[name].js';
         },
         chunkFileNames: 'assets/[name].[hash].js',
-        assetFileNames: 'assets/[name].[hash][extname]'
+        assetFileNames: (assetInfo) => {
+          // 固定内容脚本与侧栏样式文件名，便于在 manifest 中直引
+          if (assetInfo.name === 'content.css') return 'assets/content.css';
+          if (assetInfo.name === 'sidebar.css') return 'assets/sidebar.css';
+          return 'assets/[name].[hash][extname]';
+        }
       }
     }
   }

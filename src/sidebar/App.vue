@@ -1,14 +1,14 @@
-
+﻿
 <template>
   <div class="flex h-screen w-full flex-col bg-background text-foreground">
     <header class="flex items-center justify-between border-b px-4 py-3">
       <div>
         <h1 class="text-base font-semibold">FloatingCopilot</h1>
-        <p class="text-xs text-muted-foreground">AI copilot sidebar · Vue + shadcn-vue</p>
+        <p class="text-xs text-muted-foreground">AI copilot sidebar 路 Vue + shadcn-vue</p>
       </div>
-      <UiButton class="bg-primary text-primary-foreground" @click="handleRefresh" :disabled="loading">
+      <Button class="bg-primary text-primary-foreground" @click="handleRefresh" :disabled="loading">
         Refresh Page Context
-      </UiButton>
+      </Button>
     </header>
 
     <main ref="messagesRef" class="flex-1 overflow-y-auto px-4 py-3 space-y-3">
@@ -37,17 +37,32 @@
 
     <section class="border-t px-4 py-3 space-y-3">
       <div class="flex flex-wrap gap-2">
-        <UiSelect v-model="state.selectedModel" class="w-40">
-          <option v-for="model in models" :key="model" :value="model">{{ model }}</option>
-        </UiSelect>
-        <UiSelect v-model="state.selectedFeature" class="w-40">
-          <option v-for="feature in features" :key="feature.id" :value="feature.id">{{ feature.label }}</option>
-        </UiSelect>
-        <UiSelect v-if="isTranslate" v-model="state.targetLang" class="w-36">
-          <option v-for="lang in languages" :key="lang.value" :value="lang.value">{{ lang.label }}</option>
-        </UiSelect>
+        <Select v-model="state.selectedModel" class="w-40">
+  <SelectTrigger>
+    <SelectValue placeholder="Model" />
+  </SelectTrigger>
+  <SelectContent>
+    <SelectItem v-for="model in models" :key="model" :value="model">{{ model }}</SelectItem>
+  </SelectContent>
+</Select>
+        <Select v-model="state.selectedFeature" class="w-40">
+  <SelectTrigger>
+    <SelectValue placeholder="Feature" />
+  </SelectTrigger>
+  <SelectContent>
+    <SelectItem v-for="feature in features" :key="feature.id" :value="feature.id">{{ feature.label }}</SelectItem>
+  </SelectContent>
+</Select>
+        <Select v-if="isTranslate" v-model="state.targetLang" class="w-36">
+  <SelectTrigger>
+    <SelectValue placeholder="Language" />
+  </SelectTrigger>
+  <SelectContent>
+    <SelectItem v-for="lang in languages" :key="lang.value" :value="lang.value">{{ lang.label }}</SelectItem>
+  </SelectContent>
+</Select>
       </div>
-      <UiTextarea
+      <Textarea
         v-model="state.draft"
         class="min-h-[120px]"
         placeholder="Type a prompt or leave it empty to analyse the current page"
@@ -55,12 +70,12 @@
       />
       <div class="flex items-center justify-between text-xs text-muted-foreground">
         <span>
-          Model: {{ state.selectedModel }} · Feature: {{ currentFeature?.label }}
-          <template v-if="isTranslate"> · Target language: {{ state.targetLang }}</template>
+          Model: {{ state.selectedModel }} 路 Feature: {{ currentFeature?.label }}
+          <template v-if="isTranslate"> 路 Target language: {{ state.targetLang }}</template>
         </span>
-        <UiButton class="bg-primary text-primary-foreground" :disabled="sending || !state.draft.trim()" @click="sendMessage">
-          {{ sending ? 'Sending…' : 'Send' }}
-        </UiButton>
+        <Button class="bg-primary text-primary-foreground" :disabled="sending || !state.draft.trim()" @click="sendMessage">
+          {{ sending ? 'Sending...' : 'Send' }}
+        </Button>
       </div>
     </section>
   </div>
@@ -198,3 +213,7 @@ onMounted(async () => {
   }
 });
 </script>
+
+
+
+
