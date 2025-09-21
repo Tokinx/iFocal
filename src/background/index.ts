@@ -1,7 +1,7 @@
-
-export {};
+﻿export {};
 
 const SIDEBAR_PATH = 'sidebar.html';
+let selectionBuffer = '';
 
 chrome.runtime.onInstalled.addListener(async () => {
   try {
@@ -39,6 +39,7 @@ chrome.commands.onCommand.addListener((command) => {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message) return;
+
   if (message.source === 'floating-copilot') {
     const handler = message.type as string;
     if (handler === 'bootstrap') {
@@ -70,8 +71,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-let selectionBuffer = '';
-
 async function bootstrap() {
   const cfg = await readConfig(['channels', 'defaultModel', 'translateModel', 'translateTargetLang', 'preferredFeature']);
   const models = Array.isArray(cfg.channels)
@@ -86,9 +85,16 @@ async function bootstrap() {
 
 async function collectPagePreview(tabId?: number | null) {
   if (!tabId) {
-    return { preview: selectionBuffer ? `Selection:
-${selectionBuffer}` : 'No active tab.' };
+    return { preview: selectionBuffer ? `Selection:\n${selectionBuffer}` : 'No active tab.' };
   }
+
+  const fallback = selectionBuffer ? `Selection:\n${selectionBuffer}` : 'Unable to extract page content.';
+
+  const messageResult = await requestPageContentFromContentScript(tabId);
+  if (messageResult?.excerpt) {
+    return { preview: `Page: ${messageResult.title}\n${messageResult.excerpt}` };
+  }
+
   try {
     const [result] = await chrome.scripting.executeScript({
       target: { tabId },
@@ -100,15 +106,30 @@ ${selectionBuffer}` : 'No active tab.' };
         return { title, excerpt: text.slice(0, 2000) };
       }
     });
-    if (!result?.result) return { preview: 'Unable to extract page content.' };
+    if (!result?.result) return { preview: fallback };
     const { title, excerpt } = result.result as { title: string; excerpt: string };
-    return { preview: `Page: ${title}
-${excerpt}` };
+    return { preview: `Page: ${title}\n${excerpt}` };
   } catch (error) {
     console.warn('[FloatingCopilot] collectPagePreview failed', error);
-    return { preview: selectionBuffer ? `Selection:
-${selectionBuffer}` : 'Unable to extract page content.' };
+    return { preview: fallback };
   }
+}
+
+async function requestPageContentFromContentScript(tabId: number): Promise<{ title: string; excerpt: string } | null> {
+  return new Promise((resolve) => {
+    chrome.tabs.sendMessage(tabId, { type: 'get-page-content' }, (response) => {
+      const err = chrome.runtime.lastError;
+      if (err) {
+        resolve(null);
+        return;
+      }
+      if (response && typeof response.title === 'string') {
+        resolve({ title: response.title, excerpt: String(response.excerpt || '') });
+      } else {
+        resolve(null);
+      }
+    });
+  });
 }
 
 async function handleStreamRequest(payload: any, tabId?: number | null) {
@@ -118,10 +139,15 @@ async function handleStreamRequest(payload: any, tabId?: number | null) {
   let finalText = baseText;
   if (payload.feature === 'analyze-page') {
     const page = await collectPagePreview(tabId);
-    finalText = `${page.preview}
-
-User note: ${baseText || '(empty)'}`;
+    finalText = `${page.preview}\n\nUser note: ${baseText || '(empty)'}`;
+  } else if (!finalText && selectionBuffer) {
+    finalText = selectionBuffer;
   }
+
+  if (!finalText) {
+    return { response: 'No input provided. Please select text on the page or enter a prompt.' };
+  }
+
   const targetLang = payload.targetLang || cfg.translateTargetLang || 'zh-CN';
   const pair = pickModelFromConfig(task, parsePair(payload.model), cfg);
   if (!pair) throw new Error('No available model');
@@ -211,21 +237,11 @@ function makePrompt(task: string, text: string, lang: string, templates: any) {
   const target = (lang || 'zh-CN').trim();
   const vars: Record<string, string> = { '{{targetLang}}': target, '{{text}}': (text || '').trim() };
   let tpl = '';
-  if (task === 'translate') tpl = t.translate || 'Translate the following content to {{targetLang}}. Return the translation only.
-
-{{text}}';
-  else if (task === 'summarize') tpl = t.summarize || 'Summarize the following content in {{targetLang}} with concise bullet points.
-
-{{text}}';
-  else if (task === 'rewrite') tpl = t.rewrite || 'Rewrite the following content in {{targetLang}}, keeping the original meaning.
-
-{{text}}';
-  else if (task === 'polish') tpl = t.polish || 'Polish the following content in {{targetLang}} to improve fluency.
-
-{{text}}';
-  else tpl = 'Provide a helpful answer for the following content:
-
-{{text}}';
+  if (task === 'translate') tpl = t.translate || 'Translate the following content to {{targetLang}}. Return the translation only.\n\n{{text}}';
+  else if (task === 'summarize') tpl = t.summarize || 'Summarize the following content in {{targetLang}} with concise bullet points.\n\n{{text}}';
+  else if (task === 'rewrite') tpl = t.rewrite || 'Rewrite the following content in {{targetLang}}, keeping the original meaning.\n\n{{text}}';
+  else if (task === 'polish') tpl = t.polish || 'Polish the following content in {{targetLang}} to improve fluency.\n\n{{text}}';
+  else tpl = 'Provide a helpful answer for the following content:\n\n{{text}}';
   return Object.keys(vars).reduce((acc, key) => acc.split(key).join(vars[key]), tpl);
 }
 
@@ -281,8 +297,7 @@ async function callGemini(baseUrl: string, apiKey: string, model: string, prompt
   if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
   const json = await res.json();
   const parts = json?.candidates?.[0]?.content?.parts;
-  const out = Array.isArray(parts) ? parts.map((p: any) => p?.text || '').join('
-') : '';
+  const out = Array.isArray(parts) ? parts.map((p: any) => p?.text || '').join('\n') : '';
   if (!out) throw new Error('Gemini returned empty response');
   return out;
 }
@@ -345,15 +360,13 @@ function sseLoopFromReader(reader: ReadableStreamDefaultReader<Uint8Array>, onLi
   return reader.read().then(function process({ done, value }): Promise<void> | void {
     if (done) {
       if (buffer) {
-        buffer.split(/?
-/).forEach(onLine);
+        buffer.split(/\r?\n/).forEach(onLine);
         buffer = '';
       }
       return;
     }
     buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split(/?
-/);
+    const lines = buffer.split(/\r?\n/);
     buffer = lines.pop() || '';
     for (const line of lines) onLine(line);
     return reader.read().then(process);

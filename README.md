@@ -58,3 +58,9 @@ FloatingCopilot 是一款面向 Chrome / Edge 的 AI 助手插件，现已重构
 - 需在浏览器中允许访问的站点：`<all_urls>`（用于抓取页面文本）
 
 欢迎根据业务需求扩展更多 shadcn 组件或任务预设，构建自己的浮动 Copilot。
+## 验证清单
+1. 运行 `npm install` 安装依赖。
+2. 执行 `npm run build`，确认在 `dist/` 目录生成 `sidebar.html`、`background.js`、`content.js` 等产物。
+3. 在 `chrome://extensions` 中加载 `dist/`，点击扩展图标打开侧边栏并测试模型/功能切换。
+4. 在任意网页选中一段文本，按下配置的触发键（默认 Alt）确认悬浮/插入翻译仍可使用。
+5. 切换至 “网页分析” 功能，使用“刷新页面数据”按钮验证能够抓取当前页面要点。

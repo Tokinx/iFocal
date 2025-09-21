@@ -1,12 +1,13 @@
-﻿{
+{
   "manifest_version": 3,
   "name": "FloatingCopilot",
   "version": "0.2.0",
-  "description": "基于 Vue + shadcn-vue 的侧边栏 AI 助手，支持聊天、翻译与网页分析。",
+  "description": "FloatingCopilot side panel assistant built with Vue + shadcn-vue. Supports chat, translation and page insight.",
   "permissions": [
     "storage",
     "activeTab",
-    "scripting"
+    "scripting",
+    "contextMenus"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -14,31 +15,41 @@
   "background": {
     "service_worker": "dist/background.js",
     "type": "module"
-  ],
+  },
   "action": {
-    "default_title": "打开 FloatingCopilot 辅助侧边栏"
-  ],
+    "default_title": "Open FloatingCopilot Side Panel"
+  },
   "side_panel": {
-    "default_path": "dist/sidebar.html"
-  ],
+    "default_path": "dist/src/sidebar/index.html"
+  },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["dist/content.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "dist/content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
   "options_page": "options/options.html",
   "commands": {
     "open-global-window": {
-      "suggested_key": { "default": "Ctrl+Shift+O" },
-      "description": "打开 FloatingCopilot 全局助手窗口"
+      "suggested_key": {
+        "default": "Ctrl+Shift+O"
+      },
+      "description": "Open FloatingCopilot global assistant window"
     }
-  ],
+  },
   "web_accessible_resources": [
     {
-      "resources": ["dist/assets/*"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "dist/assets/*"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ]
 }
