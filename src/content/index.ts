@@ -1,5 +1,24 @@
 ﻿import './style.css';
 
+(function injectFallbackStyles() {
+  try {
+    const STYLE_ID = 'floating-copilot-inline-style';
+    if (document.getElementById(STYLE_ID)) return;
+    const CSS = `
+.floating-copilot-overlay{position:fixed;z-index:2147483647;max-width:420px;background:rgba(255,255,255,0.82);border:1px solid rgba(255,255,255,0.35);border-radius:12px;box-shadow:0 12px 32px rgba(15,23,42,0.18);padding:12px 16px 16px 16px;color:#0f172a;line-height:1.55;backdrop-filter:saturate(180%) blur(12px);-webkit-backdrop-filter:saturate(180%) blur(12px)}
+.floating-copilot-overlay .close-btn{position:absolute;top:6px;right:8px;cursor:pointer;color:#64748b;font-size:16px}
+.floating-copilot-target-wrapper{background-image:linear-gradient(to right, rgba(71,71,71,.45) 30%, rgba(255,255,255,0) 0%);background-position:bottom;background-size:5px 1px;background-repeat:repeat-x;padding-bottom:3px;font-family:inherit}
+@keyframes fc-spin{to{transform:rotate(360deg)}}
+.fc-spinner{width:16px;height:16px;border:2px solid rgba(15,23,42,0.18);border-top-color:#0f172a;border-radius:50%;animation:fc-spin 1s linear infinite;display:inline-block;vertical-align:text-bottom}
+`;
+    const style = document.createElement('style');
+    style.id = STYLE_ID;
+    style.textContent = CSS;
+    (document.head || document.documentElement).appendChild(style);
+  } catch (error) {
+    console.warn('[FloatingCopilot] failed to inject fallback styles', error);
+  }
+})();
 const LOG_PREFIX = '[FloatingCopilot]';
 
 console.log(`${LOG_PREFIX} content script ready`);
@@ -233,6 +252,9 @@ function toggleHoverTranslate(blockEl: HTMLElement) {
 
       const sourceText = (blockEl.innerText || '').trim();
       chrome.runtime.sendMessage({ action: 'performAiAction', task: 'translate', text: sourceText }, (response: { ok?: boolean; result?: string; error?: string } | undefined) => {
+        // 读取 lastError 抑制“Unchecked runtime.lastError”告警
+        // 即便忽略，也要先触达该属性以避免控制台噪音
+        try { void chrome.runtime.lastError; } catch {}
         blockEl.dataset.fcTranslated = '1';
         const msg = response && response.ok ? response.result : response?.error || '';
         wrapper.innerHTML = '';
@@ -304,6 +326,18 @@ function startStreamForOverlay(overlay: OverlayHandle, task: string, text: strin
       overlay.append(`\n[Error] ${message.error}`);
     }
   });
+  // 连接失败或后台未就绪时，读取 lastError 以抑制控制台“Receiving end does not exist”
+  try {
+    port.onDisconnect.addListener(() => {
+      try {
+        const err = chrome.runtime.lastError;
+        if (err) {
+          overlay.setLoading(false);
+          overlay.append(`\n[Error] ${err.message}`);
+        }
+      } catch {}
+    });
+  } catch {}
   const payload: Record<string, unknown> = { type: 'start', task, text };
   if (pair?.channel && pair.model) {
     payload.channel = pair.channel;
@@ -452,3 +486,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   return undefined;
 });
+
+
+
+
+

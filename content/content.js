@@ -2,6 +2,25 @@
 
 console.log('FloatingCopilot content script loaded');
 
+// 兜底样式注入：避免构建将 CSS 抽离或页面没有加载对应样式时，浮层无样式
+(function injectFallbackStyles(){
+  try {
+    const STYLE_ID = 'floating-copilot-inline-style';
+    if (document.getElementById(STYLE_ID)) return;
+    const CSS = `
+.floating-copilot-overlay{position:fixed;z-index:2147483647;max-width:420px;background:rgba(255,255,255,0.82);border:1px solid rgba(255,255,255,0.35);border-radius:12px;box-shadow:0 12px 32px rgba(15,23,42,0.18);padding:12px 16px 16px 16px;color:#0f172a;line-height:1.55;backdrop-filter:saturate(180%) blur(12px);-webkit-backdrop-filter:saturate(180%) blur(12px)}
+.floating-copilot-overlay .close-btn{position:absolute;top:6px;right:8px;cursor:pointer;color:#64748b;font-size:16px}
+.floating-copilot-target-wrapper{background-image:linear-gradient(to right, rgba(71,71,71,.45) 30%, rgba(255,255,255,0) 0%);background-position:bottom;background-size:5px 1px;background-repeat:repeat-x;padding-bottom:3px;font-family:inherit}
+@keyframes fc-spin{to{transform:rotate(360deg)}}
+.fc-spinner{width:16px;height:16px;border:2px solid rgba(15,23,42,0.18);border-top-color:#0f172a;border-radius:50%;animation:fc-spin 1s linear infinite;display:inline-block;vertical-align:text-bottom}
+`;
+    const style = document.createElement('style');
+    style.id = STYLE_ID;
+    style.textContent = CSS;
+    (document.head || document.documentElement).appendChild(style);
+  } catch {}
+})();
+
 let hoveredElement = null;
 let actionKey = 'Alt'; // unified page translation hotkey
 let displayMode = 'insert'; // insert | overlay
@@ -118,6 +137,7 @@ function toggleHoverTranslate(blockEl) {
       blockEl.appendChild(wrapper);
       const text = (blockEl.innerText || '').trim();
       chrome.runtime.sendMessage({ action: 'performAiAction', task: 'translate', text }, (response) => {
+        try { void chrome.runtime.lastError; } catch {}
         blockEl.dataset.fcTranslated = '1';
         const msg = response && response.ok ? response.result : (response && response.error) || '';
         wrapper.innerHTML = '';
@@ -166,6 +186,7 @@ function startStreamForOverlay(overlay, task, text, pair, lang){
     else if (m.type==='done') { }
     else if (m.type==='error') { overlay.setLoading(false); overlay.append('\n[Error] '+m.error); }
   });
+  try { port.onDisconnect.addListener(() => { try { const err = chrome.runtime.lastError; if (err) { overlay.setLoading(false); overlay.append('\n[Error] ' + err.message); } } catch {} }); } catch {}
   const msg = { type:'start', task, text };
   if (pair && pair.channel && pair.model) { msg.channel = pair.channel; msg.model = pair.model; }
   if (lang) msg.targetLang = lang;

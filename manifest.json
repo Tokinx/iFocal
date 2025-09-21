@@ -20,7 +20,7 @@
     "default_title": "Open FloatingCopilot Side Panel"
   },
   "side_panel": {
-    "default_path": "dist/src/sidebar/index.html"
+    "default_path": "dist/sidebar.html"
   },
   "content_scripts": [
     {

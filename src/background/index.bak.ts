@@ -1,11 +1,11 @@
 ﻿export {};
 
-const SIDEBAR_PATH = 'dist/sidebar.html';
+const SIDEBAR_PATH = 'sidebar.html';
 let selectionBuffer = '';
 
 chrome.runtime.onInstalled.addListener(async () => {
   try {
-    if ((chrome as any).sidePanel?.setOptions) { await (chrome as any).sidePanel.setOptions({ enabled: true, path: SIDEBAR_PATH }); }
+    await chrome.sidePanel.setOptions({ enabled: true, path: SIDEBAR_PATH });
   } catch (error) {
     console.warn('[FloatingCopilot] sidePanel API unavailable', error);
   }
@@ -19,10 +19,9 @@ chrome.runtime.onInstalled.addListener(async () => {
 chrome.action.onClicked.addListener(async (tab) => {
   if (!tab?.id) return;
   try {
-    if ((chrome as any).sidePanel?.open) { await (chrome as any).sidePanel.open({ tabId: tab.id }); } else { throw new Error('sidePanel API not available'); }
+    await chrome.sidePanel.open({ tabId: tab.id });
   } catch (error) {
     console.error('[FloatingCopilot] failed to open side panel', error);
-    try { chrome.tabs.create({ url: chrome.runtime.getURL(SIDEBAR_PATH) }); } catch {}
   }
 });
 
@@ -386,49 +385,3 @@ function openOrFocusGlobalWindow() {
     }
   });
 }
-
-
-
-
-
-// 端口：用于内容脚本与选项页的流式输出
-chrome.runtime.onConnect.addListener((port) => {
-  if (port.name !== 'ai-stream') return;
-  let disconnected = false;
-  try { port.onDisconnect.addListener(() => { disconnected = true; }); } catch {}
-  port.onMessage.addListener(async (msg) => {
-    if (!msg || msg.type !== 'start') return;
-    try {
-      const { task, text, channel, model, targetLang } = msg as any;
-      const cfg = await readConfig(['channels', 'defaultModel', 'translateModel', 'activeModel', 'translateTargetLang', 'promptTemplates']);
-      const pair = pickModelFromConfig(task, (channel && model) ? { channel, model } : null, cfg);
-      if (!pair) throw new Error('No available model');
-      const ch = ensureChannel(cfg.channels, pair.channel);
-      const tLang = targetLang || cfg.translateTargetLang || 'zh-CN';
-      const prompt = makePrompt(task, String(text || ''), tLang, cfg.promptTemplates || {});
-      const safePost = (payload: any) => { if (disconnected) return; try { port.postMessage(payload); } catch {} };
-      const onDelta = (delta: string | null, done?: boolean) => {
-        if (disconnected) return;
-        if (done) safePost({ type: 'done' });
-        else if (delta) safePost({ type: 'delta', text: delta });
-      };
-      if (ch.type === 'openai' || ch.type === 'openai-compatible') {
-        await streamOpenAI(ch.apiUrl, ch.apiKey, pair.model, prompt, onDelta);
-      } else if (ch.type === 'gemini') {
-        try {
-          await streamGemini(ch.apiUrl, ch.apiKey, pair.model, prompt, onDelta);
-        } catch {
-          const full = await invokeModel(ch, pair.model, prompt);
-          safePost({ type: 'delta', text: String(full) });
-          safePost({ type: 'done' });
-        }
-      } else {
-        const full = await invokeModel(ch, pair.model, prompt);
-        safePost({ type: 'delta', text: String(full) });
-        safePost({ type: 'done' });
-      }
-    } catch (error) {
-      if (!disconnected) { try { port.postMessage({ type: 'error', error: String(error) }); } catch {} }
-    }
-  });
-});

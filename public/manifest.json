@@ -19,7 +19,7 @@
     "default_title": "打开 FloatingCopilot 侧边栏"
   },
   "side_panel": {
-    "default_path": "src/sidebar/index.html"
+    "default_path": "sidebar.html"
   },
   "content_scripts": [
     {

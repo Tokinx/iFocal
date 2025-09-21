@@ -54,6 +54,7 @@ function startStream(task) {
       resultArea.textContent += `\n[错误] ${m.error}`;
     }
   });
+  try { port.onDisconnect.addListener(() => { try { const err = chrome.runtime.lastError; if (err) { resultArea.textContent += `\n[错误] ${err.message}`; } } catch {} }); } catch {}
   port.postMessage(msg);
 }
 
