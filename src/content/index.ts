@@ -368,6 +368,7 @@ function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair
   modelLabel.textContent = pair ? `${pair.model} (${pair.channel})` : 'No model';
 
   const langSelect = document.createElement('select');
+  langSelect.className = 'h-9 px-2 text-sm rounded-md border border-input bg-background';
   ['zh-CN', 'en', 'ja', 'ko', 'fr', 'es', 'de'].forEach((code) => {
     const option = document.createElement('option');
     option.value = code;
@@ -381,6 +382,7 @@ function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair
 
   const right = document.createElement('div');
   const modelSelect = document.createElement('select');
+  modelSelect.className = 'h-9 px-2 text-sm rounded-md border border-input bg-background';
   const pairs: ChannelPair[] = [];
   const channels = Array.isArray(cfg.channels) ? cfg.channels : [];
   channels.forEach((ch) => (ch.models || []).forEach((m) => pairs.push({ channel: ch.name, model: m })));
@@ -393,6 +395,15 @@ function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair
   });
 
   right.appendChild(modelSelect);
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = '×';
+  closeBtn.title = 'Close';
+  closeBtn.className = 'h-6 w-6 rounded-md border border-input bg-background hover:bg-accent text-foreground';
+  closeBtn.addEventListener('click', () => {
+    try { if (overlay._port) { overlay._port.disconnect(); overlay._port = null; } } catch {}
+    try { overlay.root.remove(); } catch {}
+  });
+  right.appendChild(closeBtn);
 
   header.appendChild(left);
   header.appendChild(right);
@@ -495,62 +506,5 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 
 
-
-
-function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair: ChannelPair, lang: string, text: string) {
-  const header = document.createElement('div');
-  header.style.cursor = 'move';
-  header.style.display = 'flex';
-  header.style.alignItems = 'center';
-  header.style.justifyContent = 'space-between';
-  header.style.marginBottom = '8px';
-  overlay.root.insertBefore(header, overlay.root.firstChild);
-
-  const channels = Array.isArray(cfg.channels) ? cfg.channels : [];
-  const modelPairs = channels.flatMap((ch) => (ch.models || []).map((m) => ({ value: ch.name + "|" + m, label: m + " (" + ch.name + ")" })));
-  const languages = ['zh-CN','en','ja','ko','fr','es','de'];
-
-  const app = createApp({
-    setup() {
-      const selectedModel = ref<string>(pair && (pair.channel && pair.model) ? (pair.channel + "|" + pair.model) : (modelPairs[0]?.value || ""));
-      const selectedLang = ref<string>(lang || 'zh-CN');
-      function applyChanges(){ const np = parsePair(selectedModel.value); if (np) startStreamForOverlay(overlay,'translate',text,np,selectedLang.value); }
-      return { selectedModel, selectedLang, modelPairs, languages, applyChanges };
-    },
-    template: 
-      <div class="flex w-full items-center justify-between gap-2">
-        <div class="flex items-center gap-2">
-          <Select v-model="selectedModel" class="w-48" @update:modelValue="applyChanges">
-            <SelectTrigger><SelectValue placeholder="Model" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem v-for="m in modelPairs" :key="m.value" :value="m.value">{{ m.label }}</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select v-model="selectedLang" class="w-32" @update:modelValue="applyChanges">
-            <SelectTrigger><SelectValue placeholder="Lang" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem v-for="code in languages" :key="code" :value="code">{{ code }}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <Button size="icon" variant="outline" @click=".closest('.floating-copilot-overlay')?.remove()">×</Button>
-      </div>
-    
-  });
-  app.component('Select', Select);
-  app.component('SelectTrigger', SelectTrigger);
-  app.component('SelectContent', SelectContent);
-  app.component('SelectValue', SelectValue);
-  app.component('SelectItem', SelectItem);
-  app.component('Button', Button);
-  app.mount(header);
-
-  let dragging=false, sx=0, sy=0, sl=0, st=0;
-  const mm=(e: MouseEvent)=>{ if(!dragging) return; overlay.root.style.left=(sl+(e.clientX-sx))+'px'; overlay.root.style.top=(st+(e.clientY-sy))+'px'; };
-  const mu=()=>{ dragging=false; document.removeEventListener('mousemove',mm); document.removeEventListener('mouseup',mu); };
-  header.addEventListener('mousedown',(e)=>{ dragging=true; sx=(e as MouseEvent).clientX; sy=(e as MouseEvent).clientY; sl=parseInt(overlay.root.style.left)||0; st=parseInt(overlay.root.style.top)||0; document.addEventListener('mousemove',mm); document.addEventListener('mouseup',mu); });
-  const outside=(e: MouseEvent)=>{ if (!overlay.root.contains(e.target as Node)) { if (overlay._port) { try{overlay._port.disconnect();}catch{} overlay._port=null; overlay.root.remove(); document.removeEventListener('mousedown',outside,true); } };
-  setTimeout(()=>document.addEventListener('mousedown',outside,true),0);
-}
 
 

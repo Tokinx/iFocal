@@ -1,6 +1,6 @@
-﻿// options/options.js锛圲TF-8锛?
+// options/options.js（UTF-8）
 
-// DOM 鍏冪礌
+// DOM 元素
 const translateTargetLangInput = document.getElementById('translateTargetLang');
 const displayModeSelect = document.getElementById('displayMode');
 const saveButton = document.getElementById('save');
@@ -22,14 +22,14 @@ const translateModelSelect = document.getElementById('translateModelSelect');
 const saveGlobalBtn = document.getElementById('saveGlobalBtn');
 const globalStatusEl = document.getElementById('globalStatus');
 
-// 鏁版嵁褰㈡€佽鏄?
+// 数据形态说明
 // channels: Array<{ name, type, apiUrl, apiKey, models: string[] }>
 // defaultModel: { channel, model }
 // translateModel: { channel, model }
 
 function splitModels(input) {
   return (input || '')
-    .split(/\r?\n|,/) // 鏀寔鎸夎鎴栭€楀彿鍒嗛殧
+    .split(/\r?\n|,/) // 支持按行或逗号分隔
     .map(s => s.trim())
     .filter(Boolean);
 }
@@ -52,7 +52,7 @@ function withDefaultApiUrl(type, url) {
   return '';
 }
 
-function channelIcon(type){ if(type==='openai') return '馃煢'; if(type==='gemini') return '馃煪'; return '馃煩'; }
+function channelIcon(type){ if(type==='openai') return '🟦'; if(type==='gemini') return '🟪'; return '🟩'; }
 
 function renderChannels(channels) {
   if (!channelsListEl) return;
@@ -90,32 +90,32 @@ function renderChannels(channels) {
     panel.style.display = 'none';
     panel.innerHTML = `
       <div class="form-group">
-        <label class="label">绫诲瀷</label>
+        <label class="label">类型</label>
         <select class="select" data-field="type">
           <option value="openai">OpenAI</option>
           <option value="gemini">Google Gemini</option>
-          <option value="openai-compatible">OpenAI 鍏煎</option>
+          <option value="openai-compatible">OpenAI 兼容</option>
         </select>
       </div>
       <div class="form-group">
-        <label class="label">鍚嶇О</label>
-        <input class="input" data-field="name" placeholder="濡?my-openai" />
+        <label class="label">名称</label>
+        <input class="input" data-field="name" placeholder="如 my-openai" />
       </div>
       <div class="form-group">
         <label class="label">API URL</label>
-        <input class="input" data-field="apiUrl" placeholder="榛樿鍦板潃鍙暀绌? />
+        <input class="input" data-field="apiUrl" placeholder="默认地址可留空" />
       </div>
       <div class="form-group">
         <label class="label">API KEY</label>
-        <input class="input" data-field="apiKey" placeholder="鐣欑┖琛ㄧず涓嶄慨鏀? />
+        <input class="input" data-field="apiKey" placeholder="留空表示不修改" />
       </div>
       <div class="form-group">
-        <label class="label">Models锛堟瘡琛屼竴涓級</label>
+        <label class="label">Models（每行一个）</label>
         <textarea class="textarea" data-field="models" style="height:100px;"></textarea>
       </div>
       <div class="form-actions">
-        <button type="button" class="btn btn-primary" data-save>淇濆瓨</button>
-        <button type="button" class="btn btn-ghost" data-cancel>鍙栨秷</button>
+        <button type="button" class="btn btn-primary" data-save>保存</button>
+        <button type="button" class="btn btn-ghost" data-cancel>取消</button>
         <span class="text-sm muted" data-status></span>
       </div>
     `;
@@ -147,16 +147,16 @@ function renderChannels(channels) {
       const apiKeyMaybe = apiKeyEl ? (apiKeyEl.value || '').trim() : '';
       const models = splitModels(modelsEl ? modelsEl.value : '');
 
-      if (!name) { statusEl.textContent = '鍚嶇О涓嶈兘涓虹┖'; return; }
-      if (!models.length) { statusEl.textContent = '璇疯嚦灏戝～鍐欎竴涓ā鍨?; return; }
-      if (type === 'openai-compatible' && !apiUrl) { statusEl.textContent = '鑷畾涔夊吋瀹规笭閬撻渶瑕佸～鍐?API URL'; return; }
+      if (!name) { statusEl.textContent = '名称不能为空'; return; }
+      if (!models.length) { statusEl.textContent = '请至少填写一个模型'; return; }
+      if (type === 'openai-compatible' && !apiUrl) { statusEl.textContent = '自定义兼容渠道需要填写 API URL'; return; }
 
       chrome.storage.sync.get(['channels', 'defaultModel', 'translateModel', 'activeModel'], (items) => {
         const list = Array.isArray(items.channels) ? items.channels : [];
-        if (!original) { statusEl.textContent = '鍘熸笭閬撲笉瀛樺湪'; return; }
-        if (name !== original && list.some(c => c.name === name)) { statusEl.textContent = '鍚屽悕娓犻亾宸插瓨鍦?; return; }
+        if (!original) { statusEl.textContent = '原渠道不存在'; return; }
+        if (name !== original && list.some(c => c.name === name)) { statusEl.textContent = '同名渠道已存在'; return; }
         const idx = list.findIndex(c => c.name === original);
-        if (idx < 0) { statusEl.textContent = '鍘熸笭閬撲笉瀛樺湪'; return; }
+        if (idx < 0) { statusEl.textContent = '原渠道不存在'; return; }
         const updated = { ...list[idx], type, name, apiUrl, models };
         if (apiKeyMaybe) updated.apiKey = apiKeyMaybe;
         const nextList = list.slice();
@@ -171,7 +171,7 @@ function renderChannels(channels) {
         });
 
         chrome.storage.sync.set(next, () => {
-          statusEl.textContent = '宸蹭繚瀛?;
+          statusEl.textContent = '已保存';
           if (apiKeyEl) apiKeyEl.value = '';
           setTimeout(() => {
             statusEl.textContent = '';
@@ -232,17 +232,17 @@ function renderChannels(channels) {
     const testBtn = document.createElement('button');
     testBtn.type = 'button';
     testBtn.className = 'btn btn-ghost';
-    testBtn.textContent = '娴嬭瘯';
+    testBtn.textContent = '测试';
 
     const editBtn = document.createElement('button');
     editBtn.type = 'button';
     editBtn.className = 'btn btn-ghost';
-    editBtn.textContent = '缂栬緫';
+    editBtn.textContent = '编辑';
 
     const delBtn = document.createElement('button');
     delBtn.type = 'button';
     delBtn.className = 'btn btn-ghost';
-    delBtn.textContent = '鍒犻櫎';
+    delBtn.textContent = '删除';
 
     actions.append(modelSelect, testBtn, editBtn, delBtn);
     header.append(toggle, actions);
@@ -253,9 +253,9 @@ function renderChannels(channels) {
     detail.setAttribute('data-body', ch.name);
     detail.style.display = 'none';
     detail.innerHTML = `
-        <div>绫诲瀷锛?{ch.type}</div>
-        <div>API URL锛?{ch.apiUrl || '-'}</div>
-        <div>Models锛?{(ch.models || []).join(', ') || '-'}</div>
+        <div>类型：${ch.type}</div>
+        <div>API URL：${ch.apiUrl || '-'}</div>
+        <div>Models：${(ch.models || []).join(', ') || '-'}</div>
     `;
     card.appendChild(detail);
 
@@ -307,8 +307,8 @@ function renderModelSelects(channels, defaultModel, translateModel) {
   channels.forEach(ch => (ch.models || []).forEach(m => pairs.push({ channel: ch.name, model: m })));
   const toOption = (p) => `<option value="${p.channel}|${p.model}">${p.model} (${p.channel})</option>`;
   const html = pairs.map(toOption).join('');
-  defaultModelSelect.innerHTML = `<option value="">锛堟湭璁剧疆锛?/option>` + html;
-  translateModelSelect.innerHTML = `<option value="">锛堟湭璁剧疆锛?/option>` + html;
+  defaultModelSelect.innerHTML = `<option value="">（未设置）</option>` + html;
+  translateModelSelect.innerHTML = `<option value="">（未设置）</option>` + html;
 
   defaultModelSelect.value = joinPair(defaultModel) || '';
   translateModelSelect.value = joinPair(translateModel) || '';
@@ -328,7 +328,7 @@ function loadAll() {
   });
 }
 
-// 娣诲姞娓犻亾
+// 添加渠道
 function addChannel() {
   const type = channelTypeEl.value;
   const name = (channelNameEl.value || '').trim();
@@ -336,16 +336,16 @@ function addChannel() {
   const apiKey = (apiKeyEl.value || '').trim();
   const models = splitModels(modelsEl.value);
 
-  if (!name) { channelStatusEl.textContent = '鍚嶇О涓嶈兘涓虹┖'; return; }
-  if (!models.length) { channelStatusEl.textContent = '鑷冲皯濉啓涓€涓ā鍨?; return; }
-  if (type === 'openai-compatible' && !apiUrl) { channelStatusEl.textContent = '鍏煎绫诲瀷闇€瑕佸～鍐?API URL'; return; }
+  if (!name) { channelStatusEl.textContent = '名称不能为空'; return; }
+  if (!models.length) { channelStatusEl.textContent = '至少填写一个模型'; return; }
+  if (type === 'openai-compatible' && !apiUrl) { channelStatusEl.textContent = '兼容类型需要填写 API URL'; return; }
 
   chrome.storage.sync.get(['channels'], (items) => {
     const list = Array.isArray(items.channels) ? items.channels : [];
-    if (list.some(c => c.name === name)) { channelStatusEl.textContent = '娓犻亾鍚嶇О宸插瓨鍦?; return; }
+    if (list.some(c => c.name === name)) { channelStatusEl.textContent = '渠道名称已存在'; return; }
     const next = [...list, { name, type, apiUrl, apiKey, models }];
     chrome.storage.sync.set({ channels: next }, () => {
-      channelStatusEl.textContent = '宸叉坊鍔?;
+      channelStatusEl.textContent = '已添加';
       setTimeout(() => channelStatusEl.textContent = '', 1200);
       channelNameEl.value = '';
       apiUrlEl.value = '';
@@ -356,30 +356,30 @@ function addChannel() {
   });
 }
 
-// 淇濆瓨榛樿/缈昏瘧妯″瀷
+// 保存默认/翻译模型
 function saveGlobal() {
   const defaultPair = parsePair(defaultModelSelect.value);
   const translatePair = parsePair(translateModelSelect.value);
   chrome.storage.sync.set({ defaultModel: defaultPair, translateModel: translatePair }, () => {
-    globalStatusEl.textContent = '鍏ㄥ眬璁剧疆宸蹭繚瀛?;
+    globalStatusEl.textContent = '全局设置已保存';
     setTimeout(() => globalStatusEl.textContent = '', 1200);
   });
 }
 
-// 淇濆瓨鍩虹璁剧疆
+// 保存基础设置
 function saveOptions() {
   const actionKey = (actionKeyInput && actionKeyInput.value || '').trim() || 'Alt';
   const translateTargetLang = (translateTargetLangInput.value || '').trim() || 'zh-CN';
   const displayMode = displayModeSelect.value || 'insert';
   const wrapperStyle = (wrapperStyleInput && wrapperStyleInput.value || '').trim();
   chrome.storage.sync.set({ actionKey, hoverKey: actionKey, selectKey: actionKey, translateTargetLang, displayMode, wrapperStyle }, () => {
-    statusEl.textContent = '璁剧疆宸蹭繚瀛?;
+    statusEl.textContent = '设置已保存';
     setTimeout(() => { statusEl.textContent = ''; }, 1500);
   });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  // 鍒濆鍖?Tabs
+  // 初始化 Tabs
   const tabs = document.querySelectorAll('.tab');
   const panels = {
     assistant: document.getElementById('panel-assistant'),
@@ -397,21 +397,21 @@ document.addEventListener('DOMContentLoaded', () => {
     panels[key]?.classList.add('active');
   }));
 
-  // 娣诲姞娓犻亾鍗＄墖鏀惰捣/灞曞紑
+  // 添加渠道卡片收起/展开
   const toggleAdd = document.getElementById('toggleAddCard');
   const collapseAdd = document.getElementById('collapseAddCard');
   const addCard = document.getElementById('addCard');
   if (toggleAdd) toggleAdd.addEventListener('click', () => { addCard.style.display = addCard.style.display === 'none' ? '' : 'none'; });
   if (collapseAdd) collapseAdd.addEventListener('click', () => { addCard.style.display = 'none'; });
 
-  // 鍏充簬锛氱増鏈?
+  // 关于：版本
   const about = document.getElementById('about-version');
   try {
     const mf = chrome.runtime.getManifest();
-    if (about && mf && mf.version) about.textContent = `鐗堟湰锛?{mf.version}`;
+    if (about && mf && mf.version) about.textContent = `版本：${mf.version}`;
   } catch {}
 
-  // 鍏朵綑鍒濆鍖?
+  // 其余初始化
   loadAll();
   loadAssistantModels();
 });
@@ -420,9 +420,9 @@ addChannelBtn.addEventListener('click', addChannel);
 saveGlobalBtn.addEventListener('click', saveGlobal);
 saveButton.addEventListener('click', saveOptions);
 
-// 缂栬緫娓犻亾閫昏緫
+// 编辑渠道逻辑
 
-// Prompt 妯℃澘缂栬緫
+// Prompt 模板编辑
 const tplTranslateEl = document.getElementById('tplTranslate');
 const tplSummarizeEl = document.getElementById('tplSummarize');
 const tplRewriteEl = document.getElementById('tplRewrite');
@@ -432,10 +432,10 @@ const resetTemplatesBtn = document.getElementById('resetTemplatesBtn');
 const tplStatusEl = document.getElementById('tplStatus');
 
 const DEFAULT_TEMPLATES = {
-  translate: '璇峰皢浠ヤ笅鍐呭楂樿川閲忕炕璇戜负{{targetLang}}锛屽彧杩斿洖璇戞枃锛屼笉瑕佹坊鍔犲浣欒鏄庯細\n\n{{text}}',
-  summarize: '璇风敤{{targetLang}}瀵逛互涓嬪唴瀹硅繘琛岀畝娲佸噯纭殑瑕佺偣鎬荤粨锛屽彧杩斿洖鎬荤粨锛屼笉瑕佹坊鍔犲浣欒鏄庯細\n\n{{text}}',
-  rewrite: '璇风敤{{targetLang}}鏀瑰啓浠ヤ笅鍐呭锛屼娇鍏惰〃杈炬竻鏅板噯纭笖淇濇寔鍘熸剰锛歕n\n{{text}}',
-  polish: '璇风敤{{targetLang}}娑﹁壊浠ヤ笅鍐呭锛屼娇鍏舵洿鍔犺嚜鐒舵祦鐣呭苟鎻愬崌鍙鎬э細\n\n{{text}}'
+  translate: '请将以下内容高质量翻译为{{targetLang}}，只返回译文，不要添加多余说明：\n\n{{text}}',
+  summarize: '请用{{targetLang}}对以下内容进行简洁准确的要点总结，只返回总结，不要添加多余说明：\n\n{{text}}',
+  rewrite: '请用{{targetLang}}改写以下内容，使其表达清晰准确且保持原意：\n\n{{text}}',
+  polish: '请用{{targetLang}}润色以下内容，使其更加自然流畅并提升可读性：\n\n{{text}}'
 };
 
 function loadTemplates() {
@@ -457,7 +457,7 @@ function saveTemplates() {
   };
   chrome.storage.sync.set({ promptTemplates }, () => {
     if (tplStatusEl) {
-      tplStatusEl.textContent = '妯℃澘宸蹭繚瀛?;
+      tplStatusEl.textContent = '模板已保存';
       setTimeout(() => tplStatusEl.textContent = '', 1500);
     }
   });
@@ -475,24 +475,24 @@ if (saveTemplatesBtn) saveTemplatesBtn.addEventListener('click', saveTemplates);
 if (resetTemplatesBtn) resetTemplatesBtn.addEventListener('click', resetTemplates);
 document.addEventListener('DOMContentLoaded', loadTemplates);
 
-// 娴嬭瘯娓犻亾鏈夋晥鎬?
+// 测试渠道有效性
 function testChannel(name) {
   if (!name) return;
-  channelStatusEl.textContent = `姝ｅ湪娴嬭瘯: ${name} 鈥;
+  channelStatusEl.textContent = `正在测试: ${name} …`;
   const sel = (typeof channelsListEl !== 'undefined' && channelsListEl) ? channelsListEl.querySelector(`select[data-test-model="${name}"]`) : null;
   const model = sel ? sel.value : undefined;
   chrome.runtime.sendMessage({ action: 'testChannel', channel: name, model }, (resp) => {
-    if (!resp) { channelStatusEl.textContent = '娴嬭瘯澶辫触锛氭棤鍝嶅簲'; return; }
+    if (!resp) { channelStatusEl.textContent = '测试失败：无响应'; return; }
     if (resp.ok) {
-      channelStatusEl.textContent = `娴嬭瘯鎴愬姛锛堣繑鍥炵墖娈碉級锛?{(resp.sample || '').slice(0, 60)}`;
+      channelStatusEl.textContent = `测试成功（返回片段）：${(resp.sample || '').slice(0, 60)}`;
     } else {
-      channelStatusEl.textContent = `娴嬭瘯澶辫触锛?{resp.error || '鏈煡閿欒'}`;
+      channelStatusEl.textContent = `测试失败：${resp.error || '未知错误'}`;
     }
     setTimeout(() => channelStatusEl.textContent = '', 3000);
   });
 }
 
-// 鍔╂墜椤碉細涓庡叏灞€鍔╂墜涓€鑷达紙娴佸紡杈撳嚭锛?
+// 助手页：与全局助手一致（流式输出）
 const assistantInput = document.getElementById('assistant-input');
 const assistantModel = document.getElementById('assistant-model');
 const assistantTask = document.getElementById('assistant-task');
@@ -529,9 +529,9 @@ function startAssistantStream() {
   assistantPort = port;
   port.onMessage.addListener((m) => {
     if (m.type === 'delta') assistantResult.textContent += m.text;
-    else if (m.type === 'error') assistantResult.textContent += `\n[閿欒] ${m.error}`;
+    else if (m.type === 'error') assistantResult.textContent += `\n[错误] ${m.error}`;
   });
-  try { port.onDisconnect.addListener(() => { try { const err = chrome.runtime.lastError; if (err) { assistantResult.textContent += `\n[閿欒] ${err.message}`; } } catch {} }); } catch {}
+  try { port.onDisconnect.addListener(() => { try { const err = chrome.runtime.lastError; if (err) { assistantResult.textContent += `\n[错误] ${err.message}`; } } catch {} }); } catch {}
   port.postMessage(msg);
 }
 
@@ -541,7 +541,7 @@ if (assistantModel) assistantModel.addEventListener('change', () => { if (assist
 if (assistantTask) assistantTask.addEventListener('change', () => { if (assistantInput && assistantInput.value.trim()) startAssistantStream(); });
 if (translateTargetLangInput) translateTargetLangInput.addEventListener('change', () => { if (assistantInput && assistantInput.value.trim()) startAssistantStream(); });
 
-// 鍏充簬锛氬鍏ュ鍑?
+// 关于：导入导出
 const exportBtn = document.getElementById('exportBtn');
 const importBtn = document.getElementById('importBtn');
 const importFile = document.getElementById('importFile');
@@ -568,7 +568,7 @@ function importSettingsFromFile(file) {
       STORAGE_KEYS.forEach(k => { if (k in data) toSet[k] = data[k]; });
       chrome.storage.sync.set(toSet, () => { loadAll(); loadAssistantModels(); });
     } catch (e) {
-      alert('瀵煎叆澶辫触锛欽SON 瑙ｆ瀽閿欒');
+      alert('导入失败：JSON 解析错误');
     }
   };
   reader.readAsText(file);
@@ -591,3 +591,4 @@ function loadAutoPaste() {
 }
 
 document.addEventListener('DOMContentLoaded', loadAutoPaste);
+

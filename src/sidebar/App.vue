@@ -1,10 +1,24 @@
 ﻿
 <template>
   <div class="flex h-screen w-full flex-col bg-background text-foreground">
-    <header class="flex items-center justify-between border-b px-4 py-3">
-      <div>
-        <h1 class="text-base font-semibold">FloatingCopilot</h1>
-        <p class="text-xs text-muted-foreground">AI copilot sidebar 路 Vue + shadcn-vue</p>
+    <header class="flex items-center justify-between gap-3 border-b px-4 py-3">
+      <div class="flex items-center gap-2">
+        <Select v-model="state.selectedModel" class="w-48">
+          <SelectTrigger>
+            <SelectValue placeholder="Model" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="model in models" :key="model" :value="model">{{ model }}</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select v-model="state.targetLang" class="w-36">
+          <SelectTrigger>
+            <SelectValue placeholder="Lang" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="lang in languages" :key="lang.value" :value="lang.value">{{ lang.label }}</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
       <Button class="bg-primary text-primary-foreground" @click="handleRefresh" :disabled="loading">
         Refresh Page Context
@@ -213,6 +227,8 @@ onMounted(async () => {
   }
 });
 </script>
+
+
 
 
 
