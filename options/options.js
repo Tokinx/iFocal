@@ -52,69 +52,255 @@ function withDefaultApiUrl(type, url) {
   return '';
 }
 
-function channelIcon(type){ if(type==='openai') return '🟦'; if(type==='gemini') return '🟪'; return '⬜'; }
+function channelIcon(type){ if(type==='openai') return '🟦'; if(type==='gemini') return '🟪'; return '🟩'; }
 
 function renderChannels(channels) {
   if (!channelsListEl) return;
   channelsListEl.innerHTML = '';
-  channels.forEach(ch => {
-    const card = document.createElement('div');
-    card.className = 'card p-3';
-    card.setAttribute('data-card-name', ch.name);
-    const selectHtml = `<select data-test-model="${ch.name}" class="select text-sm">${(ch.models||[]).map(m=>`<option value="${m}">${m}</option>`).join('')}</select>`;
-    card.innerHTML = `
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2 cursor-pointer" data-toggle="${ch.name}">
-          <span>${channelIcon(ch.type)}</span>
-          <span class="font-medium">${ch.name}</span>
-        </div>
-        <div class="flex items-center gap-2">
-          ${selectHtml}
-          <button data-test="${ch.name}" class="btn btn-ghost">测试</button>
-          <button data-edit="${ch.name}" class="btn btn-ghost">编辑</button>
-          <button data-del="${ch.name}" class="btn btn-ghost">删除</button>
-        </div>
+  const list = Array.isArray(channels) ? channels : [];
+
+  const closeOtherEditors = () => {
+    channelsListEl.querySelectorAll('[data-inline-editor]').forEach(panel => {
+      panel.style.display = 'none';
+      const statusEl = panel.querySelector('[data-status]');
+      if (statusEl) statusEl.textContent = '';
+      const apiKeyField = panel.querySelector('[data-field="apiKey"]');
+      if (apiKeyField) apiKeyField.value = '';
+    });
+  };
+
+  function fillEditor(panel, data) {
+    panel.dataset.original = data && data.name ? data.name : '';
+    const typeEl = panel.querySelector('[data-field="type"]');
+    const nameEl = panel.querySelector('[data-field="name"]');
+    const apiUrlEl = panel.querySelector('[data-field="apiUrl"]');
+    const apiKeyEl = panel.querySelector('[data-field="apiKey"]');
+    const modelsEl = panel.querySelector('[data-field="models"]');
+    if (typeEl) typeEl.value = (data && data.type) || 'openai';
+    if (nameEl) nameEl.value = (data && data.name) || '';
+    if (apiUrlEl) apiUrlEl.value = (data && data.apiUrl) || '';
+    if (apiKeyEl) apiKeyEl.value = '';
+    if (modelsEl) modelsEl.value = Array.isArray(data && data.models) ? data.models.join('\n') : '';
+  }
+
+  function buildInlineEditor(card, data, detail) {
+    const panel = document.createElement('div');
+    panel.className = 'space-y-3';
+    panel.dataset.inlineEditor = '1';
+    panel.style.display = 'none';
+    panel.innerHTML = `
+      <div class="form-group">
+        <label class="label">类型</label>
+        <select class="select" data-field="type">
+          <option value="openai">OpenAI</option>
+          <option value="gemini">Google Gemini</option>
+          <option value="openai-compatible">OpenAI 兼容</option>
+        </select>
       </div>
-      <div class="mt-2 text-sm muted" data-body="${ch.name}" style="display:none;">
-        <div>类型：${ch.type}</div>
-        <div>API URL：${ch.apiUrl || '-'}</div>
-        <div>Models：${(ch.models||[]).join(', ')}</div>
+      <div class="form-group">
+        <label class="label">名称</label>
+        <input class="input" data-field="name" placeholder="如 my-openai" />
+      </div>
+      <div class="form-group">
+        <label class="label">API URL</label>
+        <input class="input" data-field="apiUrl" placeholder="默认地址可留空" />
+      </div>
+      <div class="form-group">
+        <label class="label">API KEY</label>
+        <input class="input" data-field="apiKey" placeholder="留空表示不修改" />
+      </div>
+      <div class="form-group">
+        <label class="label">Models（每行一个）</label>
+        <textarea class="textarea" data-field="models" style="height:100px;"></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-primary" data-save>保存</button>
+        <button type="button" class="btn btn-ghost" data-cancel>取消</button>
+        <span class="text-sm muted" data-status></span>
       </div>
     `;
-    channelsListEl.appendChild(card);
-  });
+    fillEditor(panel, data);
 
-  channelsListEl.querySelectorAll('[data-toggle]').forEach(el => {
-    el.addEventListener('click', () => {
-      const name = el.getAttribute('data-toggle');
-      const body = channelsListEl.querySelector(`[data-body="${name}"]`);
-      if (body) body.style.display = body.style.display === 'none' ? '' : 'none';
-    });
-  });
+    panel._applyData = fresh => fillEditor(panel, fresh || {});
+    panel._clearStatus = () => {
+      const status = panel.querySelector('[data-status]');
+      if (status) status.textContent = '';
+      const apiKeyField = panel.querySelector('[data-field="apiKey"]');
+      if (apiKeyField) apiKeyField.value = '';
+    };
 
-  channelsListEl.querySelectorAll('button[data-del]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const name = btn.getAttribute('data-del');
+    const statusEl = panel.querySelector('[data-status]');
+    const field = key => panel.querySelector(`[data-field="${key}"]`);
+
+    panel.querySelector('[data-save]')?.addEventListener('click', () => {
+      if (!statusEl) return;
+      statusEl.textContent = '';
+      const original = (panel.dataset.original || '').trim();
+      const typeEl = field('type');
+      const nameEl = field('name');
+      const apiUrlEl = field('apiUrl');
+      const apiKeyEl = field('apiKey');
+      const modelsEl = field('models');
+      const type = typeEl ? typeEl.value : 'openai';
+      const name = nameEl ? (nameEl.value || '').trim() : '';
+      const apiUrl = withDefaultApiUrl(type, apiUrlEl ? apiUrlEl.value : '');
+      const apiKeyMaybe = apiKeyEl ? (apiKeyEl.value || '').trim() : '';
+      const models = splitModels(modelsEl ? modelsEl.value : '');
+
+      if (!name) { statusEl.textContent = '名称不能为空'; return; }
+      if (!models.length) { statusEl.textContent = '请至少填写一个模型'; return; }
+      if (type === 'openai-compatible' && !apiUrl) { statusEl.textContent = '自定义兼容渠道需要填写 API URL'; return; }
+
       chrome.storage.sync.get(['channels', 'defaultModel', 'translateModel', 'activeModel'], (items) => {
         const list = Array.isArray(items.channels) ? items.channels : [];
-        const filtered = list.filter(c => c.name !== name);
+        if (!original) { statusEl.textContent = '原渠道不存在'; return; }
+        if (name !== original && list.some(c => c.name === name)) { statusEl.textContent = '同名渠道已存在'; return; }
+        const idx = list.findIndex(c => c.name === original);
+        if (idx < 0) { statusEl.textContent = '原渠道不存在'; return; }
+        const updated = { ...list[idx], type, name, apiUrl, models };
+        if (apiKeyMaybe) updated.apiKey = apiKeyMaybe;
+        const nextList = list.slice();
+        nextList[idx] = updated;
+
+        const next = { channels: nextList };
+        ['defaultModel', 'translateModel', 'activeModel'].forEach(key => {
+          const pair = items[key];
+          if (pair && pair.channel === original) {
+            next[key] = { channel: name, model: pair.model };
+          }
+        });
+
+        chrome.storage.sync.set(next, () => {
+          statusEl.textContent = '已保存';
+          if (apiKeyEl) apiKeyEl.value = '';
+          setTimeout(() => {
+            statusEl.textContent = '';
+            panel.style.display = 'none';
+            if (detail && card.dataset.detailOpen === '1') detail.style.display = '';
+            loadAll();
+          }, 800);
+        });
+      });
+    });
+
+    panel.querySelector('[data-cancel]')?.addEventListener('click', () => {
+      const original = panel.dataset.original || '';
+      chrome.storage.sync.get(['channels'], (items) => {
+        const list = Array.isArray(items.channels) ? items.channels : [];
+        const latest = list.find(c => c.name === original) || data;
+        fillEditor(panel, latest || {});
+        panel._clearStatus();
+        panel.style.display = 'none';
+        if (detail) {
+          if (card.dataset.detailOpen === '1') detail.style.display = '';
+          else detail.style.display = 'none';
+        }
+      });
+    });
+
+    return panel;
+  }
+
+  list.forEach(ch => {
+    const card = document.createElement('div');
+    card.className = 'card p-3 space-y-3';
+    card.setAttribute('data-card-name', ch.name);
+    card.dataset.originalName = ch.name;
+    card.dataset.detailOpen = '0';
+
+    const header = document.createElement('div');
+    header.className = 'flex items-center justify-between flex-wrap gap-2';
+
+    const toggle = document.createElement('div');
+    toggle.className = 'flex items-center gap-2 cursor-pointer';
+    toggle.setAttribute('data-toggle', ch.name);
+    toggle.innerHTML = `<span>${channelIcon(ch.type)}</span><span class="font-medium">${ch.name}</span>`;
+
+    const actions = document.createElement('div');
+    actions.className = 'flex items-center gap-2 flex-wrap';
+
+    const modelSelect = document.createElement('select');
+    modelSelect.className = 'select text-sm';
+    modelSelect.setAttribute('data-test-model', ch.name);
+    (ch.models || []).forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = m;
+      modelSelect.appendChild(opt);
+    });
+
+    const testBtn = document.createElement('button');
+    testBtn.type = 'button';
+    testBtn.className = 'btn btn-ghost';
+    testBtn.textContent = '测试';
+
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'btn btn-ghost';
+    editBtn.textContent = '编辑';
+
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'btn btn-ghost';
+    delBtn.textContent = '删除';
+
+    actions.append(modelSelect, testBtn, editBtn, delBtn);
+    header.append(toggle, actions);
+    card.appendChild(header);
+
+    const detail = document.createElement('div');
+    detail.className = 'mt-2 text-sm muted space-y-1';
+    detail.setAttribute('data-body', ch.name);
+    detail.style.display = 'none';
+    detail.innerHTML = `
+        <div>类型：${ch.type}</div>
+        <div>API URL：${ch.apiUrl || '-'}</div>
+        <div>Models：${(ch.models || []).join(', ') || '-'}</div>
+    `;
+    card.appendChild(detail);
+
+    const editor = buildInlineEditor(card, ch, detail);
+    card.appendChild(editor);
+
+    toggle.addEventListener('click', () => {
+      const open = detail.style.display === 'none';
+      detail.style.display = open ? '' : 'none';
+      card.dataset.detailOpen = open ? '1' : '0';
+    });
+
+    testBtn.addEventListener('click', () => testChannel(ch.name));
+
+    delBtn.addEventListener('click', () => {
+      const target = card.dataset.originalName || ch.name;
+      chrome.storage.sync.get(['channels', 'defaultModel', 'translateModel', 'activeModel'], (items) => {
+        const list = Array.isArray(items.channels) ? items.channels : [];
+        const filtered = list.filter(c => c.name !== target);
         const next = { channels: filtered };
-        if (items.defaultModel && items.defaultModel.channel === name) next.defaultModel = null;
-        if (items.translateModel && items.translateModel.channel === name) next.translateModel = null;
-        if (items.activeModel && items.activeModel.channel === name) next.activeModel = null;
+        if (items.defaultModel && items.defaultModel.channel === target) next.defaultModel = null;
+        if (items.translateModel && items.translateModel.channel === target) next.translateModel = null;
+        if (items.activeModel && items.activeModel.channel === target) next.activeModel = null;
         chrome.storage.sync.set(next, () => loadAll());
       });
     });
-  });
 
-  channelsListEl.querySelectorAll('button[data-edit]').forEach(btn => {
-    btn.addEventListener('click', () => startEdit(btn.getAttribute('data-edit')));
-  });
+    editBtn.addEventListener('click', () => {
+      closeOtherEditors();
+      chrome.storage.sync.get(['channels'], (items) => {
+        const list = Array.isArray(items.channels) ? items.channels : [];
+        const latest = list.find(c => c.name === ch.name) || ch;
+        const wasOpen = detail.style.display !== 'none';
+        card.dataset.detailOpen = wasOpen ? '1' : '0';
+        detail.style.display = 'none';
+        editor._applyData(latest);
+        editor._clearStatus();
+        editor.style.display = '';
+      });
+    });
 
-  channelsListEl.querySelectorAll('button[data-test]').forEach(btn => {
-    btn.addEventListener('click', () => testChannel(btn.getAttribute('data-test')));
+    channelsListEl.appendChild(card);
   });
 }
+
 
 function renderModelSelects(channels, defaultModel, translateModel) {
   const pairs = [];
@@ -235,76 +421,6 @@ saveGlobalBtn.addEventListener('click', saveGlobal);
 saveButton.addEventListener('click', saveOptions);
 
 // 编辑渠道逻辑
-const editContainer = document.getElementById('editContainer');
-const editOriginalNameEl = document.getElementById('editOriginalName');
-const editChannelTypeEl = document.getElementById('editChannelType');
-const editChannelNameEl = document.getElementById('editChannelName');
-const editApiUrlEl = document.getElementById('editApiUrl');
-const editApiKeyEl = document.getElementById('editApiKey');
-const editModelsEl = document.getElementById('editModels');
-const saveEditBtn = document.getElementById('saveEditBtn');
-const cancelEditBtn = document.getElementById('cancelEditBtn');
-const editStatusEl = document.getElementById('editStatus');
-
-function startEdit(name) {
-  chrome.storage.sync.get(['channels'], (items) => {
-    const list = Array.isArray(items.channels) ? items.channels : [];
-    const ch = list.find(x => x.name === name);
-    if (!ch) return;
-    editOriginalNameEl.value = ch.name;
-    editChannelTypeEl.value = ch.type || 'openai';
-    editChannelNameEl.value = ch.name;
-    editApiUrlEl.value = ch.apiUrl || '';
-    editModelsEl.value = (ch.models || []).join('\n');
-    editApiKeyEl.value = '';
-    editContainer.style.display = '';
-  });
-}
-
-function saveEdit() {
-  const original = (editOriginalNameEl.value || '').trim();
-  const type = editChannelTypeEl.value;
-  const name = (editChannelNameEl.value || '').trim();
-  const apiUrl = withDefaultApiUrl(type, editApiUrlEl.value);
-  const apiKeyMaybe = (editApiKeyEl.value || '').trim();
-  const models = splitModels(editModelsEl.value);
-
-  if (!name) { editStatusEl.textContent = '名称不能为空'; return; }
-  if (!models.length) { editStatusEl.textContent = '至少填写一个模型'; return; }
-  if (type === 'openai-compatible' && !apiUrl) { editStatusEl.textContent = '兼容类型需要填写 API URL'; return; }
-
-  chrome.storage.sync.get(['channels', 'defaultModel', 'translateModel', 'activeModel'], (items) => {
-    const list = Array.isArray(items.channels) ? items.channels : [];
-    if (name !== original && list.some(c => c.name === name)) { editStatusEl.textContent = '渠道名称已存在'; return; }
-    const idx = list.findIndex(c => c.name === original);
-    if (idx < 0) { editStatusEl.textContent = '原渠道不存在'; return; }
-    const updated = { ...list[idx], type, name, apiUrl, models };
-    if (apiKeyMaybe) updated.apiKey = apiKeyMaybe; // 不填则保留原值
-    const nextList = list.slice();
-    nextList[idx] = updated;
-
-    const next = { channels: nextList };
-    ['defaultModel', 'translateModel', 'activeModel'].forEach(k => {
-      const pair = items[k];
-      if (pair && pair.channel === original) {
-        next[k] = { channel: name, model: pair.model };
-      }
-    });
-
-    chrome.storage.sync.set(next, () => {
-      editStatusEl.textContent = '已保存';
-      setTimeout(() => { editStatusEl.textContent = ''; editContainer.style.display = 'none'; }, 800);
-      loadAll();
-    });
-  });
-}
-
-function cancelEdit() {
-  editContainer.style.display = 'none';
-}
-
-saveEditBtn.addEventListener('click', saveEdit);
-cancelEditBtn.addEventListener('click', cancelEdit);
 
 // Prompt 模板编辑
 const tplTranslateEl = document.getElementById('tplTranslate');

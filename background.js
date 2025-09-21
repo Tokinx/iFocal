@@ -84,7 +84,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         const channels = Array.isArray(cfg.channels) ? cfg.channels : [];
         const ch = channels.find(c => c.name === pair.channel);
         if (!ch) throw new Error('未找到渠道：' + pair.channel);
-        const prompt = makePrompt(request.task, request.text || '', cfg.translateTargetLang || '中文', cfg.promptTemplates || {});
+        const targetLang = request.targetLang || cfg.translateTargetLang || '中文';
+        const prompt = makePrompt(request.task, request.text || '', targetLang, cfg.promptTemplates || {});
         const resultText = await invokeModel(ch, pair.model, prompt);
         sendResponse({ ok: true, result: resultText, channel: pair.channel, model: pair.model });
       } catch (e) {
@@ -195,7 +196,8 @@ chrome.runtime.onConnect.addListener((port) => {
           const channels = Array.isArray(cfg.channels) ? cfg.channels : [];
           const ch = channels.find(c => c.name === pair.channel);
           if (!ch) throw new Error('未找到渠道：' + pair.channel);
-          const prompt = makePrompt(task, text || '', cfg.translateTargetLang || '中文', cfg.promptTemplates || {});
+          const targetLang = msg.targetLang || cfg.translateTargetLang || '中文';
+          const prompt = makePrompt(task, text || '', targetLang, cfg.promptTemplates || {});
           const onDelta = (delta, done) => {
             if (done) port.postMessage({ type: 'done' });
             else if (delta) port.postMessage({ type: 'delta', text: delta });

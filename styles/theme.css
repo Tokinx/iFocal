@@ -40,3 +40,7 @@ body{color:var(--fg)}
 .tab-active{color:#0f172a;border-color:#e5e7eb;border-bottom-color:#0f172a;background:#ffffff}
 .tabpanel{display:none}
 .tabpanel.active{display:block}
+
+.form-group{display:flex;flex-direction:column;gap:.4rem}
+.form-actions{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
+.form-actions .muted{margin-left:.5rem}

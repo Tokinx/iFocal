@@ -21,11 +21,15 @@
 
     <div class="tabpanel active" id="panel-assistant">
       <div class="glass rounded-xl p-4 shadow space-y-3">
-        <label class="label" for="assistant-input">输入文本</label>
-        <textarea id="assistant-input" class="textarea" placeholder="在此输入要处理的文本..."></textarea>
-        <div class="flex items-center gap-2">
+        <div class="form-group">
+          <label class="label" for="assistant-input">输入文本</label>
+          <textarea id="assistant-input" class="textarea" placeholder="在此输入需要处理的文本..."></textarea>
+        </div>
+        <div class="form-group">
           <label class="label" for="assistant-model">模型</label>
           <select id="assistant-model" class="select"></select>
+        </div>
+        <div class="form-group">
           <label class="label" for="assistant-task">任务</label>
           <select id="assistant-task" class="select">
             <option value="translate">翻译</option>
@@ -33,38 +37,48 @@
             <option value="rewrite">改写</option>
             <option value="polish">润色</option>
           </select>
+        </div>
+        <div class="form-actions">
           <button id="assistant-run" class="btn btn-primary">执行</button>
         </div>
         <div id="assistant-result" class="text-sm"></div>
-      </div>
+    </div>
     </div>
 
     <div class="tabpanel" id="panel-channels">
-      <div class="glass rounded-xl p-4 shadow mb-3">
-        <button id="toggleAddCard" class="btn btn-primary">添加渠道</button>
-        <div id="addCard" class="card p-3 mt-3" style="display:none;">
-          <label class="label" for="channelType">类型</label>
-          <select id="channelType" class="select">
-            <option value="openai">OpenAI</option>
-            <option value="gemini">Google Gemini</option>
-            <option value="openai-compatible">OpenAI 兼容</option>
-          </select>
-          <label class="label" for="channelName">名称</label>
-          <input id="channelName" class="input" placeholder="如 my-openai" />
-          <label class="label mt-2" for="apiUrl">API URL</label>
-          <input id="apiUrl" class="input" placeholder="兼容类型需填写" />
-          <label class="label mt-2" for="apiKey">API KEY</label>
-          <input id="apiKey" class="input" placeholder="填写 API Key" />
-          <div class="mt-2">
+      <div class="glass rounded-xl p-4 shadow mb-3 space-y-3">
+        <button id="toggleAddCard" class="btn btn-primary">新增通道</button>
+        <div id="addCard" class="card p-3 mt-3 space-y-3" style="display:none;">
+          <div class="form-group">
+            <label class="label" for="channelType">类型</label>
+            <select id="channelType" class="select">
+              <option value="openai">OpenAI</option>
+              <option value="gemini">Google Gemini</option>
+              <option value="openai-compatible">OpenAI 兼容</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="label" for="channelName">名称</label>
+            <input id="channelName" class="input" placeholder="如 my-openai" />
+          </div>
+          <div class="form-group">
+            <label class="label" for="apiUrl">API URL</label>
+            <input id="apiUrl" class="input" placeholder="默认地址可留空" />
+          </div>
+          <div class="form-group">
+            <label class="label" for="apiKey">API KEY</label>
+            <input id="apiKey" class="input" placeholder="填写 API Key" />
+          </div>
+          <div class="form-group">
             <label class="label" for="models">Models（每行一个）</label>
             <textarea id="models" class="textarea" style="height:100px;" placeholder="例如：
 'gpt-4o-mini'
 'gpt-4o'
 ..."></textarea>
           </div>
-          <div class="flex items-center gap-2 mt-2">
-            <button id="addChannelBtn" class="btn btn-primary">保存渠道</button>
-            <button id="collapseAddCard" class="btn btn-ghost">折叠</button>
+          <div class="form-actions">
+            <button id="addChannelBtn" class="btn btn-primary">添加通道</button>
+            <button id="collapseAddCard" class="btn btn-ghost">收起</button>
             <span id="channelStatus" class="text-sm muted"></span>
           </div>
         </div>
@@ -72,65 +86,54 @@
       <div class="glass rounded-xl p-4 shadow">
         <div id="channelsList" class="space-y-2"></div>
       </div>
-      <div id="editContainer" class="glass rounded-xl p-4 shadow mt-3" style="display:none;">
-        <h3 class="text-base font-semibold mb-2">编辑渠道</h3>
-        <input type="hidden" id="editOriginalName" />
-        <label class="label" for="editChannelType">类型</label>
-        <select id="editChannelType" class="select">
-          <option value="openai">OpenAI</option>
-          <option value="gemini">Google Gemini</option>
-          <option value="openai-compatible">OpenAI 兼容</option>
-        </select>
-        <label class="label" for="editChannelName">名称</label>
-        <input id="editChannelName" class="input" />
-        <label class="label mt-2" for="editApiUrl">API URL</label>
-        <input id="editApiUrl" class="input" />
-        <label class="label mt-2" for="editApiKey">API KEY</label>
-        <input id="editApiKey" class="input" placeholder="留空表示不变" />
-        <div class="mt-2">
-          <label class="label" for="editModels">Models（每行一个）</label>
-          <textarea id="editModels" class="textarea" style="height:100px;"></textarea>
-        </div>
-        <div class="flex items-center gap-2 mt-2">
-          <button id="saveEditBtn" class="btn btn-primary">保存修改</button>
-          <button id="cancelEditBtn" class="btn btn-ghost">取消</button>
-          <span id="editStatus" class="text-sm muted"></span>
-        </div>
-      </div>
+
     </div>
 
+
     <div class="tabpanel" id="panel-models">
-      <div class="glass rounded-xl p-4 shadow mb-3">
+      <div class="glass rounded-xl p-4 shadow mb-3 space-y-3">
         <h3 class="text-base font-semibold mb-2">默认模型设置</h3>
-        <div class="flex items-center gap-2">
+        <div class="form-group">
           <label class="label" for="defaultModelSelect">默认模型</label>
           <select id="defaultModelSelect" class="select"></select>
+        </div>
+        <div class="form-group">
           <label class="label" for="translateModelSelect">翻译模型</label>
           <select id="translateModelSelect" class="select"></select>
+        </div>
+        <div class="form-actions">
           <button id="saveGlobalBtn" class="btn btn-primary">保存</button>
           <span id="globalStatus" class="text-sm muted"></span>
         </div>
       </div>
-      <div class="glass rounded-xl p-4 shadow">
+      <div class="glass rounded-xl p-4 shadow space-y-3">
         <h3 class="text-base font-semibold mb-2">Prompt 模板</h3>
-        <p class="text-sm muted">可使用占位符：<code>{{'{{'}}targetLang{{'}}'}}</code> 与 <code>{{'{{'}}text{{'}}'}}</code></p>
-        <label class="label" for="tplTranslate">翻译模板</label>
-        <textarea id="tplTranslate" class="textarea" style="height:90px;" placeholder="请将以下内容高质量翻译为{{'{{'}}targetLang{{'}}'}}，只返回译文：
+        <p class="text-sm muted">可使用占位符<code>{{'{{'}}targetLang{{'}}'}}</code> 和 <code>{{'{{'}}text{{'}}'}}</code></p>
+        <div class="form-group">
+          <label class="label" for="tplTranslate">翻译模板</label>
+          <textarea id="tplTranslate" class="textarea" style="height:90px;" placeholder="请将以下内容准确翻译为{{'{{'}}targetLang{{'}}'}}，只返回译文：
 
 {{'{{'}}text{{'}}'}}"></textarea>
-        <label class="label mt-2" for="tplSummarize">总结模板</label>
-        <textarea id="tplSummarize" class="textarea" style="height:90px;" placeholder="请用{{'{{'}}targetLang{{'}}'}}总结以下内容的要点，只返回总结：
+        </div>
+        <div class="form-group">
+          <label class="label" for="tplSummarize">总结模板</label>
+          <textarea id="tplSummarize" class="textarea" style="height:90px;" placeholder="请用{{'{{'}}targetLang{{'}}'}}总结以下内容的要点，只返回总结：
 
 {{'{{'}}text{{'}}'}}"></textarea>
-        <label class="label mt-2" for="tplRewrite">改写模板</label>
-        <textarea id="tplRewrite" class="textarea" style="height:90px;" placeholder="请用{{'{{'}}targetLang{{'}}'}}改写以下内容，使其表达清晰准确且保持原意：
+        </div>
+        <div class="form-group">
+          <label class="label" for="tplRewrite">改写模板</label>
+          <textarea id="tplRewrite" class="textarea" style="height:90px;" placeholder="请用{{'{{'}}targetLang{{'}}'}}改写以下内容，确保表达清晰且不改变原意：
 
 {{'{{'}}text{{'}}'}}"></textarea>
-        <label class="label mt-2" for="tplPolish">润色模板</label>
-        <textarea id="tplPolish" class="textarea" style="height:90px;" placeholder="请用{{'{{'}}targetLang{{'}}'}}润色以下内容，使其更加自然流畅并提升可读性：
+        </div>
+        <div class="form-group">
+          <label class="label" for="tplPolish">润色模板</label>
+          <textarea id="tplPolish" class="textarea" style="height:90px;" placeholder="请用{{'{{'}}targetLang{{'}}'}}润色以下内容，使其更加自然流畅并提升可读性：
 
 {{'{{'}}text{{'}}'}}"></textarea>
-        <div class="flex items-center gap-2 mt-2">
+        </div>
+        <div class="form-actions">
           <button id="saveTemplatesBtn" class="btn btn-primary">保存模板</button>
           <button id="resetTemplatesBtn" class="btn btn-ghost">恢复默认</button>
           <span id="tplStatus" class="text-sm muted"></span>
@@ -139,20 +142,22 @@
     </div>
 
     <div class="tabpanel" id="panel-keys">
-      <div class="glass rounded-xl p-4 shadow">
-        <div class="flex items-center gap-2">
-          <label class="label" for="actionKey">页面翻译快捷键</label>
+      <div class="glass rounded-xl p-4 shadow space-y-3">
+        <div class="form-group">
+          <label class="label" for="actionKey">页面触发快捷键</label>
           <input id="actionKey" class="input" placeholder="如 Alt" />
+        </div>
+        <div class="form-actions">
           <button id="save" class="btn btn-primary">保存</button>
           <span id="status" class="text-sm muted"></span>
         </div>
-        <p class="text-sm muted mt-2">全局快捷键请在 <a href="chrome://extensions/shortcuts" target="_blank">chrome://extensions/shortcuts</a> 中配置。</p>
+        <p class="text-sm muted">全局快捷键需要前往 <a href="chrome://extensions/shortcuts" target="_blank">chrome://extensions/shortcuts</a> 配置。</p>
       </div>
     </div>
 
     <div class="tabpanel" id="panel-others">
-      <div class="glass rounded-xl p-4 shadow space-y-2">
-        <div class="flex items-center gap-2">
+      <div class="glass rounded-xl p-4 shadow space-y-3">
+        <div class="form-group">
           <label class="label" for="translateTargetLang">翻译目标语言</label>
           <select id="translateTargetLang" class="select">
             <option value="zh-CN">zh-CN</option>
@@ -163,14 +168,16 @@
             <option value="es">es</option>
             <option value="de">de</option>
           </select>
-          <label class="label" for="displayMode">结果显示方式</label>
+        </div>
+        <div class="form-group">
+          <label class="label" for="displayMode">结果显示形式</label>
           <select id="displayMode" class="select">
-            <option value="insert">段落下方插入</option>
-            <option value="overlay">悬浮卡片</option>
+            <option value="insert">插入原文下方</option>
+            <option value="overlay">悬浮窗口</option>
           </select>
         </div>
-        <div>
-          <label class="label" for="wrapperStyle">译文样式（floating-copilot-target-wrapper）</label>
+        <div class="form-group">
+          <label class="label" for="wrapperStyle">包裹样式（floating-copilot-target-wrapper）</label>
           <textarea id="wrapperStyle" class="textarea" style="height:110px;" placeholder="background-image: linear-gradient(to right, rgba(71,71,71,.5) 30%, rgba(255,255,255,0) 0%);
 background-position: bottom;
 background-size: 5px 1px;
@@ -189,7 +196,6 @@ font-family: inherit;"></textarea>
           <button id="importBtn" class="btn btn-ghost">导入设置</button>
           <input id="importFile" type="file" accept="application/json" style="display:none;" />
         </div>
-      </div>
     </div>
 
   </div>

@@ -155,11 +155,12 @@ function triggerSelectionTranslate() {
 }
 
 function startStreamForOverlay(overlay, task, text, pair, lang){
-  if (overlay._port) { try { overlay._port.disconnect(); } catch(e){} overlay._port=null; }
+  if (overlay._port) { try { overlay._port.disconnect(); } catch(e){} overlay._port = null; }
+  overlay.setText('');
   overlay.setLoading(true);
   const port = chrome.runtime.connect({ name:'ai-stream' });
   overlay._port = port;
-  let first=true;
+  let first = true;
   port.onMessage.addListener((m)=>{
     if (m.type==='delta') { if(first){ overlay.setLoading(false); first=false; } overlay.append(m.text); }
     else if (m.type==='done') { }
@@ -167,8 +168,10 @@ function startStreamForOverlay(overlay, task, text, pair, lang){
   });
   const msg = { type:'start', task, text };
   if (pair && pair.channel && pair.model) { msg.channel = pair.channel; msg.model = pair.model; }
+  if (lang) msg.targetLang = lang;
   port.postMessage(msg);
 }
+
 
 function attachOverlayHeader(overlay, cfg, pair, lang, text){
   const header = document.createElement('div'); header.style.cursor = 'move'; header.style.display='flex'; header.style.alignItems='center'; header.style.justifyContent='space-between'; header.style.marginBottom='8px';
