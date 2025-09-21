@@ -60,6 +60,11 @@ function startStream(task) {
 modelSelect.addEventListener('change', () => {
   const pair = parsePair(modelSelect.value);
   chrome.storage.sync.set({ activeModel: pair || null });
+  const text = mainInput.value.trim();
+  if (text) {
+    const task = (taskSelect && taskSelect.value) || 'translate';
+    startStream(task);
+  }
 });
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -72,3 +77,14 @@ runBtn.addEventListener('click', () => {
   startStream(task);
 });
 
+// 当目标语言在设置面板中更改时，如果当前有文本则重跑
+try {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'sync' && changes.translateTargetLang) {
+      if (mainInput && mainInput.value.trim()) {
+        const task = (taskSelect && taskSelect.value) || 'translate';
+        startStream(task);
+      }
+    }
+  });
+} catch {}

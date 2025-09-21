@@ -190,3 +190,4 @@ function parsePair(value){ if(!value) return null; const [channel,model]=String(
 
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && lastOverlay) { if (lastOverlay.root && lastOverlay.root.remove) lastOverlay.root.remove(); else if (lastOverlay.remove) lastOverlay.remove(); lastOverlay = null; } });
 
+}

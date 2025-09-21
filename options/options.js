@@ -15,7 +15,7 @@ const apiKeyEl = document.getElementById('apiKey');
 const modelsEl = document.getElementById('models');
 const addChannelBtn = document.getElementById('addChannelBtn');
 const channelStatusEl = document.getElementById('channelStatus');
-const channelsTbody = document.getElementById('channelsTbody');
+const channelsListEl = document.getElementById('channelsList');
 
 const defaultModelSelect = document.getElementById('defaultModelSelect');
 const translateModelSelect = document.getElementById('translateModelSelect');
@@ -52,28 +52,50 @@ function withDefaultApiUrl(type, url) {
   return '';
 }
 
+function channelIcon(type){ if(type==='openai') return '🟦'; if(type==='gemini') return '🟪'; return '⬜'; }
+
 function renderChannels(channels) {
-  channelsTbody.innerHTML = '';
+  if (!channelsListEl) return;
+  channelsListEl.innerHTML = '';
   channels.forEach(ch => {
-    const tr = document.createElement('tr');
-    const selectHtml = `<select data-test-model="${ch.name}">${(ch.models||[]).map(m=>`<option value="${m}">${m}</option>`).join('')}</select>`;
-    tr.innerHTML = `
-      <td style="padding:6px 4px;">${ch.name}</td>
-      <td style="padding:6px 4px;">${ch.type}</td>
-      <td style="padding:6px 4px;">${(ch.models || []).join(', ')}</td>
-      <td style="padding:6px 4px;">${selectHtml}</td>
-      <td style="padding:6px 4px;">
-        <button data-test="${ch.name}">测试</button>
-        <button data-edit="${ch.name}">编辑</button>
-        <button data-del="${ch.name}">删除</button>
-      </td>`;
-    channelsTbody.appendChild(tr);
+    const card = document.createElement('div');
+    card.className = 'card p-3';
+    card.setAttribute('data-card-name', ch.name);
+    const selectHtml = `<select data-test-model="${ch.name}" class="select text-sm">${(ch.models||[]).map(m=>`<option value="${m}">${m}</option>`).join('')}</select>`;
+    card.innerHTML = `
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2 cursor-pointer" data-toggle="${ch.name}">
+          <span>${channelIcon(ch.type)}</span>
+          <span class="font-medium">${ch.name}</span>
+        </div>
+        <div class="flex items-center gap-2">
+          ${selectHtml}
+          <button data-test="${ch.name}" class="btn btn-ghost">测试</button>
+          <button data-edit="${ch.name}" class="btn btn-ghost">编辑</button>
+          <button data-del="${ch.name}" class="btn btn-ghost">删除</button>
+        </div>
+      </div>
+      <div class="mt-2 text-sm muted" data-body="${ch.name}" style="display:none;">
+        <div>类型：${ch.type}</div>
+        <div>API URL：${ch.apiUrl || '-'}</div>
+        <div>Models：${(ch.models||[]).join(', ')}</div>
+      </div>
+    `;
+    channelsListEl.appendChild(card);
   });
 
-  channelsTbody.querySelectorAll('button[data-del]').forEach(btn => {
+  channelsListEl.querySelectorAll('[data-toggle]').forEach(el => {
+    el.addEventListener('click', () => {
+      const name = el.getAttribute('data-toggle');
+      const body = channelsListEl.querySelector(`[data-body="${name}"]`);
+      if (body) body.style.display = body.style.display === 'none' ? '' : 'none';
+    });
+  });
+
+  channelsListEl.querySelectorAll('button[data-del]').forEach(btn => {
     btn.addEventListener('click', () => {
       const name = btn.getAttribute('data-del');
-      chrome.storage.sync.get(['channels', 'defaultModel', 'translateModel'], (items) => {
+      chrome.storage.sync.get(['channels', 'defaultModel', 'translateModel', 'activeModel'], (items) => {
         const list = Array.isArray(items.channels) ? items.channels : [];
         const filtered = list.filter(c => c.name !== name);
         const next = { channels: filtered };
@@ -85,11 +107,11 @@ function renderChannels(channels) {
     });
   });
 
-  channelsTbody.querySelectorAll('button[data-edit]').forEach(btn => {
+  channelsListEl.querySelectorAll('button[data-edit]').forEach(btn => {
     btn.addEventListener('click', () => startEdit(btn.getAttribute('data-edit')));
   });
 
-  channelsTbody.querySelectorAll('button[data-test]').forEach(btn => {
+  channelsListEl.querySelectorAll('button[data-test]').forEach(btn => {
     btn.addEventListener('click', () => testChannel(btn.getAttribute('data-test')));
   });
 }
@@ -170,7 +192,44 @@ function saveOptions() {
   });
 }
 
-document.addEventListener('DOMContentLoaded', loadAll);
+document.addEventListener('DOMContentLoaded', () => {
+  // 初始化 Tabs
+  const tabs = document.querySelectorAll('.tab');
+  const panels = {
+    assistant: document.getElementById('panel-assistant'),
+    channels: document.getElementById('panel-channels'),
+    models: document.getElementById('panel-models'),
+    keys: document.getElementById('panel-keys'),
+    others: document.getElementById('panel-others'),
+    about: document.getElementById('panel-about')
+  };
+  tabs.forEach(btn => btn.addEventListener('click', () => {
+    tabs.forEach(b => b.classList.remove('tab-active'));
+    btn.classList.add('tab-active');
+    Object.values(panels).forEach(p => p.classList.remove('active'));
+    const key = btn.getAttribute('data-tab');
+    panels[key]?.classList.add('active');
+  }));
+
+  // 添加渠道卡片收起/展开
+  const toggleAdd = document.getElementById('toggleAddCard');
+  const collapseAdd = document.getElementById('collapseAddCard');
+  const addCard = document.getElementById('addCard');
+  if (toggleAdd) toggleAdd.addEventListener('click', () => { addCard.style.display = addCard.style.display === 'none' ? '' : 'none'; });
+  if (collapseAdd) collapseAdd.addEventListener('click', () => { addCard.style.display = 'none'; });
+
+  // 关于：版本
+  const about = document.getElementById('about-version');
+  try {
+    const mf = chrome.runtime.getManifest();
+    if (about && mf && mf.version) about.textContent = `版本：${mf.version}`;
+  } catch {}
+
+  // 其余初始化
+  loadAll();
+  loadAssistantModels();
+});
+
 addChannelBtn.addEventListener('click', addChannel);
 saveGlobalBtn.addEventListener('click', saveGlobal);
 saveButton.addEventListener('click', saveOptions);
@@ -304,7 +363,7 @@ document.addEventListener('DOMContentLoaded', loadTemplates);
 function testChannel(name) {
   if (!name) return;
   channelStatusEl.textContent = `正在测试: ${name} …`;
-  const sel = channelsTbody.querySelector(`select[data-test-model="${name}"]`);
+  const sel = (typeof channelsListEl !== 'undefined' && channelsListEl) ? channelsListEl.querySelector(`select[data-test-model="${name}"]`) : null;
   const model = sel ? sel.value : undefined;
   chrome.runtime.sendMessage({ action: 'testChannel', channel: name, model }, (resp) => {
     if (!resp) { channelStatusEl.textContent = '测试失败：无响应'; return; }
@@ -317,3 +376,87 @@ function testChannel(name) {
   });
 }
 
+// 助手页：与全局助手一致（流式输出）
+const assistantInput = document.getElementById('assistant-input');
+const assistantModel = document.getElementById('assistant-model');
+const assistantTask = document.getElementById('assistant-task');
+const assistantRun = document.getElementById('assistant-run');
+const assistantResult = document.getElementById('assistant-result');
+let assistantPort = null;
+
+function renderAssistantModels(channels, active, fallback) {
+  const pairs = [];
+  channels.forEach(ch => (ch.models || []).forEach(m => pairs.push({ channel: ch.name, model: m })));
+  assistantModel.innerHTML = pairs.map(p => `<option value="${p.channel}|${p.model}">${p.model} (${p.channel})</option>`).join('');
+  const prefer = joinPair(active) || joinPair(fallback);
+  if (prefer) assistantModel.value = prefer;
+}
+
+function loadAssistantModels() {
+  if (!assistantModel) return;
+  chrome.storage.sync.get(['channels', 'defaultModel', 'activeModel'], (items) => {
+    const channels = Array.isArray(items.channels) ? items.channels : [];
+    renderAssistantModels(channels, items.activeModel || null, items.defaultModel || null);
+  });
+}
+
+function startAssistantStream() {
+  if (!assistantInput) return;
+  const text = assistantInput.value.trim(); if (!text) return;
+  if (assistantPort) { try { assistantPort.disconnect(); } catch {} assistantPort = null; }
+  assistantResult.textContent = '';
+  const pair = parsePair(assistantModel.value);
+  const task = (assistantTask && assistantTask.value) || 'translate';
+  const msg = { type:'start', task, text };
+  if (pair) Object.assign(msg, { channel: pair.channel, model: pair.model });
+  const port = chrome.runtime.connect({ name: 'ai-stream' });
+  assistantPort = port;
+  port.onMessage.addListener((m) => {
+    if (m.type === 'delta') assistantResult.textContent += m.text;
+    else if (m.type === 'error') assistantResult.textContent += `\n[错误] ${m.error}`;
+  });
+  port.postMessage(msg);
+}
+
+if (assistantRun) assistantRun.addEventListener('click', startAssistantStream);
+document.addEventListener('DOMContentLoaded', loadAssistantModels);
+if (assistantModel) assistantModel.addEventListener('change', () => { if (assistantInput && assistantInput.value.trim()) startAssistantStream(); });
+if (assistantTask) assistantTask.addEventListener('change', () => { if (assistantInput && assistantInput.value.trim()) startAssistantStream(); });
+if (translateTargetLangInput) translateTargetLangInput.addEventListener('change', () => { if (assistantInput && assistantInput.value.trim()) startAssistantStream(); });
+
+// 关于：导入导出
+const exportBtn = document.getElementById('exportBtn');
+const importBtn = document.getElementById('importBtn');
+const importFile = document.getElementById('importFile');
+
+const STORAGE_KEYS = ['channels','defaultModel','translateModel','activeModel','actionKey','hoverKey','selectKey','translateTargetLang','displayMode','wrapperStyle','promptTemplates'];
+
+function exportSettings() {
+  chrome.storage.sync.get(STORAGE_KEYS, (items) => {
+    const payload = JSON.stringify(items, null, 2);
+    const blob = new Blob([payload], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'floatingcopilot-settings.json'; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+}
+
+function importSettingsFromFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(String(reader.result || '{}'));
+      const toSet = {};
+      STORAGE_KEYS.forEach(k => { if (k in data) toSet[k] = data[k]; });
+      chrome.storage.sync.set(toSet, () => { loadAll(); loadAssistantModels(); });
+    } catch (e) {
+      alert('导入失败：JSON 解析错误');
+    }
+  };
+  reader.readAsText(file);
+}
+
+if (exportBtn) exportBtn.addEventListener('click', exportSettings);
+if (importBtn) importBtn.addEventListener('click', () => importFile && importFile.click());
+if (importFile) importFile.addEventListener('change', () => { const f = importFile.files && importFile.files[0]; if (f) importSettingsFromFile(f); });
