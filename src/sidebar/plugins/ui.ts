@@ -36,6 +36,7 @@ import {
   DropdownMenuRadioItem
 } from '@/sidebar/components/ui/dropdown-menu';
 import { ScrollArea, ScrollBar } from '@/sidebar/components/ui/scroll-area';
+import { Dialog, DialogTrigger, DialogContent, DialogTitle, DialogDescription, DialogClose, DialogHeader, DialogFooter, DialogScrollContent } from '@/sidebar/components/ui/dialog';
 import {
   Command,
   CommandDialog,
@@ -100,5 +101,15 @@ export function setupUI(app: App) {
   app.component('CommandList', CommandList);
   app.component('CommandSeparator', CommandSeparator);
   app.component('CommandShortcut', CommandShortcut);
-}
 
+  // Dialog components
+  app.component('Dialog', Dialog);
+  app.component('DialogTrigger', DialogTrigger);
+  app.component('DialogContent', DialogContent);
+  app.component('DialogTitle', DialogTitle);
+  app.component('DialogDescription', DialogDescription);
+  app.component('DialogClose', DialogClose);
+  app.component('DialogHeader', DialogHeader);
+  app.component('DialogFooter', DialogFooter);
+  app.component('DialogScrollContent', DialogScrollContent);
+}

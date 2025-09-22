@@ -430,6 +430,9 @@ chrome.runtime.onConnect.addListener((port) => {
       const tLang = targetLang || cfg.translateTargetLang || 'zh-CN';
       const prompt = makePrompt(task, String(text || ''), tLang, cfg.promptTemplates || {});
       const safePost = (payload: any) => { if (disconnected) return; try { port.postMessage(payload); } catch {} };
+      // 提前告知前端本次实际使用的模型标识
+      safePost({ type: 'meta', channel: pair.channel, model: pair.model });
+
       const onDelta = (delta: string | null, done?: boolean) => {
         if (disconnected) return;
         if (done) safePost({ type: 'done' });
@@ -455,3 +458,4 @@ chrome.runtime.onConnect.addListener((port) => {
     }
   });
 });
+

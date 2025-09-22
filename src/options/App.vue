@@ -18,22 +18,25 @@ const translateModel = ref<ModelPair>(null);
 const activeModel = ref<ModelPair>(null);
 const autoPasteGlobalAssistant = ref<boolean>(false);
 const translateTargetLang = ref<string>('zh-CN');
+const sidebarHistoryLimit = ref<number>(10);
 const actionKey = ref<string>('Alt');
 const displayMode = ref<'insert' | 'overlay'>('insert');
 const wrapperStyle = ref<string>('');
 
 const defaultModelValue = ref('');
 const translateModelValue = ref('');
+// 关于页版本号：优先 chrome.runtime.getManifest()，回退到读取 manifest.json
+const version = ref('-');
 watch(defaultModel, (val) => { defaultModelValue.value = joinPair(val); }, { immediate: true });
 watch(translateModel, (val) => { translateModelValue.value = joinPair(val); }, { immediate: true });
 
 function joinPair(pair: ModelPair) { return pair && (pair as any).channel && (pair as any).model ? `${(pair as any).channel}|${(pair as any).model}` : ''; }
-function parsePair(value: string): ModelPair { if (!value) return null; const [channel, model] = value.split('|'); if (!channel || !model) return null; return { channel, model }; }
+function parsePair(value: string): ModelPair { if (!value || value === '__unset__') return null; const [channel, model] = value.split('|'); if (!channel || !model) return null; return { channel, model }; }
 
 async function loadAll() {
   await new Promise<void>((resolve) => {
     try {
-      chrome.storage.sync.get(['channels','defaultModel','translateModel','autoPasteGlobalAssistant','translateTargetLang','actionKey','hoverKey','selectKey','displayMode','wrapperStyle','promptTemplates','activeModel'], (items:any) => {
+      chrome.storage.sync.get(['channels','defaultModel','translateModel','autoPasteGlobalAssistant','translateTargetLang','actionKey','hoverKey','selectKey','displayMode','wrapperStyle','promptTemplates','activeModel','sidebarHistoryLimit'], (items:any) => {
         channels.value = Array.isArray(items.channels) ? items.channels : [];
         defaultModel.value = items.defaultModel || null;
         translateModel.value = items.translateModel || null;
@@ -43,6 +46,7 @@ async function loadAll() {
         actionKey.value = items.actionKey || items.hoverKey || items.selectKey || 'Alt';
         displayMode.value = items.displayMode || 'insert';
         wrapperStyle.value = items.wrapperStyle || '';
+        sidebarHistoryLimit.value = Number(items.sidebarHistoryLimit || 10) || 10;
         initTemplates(items.promptTemplates || {});
         initTestModels();
         resolve();
@@ -54,16 +58,16 @@ async function loadAll() {
 function saveModels() { const dm = parsePair(defaultModelValue.value); const tm = parsePair(translateModelValue.value); try { chrome.storage.sync.set({ defaultModel: dm, translateModel: tm }, () => toast.success('模型设置已保存')); } catch { toast.error('保存失败'); } }
 function saveBasics() { try { const k = (actionKey.value || 'Alt').trim() || 'Alt'; const lang = (translateTargetLang.value || 'zh-CN').trim() || 'zh-CN'; if (!k) { toast.error('快捷键不能为空'); return; } chrome.storage.sync.set({ actionKey: k, hoverKey: k, selectKey: k, translateTargetLang: lang, displayMode: displayMode.value || 'insert', wrapperStyle: (wrapperStyle.value || '').trim() }, () => toast.success('基础设置已保存')); } catch { toast.error('保存失败'); } }
 
-// 删除通道：二次确认 + 撤回
+// 删除渠道：二次确认 + 撤回
 function confirmRemoveChannel(ch: any) {
   const name = ch?.name || '';
-  toast.action(`确认删除通道 ${name} ?`, {
+  toast.action(`确认删除渠道 ${name} ?`, {
     label: '删除',
     type: 'error',
     onClick: () => {
       try {
         removeChannel(name, (snapshot) => {
-          toast.action(`已删除通道 ${name}`, {
+          toast.action(`已删除渠道 ${name}`, {
             label: '撤回',
             onClick: () => restoreChannelsSnapshot(snapshot)
           });
@@ -80,6 +84,8 @@ const assistantTask = ref<'translate'|'summarize'|'rewrite'|'polish'>('translate
 const assistantResult = ref('');
 let assistantPort: chrome.runtime.Port | null = null;
 watch(channels, () => { const prefer = joinPair(activeModel.value) || joinPair(defaultModel.value) || modelPairs.value[0]?.value || ''; if (prefer) assistantModelValue.value = prefer; }, { immediate: true, deep: true });
+// 保存侧边栏历史会话保存数量
+watch(sidebarHistoryLimit, (v) => { try { chrome.storage.sync.set({ sidebarHistoryLimit: Number(v || 10) || 10 }); } catch {} });
 function startAssistantStream() { const text = assistantDraft.value.trim(); if (!text) return; if (assistantPort) { try { assistantPort.disconnect(); } catch {} assistantPort = null; } assistantResult.value = ''; const pair = parsePair(assistantModelValue.value); const msg:any = { type: 'start', task: assistantTask.value, text }; if (pair) { msg.channel = pair.channel; msg.model = pair.model; } try { const port = chrome.runtime.connect({ name: 'ai-stream' }); assistantPort = port; port.onMessage.addListener((m:any) => { if (m?.type === 'delta') assistantResult.value += String(m.text || ''); else if (m?.type === 'error') assistantResult.value += `\n[错误] ${m.error}`; }); try { port.onDisconnect.addListener(() => { try { const err = chrome.runtime.lastError; if (err) assistantResult.value += `\n[错误] ${err.message}`; } catch {} }); } catch {} port.postMessage(msg); } catch {} }
 function onLangChange() { try { chrome.storage.sync.set({ translateTargetLang: translateTargetLang.value }); } catch {} if (assistantDraft.value.trim()) startAssistantStream(); }
 watch(assistantModelValue, (val) => { const pair = parsePair(val); try { chrome.storage.sync.set({ activeModel: pair || null }); } catch {} });
@@ -102,6 +108,20 @@ function handleTestChannel(name: string) { const model = testModel[name] || unde
 
 onMounted(loadAll);
 
+onMounted(async () => {
+  try {
+    const v = (chrome as any)?.runtime?.getManifest?.()?.version;
+    if (v) { version.value = v; return; }
+  } catch {}
+  try {
+    const url = (chrome as any)?.runtime?.getURL?.('manifest.json');
+    if (url) {
+      const res = await fetch(url);
+      if (res.ok) { const m = await res.json(); version.value = String(m?.version || '-'); }
+    }
+  } catch {}
+});
+
 // 统一从 shared/icons 获取图标
 </script>
 
@@ -114,7 +134,7 @@ onMounted(loadAll);
         <button
           v-for="item in [
             { id:'assistant', label:'助手' },
-            { id:'channels', label:'通道' },
+            { id:'channels', label:'渠道' },
             { id:'models', label:'模型' },
             { id:'keys', label:'快捷键' },
             { id:'others', label:'其他' },
@@ -175,6 +195,12 @@ onMounted(loadAll);
               </Select>
             </div>
           </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label class="mb-1 block">侧边栏历史会话保存数量</Label>
+              <Input type="number" v-model.number="sidebarHistoryLimit" min="1" max="100" placeholder="10" />
+            </div>
+          </div>
           <Textarea v-model="assistantDraft" class="min-h-28" placeholder="在此粘贴需要处理的文本..." />
           <div class="flex items-center gap-2">
             <Button class="bg-primary text-primary-foreground flex items-center gap-1" @click="startAssistantStream">
@@ -186,9 +212,9 @@ onMounted(loadAll);
         </div>
       </section>
 
-      <!-- 通道 -->
+      <!-- 渠道 -->
       <section v-else-if="nav==='channels'" class="space-y-4">
-        <header class="text-base font-semibold">管理通道</header>
+        <header class="text-base font-semibold">管理渠道</header>
         <div class="rounded-xl border bg-white p-4 space-y-3">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -220,12 +246,12 @@ onMounted(loadAll);
             <Textarea v-model="addForm.modelsText" class="min-h-28" placeholder="例如：&#10;gpt-4o-mini&#10;gpt-4o" />
           </div>
           <div class="flex gap-2">
-            <Button class="bg-primary text-primary-foreground" @click="handleAddChannel">添加通道</Button>
+            <Button class="bg-primary text-primary-foreground" @click="handleAddChannel">添加渠道</Button>
           </div>
         </div>
 
         <div class="rounded-xl border bg-white p-4">
-          <div v-if="!channels.length" class="text-sm text-muted-foreground">暂无通道，请先添加。</div>
+          <div v-if="!channels.length" class="text-sm text-muted-foreground">暂无渠道，请先添加。</div>
           <div v-else class="space-y-2">
             <div v-for="ch in channels" :key="ch.name" class="rounded-lg border p-3 space-y-3">
               <div class="flex items-center justify-between gap-2">
@@ -311,7 +337,7 @@ onMounted(loadAll);
               <Select v-model="defaultModelValue">
                 <SelectTrigger><SelectValue placeholder="未设置" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">（未设置）</SelectItem>
+                  <SelectItem value="__unset__">（未设置）</SelectItem>
                   <SelectItem v-for="p in modelPairs" :key="p.value" :value="p.value">
                     <span class="inline-flex items-center gap-2">
                       <Icon :icon="iconOfChannelType(parsePair(p.value)?.channel ? (channels.find(c=>c.name===parsePair(p.value)?.channel)?.type||'') : '')" width="14" />
@@ -326,7 +352,7 @@ onMounted(loadAll);
               <Select v-model="translateModelValue">
                 <SelectTrigger><SelectValue placeholder="未设置" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">（未设置）</SelectItem>
+                  <SelectItem value="__unset__">（未设置）</SelectItem>
                   <SelectItem v-for="p in modelPairs" :key="p.value" :value="p.value">
                     <span class="inline-flex items-center gap-2">
                       <Icon :icon="iconOfChannelType(parsePair(p.value)?.channel ? (channels.find(c=>c.name===parsePair(p.value)?.channel)?.type||'') : '')" width="14" />
@@ -445,7 +471,7 @@ onMounted(loadAll);
       <section v-else-if="nav==='about'" class="space-y-4">
         <header class="text-base font-semibold">关于</header>
         <div class="rounded-xl border bg-white p-4 space-y-3 text-sm">
-          <div>版本：{{ (chrome?.runtime?.getManifest?.() as any)?.version || '-' }}</div>
+          <div>版本：{{ version }}</div>
           <div class="flex items-center gap-2">
             <Button class="bg-primary text-primary-foreground" @click="onExport">导出设置</Button>
             <Button variant="ghost" @click="triggerImport">导入设置</Button>

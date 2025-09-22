@@ -4,15 +4,15 @@
 export function iconOfNav(id: string): string {
   switch (id) {
     case 'assistant':
-      return 'proicons:bolt';
-    case 'channels':
       return 'proicons:chat';
+    case 'channels':
+      return 'proicons:sparkle-2';
     case 'models':
-      return 'proicons:pencil';
+      return 'proicons:pencil-sparkle';
     case 'keys':
-      return 'proicons:pencil';
+      return 'proicons:keyboard';
     case 'others':
-      return 'proicons:info';
+      return 'proicons:paintbrush-2-sparkle';
     case 'about':
       return 'proicons:info';
     default:
@@ -25,11 +25,11 @@ export function iconOfFeature(id: string): string {
     case 'chat':
       return 'proicons:chat';
     case 'translate':
-      return 'proicons:bolt';
+      return 'ri:translate-ai';
     case 'summarize':
-      return 'proicons:info';
+      return 'proicons:pencil-sparkle';
     case 'analyze-page':
-      return 'proicons:bug';
+      return 'proicons:bullet-list-square';
     default:
       return 'proicons:info';
   }
