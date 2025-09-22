@@ -31,7 +31,7 @@
       "run_at": "document_idle"
     }
   ],
-  "options_page": "options/options.html",
+  "options_page": "dist/options.html",
   "commands": {
     "open-global-window": {
       "suggested_key": {
