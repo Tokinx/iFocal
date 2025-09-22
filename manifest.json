@@ -3,7 +3,7 @@
   "name": "FloatingCopilot",
   "version": "0.2.0",
   "description": "FloatingCopilot side panel assistant built with Vue + shadcn-vue. Supports chat, translation and page insight.",
-  "permissions": ["storage","activeTab","scripting","clipboardRead","contextMenus"],
+  "permissions": ["storage","activeTab","scripting","clipboardRead","contextMenus","sidePanel"],
   "host_permissions": [
     "<all_urls>"
   ],
