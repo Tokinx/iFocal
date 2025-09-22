@@ -20,27 +20,55 @@
           </SelectContent>
         </Select>
       </div>
-      <Button class="bg-primary text-primary-foreground" @click="handleRefresh" :disabled="loading">
+      <Button class="bg-primary text-primary-foreground flex items-center gap-1" @click="handleRefresh" :disabled="loading">
+        <Icon icon="proicons:bolt" width="16" />
         Refresh Page Context
       </Button>
     </header>
 
     <main ref="messagesRef" class="flex-1 overflow-y-auto px-4 py-3 space-y-3">
       <template v-if="messages.length">
-        <article
+<article
           v-for="message in messages"
           :key="message.id"
           :class="[
             'flex w-full flex-col gap-1 rounded-xl border p-3 text-sm',
-            message.role === 'user' ? 'border-primary/40 bg-primary/5 self-end' : 'border-slate-200 bg-white shadow-sm'
+            message.role === 'user' ? 'border-primary/40 bg-primary/5 self-end' : 'border-slate-200 bg-white shadow-sm',
+            selectedId === message.id ? 'ring-2 ring-primary/40' : ''
           ]"
+          class="group relative focus:outline-none"
+          tabindex="0"
+          @focus="selectedId = message.id"
+          @click="selectedId = message.id"
+          @keydown.stop.prevent="onMessageKeydown($event, message)"
         >
           <header class="flex items-center justify-between text-xs text-muted-foreground">
-            <span>{{ message.role === 'user' ? 'You' : 'Copilot' }}</span>
+            <span class="inline-flex items-center gap-1">
+              <Icon :icon="iconOfRole(message.role)" width="14" />
+              {{ message.role === 'user' ? 'You' : 'Copilot' }}
+            </span>
             <span>{{ formatTime(message.createdAt) }}</span>
           </header>
           <div class="text-sm whitespace-pre-wrap leading-relaxed">
             {{ message.content }}
+          </div>
+
+          <!-- hover tools -->
+          <div class="absolute -top-2 right-2 opacity-0 group-hover:opacity-100 transition pointer-events-auto">
+            <div class="flex items-center gap-1 rounded-md border bg-white/95 px-1 py-0.5 shadow">
+              <button class="inline-flex items-center gap-1 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded"
+                      title="Copy" @click="copyMessage(message)">
+                <Icon :icon="iconOfAction('copy')" width="14" />
+              </button>
+              <button v-if="message.role==='user'" class="inline-flex items-center gap-1 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded"
+                      title="Resend" @click="resendMessage(message)">
+                <Icon :icon="iconOfAction('resend')" width="14" />
+              </button>
+              <button class="inline-flex items-center gap-1 px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded"
+                      title="Delete" @click="deleteMessage(message, true)">
+                <Icon :icon="iconOfAction('delete')" width="14" />
+              </button>
+            </div>
           </div>
         </article>
       </template>
@@ -64,7 +92,9 @@
     <SelectValue placeholder="Feature" />
   </SelectTrigger>
   <SelectContent>
-    <SelectItem v-for="feature in features" :key="feature.id" :value="feature.id">{{ feature.label }}</SelectItem>
+    <SelectItem v-for="feature in features" :key="feature.id" :value="feature.id">
+      <span class="inline-flex items-center gap-2"><Icon :icon="iconOfFeature(feature.id)" width="14" /> {{ feature.label }}</span>
+    </SelectItem>
   </SelectContent>
 </Select>
         <Select v-if="isTranslate" v-model="state.targetLang" class="w-36">
@@ -87,7 +117,8 @@
           Model: {{ state.selectedModel }} 路 Feature: {{ currentFeature?.label }}
           <template v-if="isTranslate"> 路 Target language: {{ state.targetLang }}</template>
         </span>
-        <Button class="bg-primary text-primary-foreground" :disabled="sending || !state.draft.trim()" @click="sendMessage">
+        <Button class="bg-primary text-primary-foreground flex items-center gap-1" :disabled="sending || !state.draft.trim()" @click="sendMessage">
+          <Icon icon="proicons:chat" width="16" />
           {{ sending ? 'Sending...' : 'Send' }}
         </Button>
       </div>
@@ -97,6 +128,9 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref } from 'vue';
+import { Icon } from '@iconify/vue';
+import { iconOfFeature, iconOfRole, iconOfAction } from '@/shared/icons';
+import { useToast } from '@/options/composables/useToast';
 
 interface ChatMessage {
   id: string;
@@ -109,6 +143,8 @@ const messages = reactive<ChatMessage[]>([]);
 const messagesRef = ref<HTMLDivElement | null>(null);
 const loading = ref(false);
 const sending = ref(false);
+const selectedId = ref<string | null>(null);
+const toast = useToast();
 
 const models = ref<string[]>(['gpt-4o-mini', 'gpt-4o', 'claude-3-haiku']);
 const features = ref([
@@ -207,6 +243,59 @@ function requestSidebarAction<T = unknown>(payload: Record<string, unknown>): Pr
       reject(error);
     }
   });
+}
+
+async function copyMessage(m: ChatMessage) {
+  try {
+    await navigator.clipboard.writeText(m.content || '');
+  } catch (e) {
+    console.warn('copy failed', e);
+  }
+}
+
+function deleteMessage(target: ChatMessage | string, confirmFirst = false) {
+  const msg = typeof target === 'string' ? messages.find(m => m.id === target) : target;
+  if (!msg) return;
+  const runDelete = () => {
+    const idx = messages.findIndex(m => m.id === msg.id);
+    if (idx < 0) return;
+    const backup = { idx, msg: { ...msg } };
+    messages.splice(idx, 1);
+    if (selectedId.value === msg.id) selectedId.value = null;
+    toast.action('已删除一条消息', {
+      label: '撤回',
+      onClick: () => {
+        const insertAt = Math.min(backup.idx, messages.length);
+        messages.splice(insertAt, 0, backup.msg);
+      }
+    });
+  };
+  if (confirmFirst) {
+    toast.action('确认删除该消息？', { label: '删除', type: 'error', onClick: runDelete });
+  } else {
+    runDelete();
+  }
+}
+
+function onMessageKeydown(e: KeyboardEvent, m: ChatMessage) {
+  const key = e.key.toLowerCase();
+  if (key === 'c') {
+    copyMessage(m);
+    return;
+  }
+  if (key === 'r' && m.role === 'user') {
+    resendMessage(m);
+    return;
+  }
+  if (key === 'delete' || key === 'backspace') {
+    deleteMessage(m, true);
+    return;
+  }
+}
+
+function resendMessage(m: ChatMessage) {
+  state.draft = m.content || '';
+  sendMessage();
 }
 
 onMounted(async () => {

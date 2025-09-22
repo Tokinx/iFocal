@@ -63,7 +63,45 @@ export function useToast() {
   return {
     success: (m: string, d?: number) => show(m, 'success', d),
     error: (m: string, d?: number) => show(m, 'error', d),
-    info: (m: string, d?: number) => show(m, 'info', d)
+    info: (m: string, d?: number) => show(m, 'info', d),
+    // 动作型提示：右侧带按钮，可用于确认/撤回
+    action: (
+      message: string,
+      opts: { label: string; onClick: () => void; type?: ToastType; duration?: number }
+    ) => {
+      const type = opts.type || 'info';
+      const duration = opts.duration ?? 4000;
+      const toast = makeToastEl('', type);
+      toast.style.display = 'flex';
+      toast.style.alignItems = 'center';
+      toast.style.justifyContent = 'space-between';
+      const text = document.createElement('span');
+      text.textContent = message;
+      text.style.paddingRight = '8px';
+      const btn = document.createElement('button');
+      btn.textContent = opts.label || 'OK';
+      btn.style.pointerEvents = 'auto';
+      btn.style.fontSize = '12px';
+      btn.style.padding = '6px 10px';
+      btn.style.borderRadius = '6px';
+      btn.style.border = '1px solid rgba(148,163,184,0.4)';
+      btn.style.background = 'white';
+      btn.style.cursor = 'pointer';
+      btn.style.marginLeft = '10px';
+      btn.onmouseenter = () => { btn.style.background = '#f1f5f9'; };
+      btn.onmouseleave = () => { btn.style.background = 'white'; };
+      btn.onclick = () => {
+        try { opts.onClick && opts.onClick(); } finally {
+          try { container.removeChild(toast); } catch {}
+        }
+      };
+      toast.appendChild(text);
+      toast.appendChild(btn);
+      container.appendChild(toast);
+      const timer = window.setTimeout(() => {
+        try { container.removeChild(toast); } catch {}
+      }, duration);
+      onUnmounted(() => { window.clearTimeout(timer); try { container.removeChild(toast); } catch {} });
+    }
   };
 }
-

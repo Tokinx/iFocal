@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue';
+import { Icon } from '@iconify/vue';
+import { iconOfNav, iconOfChannelType, iconOfAction } from '@/shared/icons';
 import { useChannels } from '@/options/composables/useChannels';
 import { promptTemplates, defaultTemplates, initTemplates, saveTemplates as saveTpls, resetTemplates as resetTpls } from '@/options/composables/useTemplates';
 import { useToast } from '@/options/composables/useToast';
@@ -8,7 +10,7 @@ type ModelPair = { channel: string; model: string } | null;
 
 const nav = ref<'assistant' | 'channels' | 'models' | 'keys' | 'others' | 'about'>('channels');
 
-const { channels, modelPairs, addForm, addChannel, testModel, initTestModels, editingName, editForm, openEdit, cancelEdit, saveEdit, removeChannel } = useChannels();
+const { channels, modelPairs, addForm, addChannel, testModel, initTestModels, editingName, editForm, openEdit, cancelEdit, saveEdit, removeChannel, restoreChannelsSnapshot } = useChannels();
 const toast = useToast();
 
 const defaultModel = ref<ModelPair>(null);
@@ -52,6 +54,25 @@ async function loadAll() {
 function saveModels() { const dm = parsePair(defaultModelValue.value); const tm = parsePair(translateModelValue.value); try { chrome.storage.sync.set({ defaultModel: dm, translateModel: tm }, () => toast.success('模型设置已保存')); } catch { toast.error('保存失败'); } }
 function saveBasics() { try { const k = (actionKey.value || 'Alt').trim() || 'Alt'; const lang = (translateTargetLang.value || 'zh-CN').trim() || 'zh-CN'; if (!k) { toast.error('快捷键不能为空'); return; } chrome.storage.sync.set({ actionKey: k, hoverKey: k, selectKey: k, translateTargetLang: lang, displayMode: displayMode.value || 'insert', wrapperStyle: (wrapperStyle.value || '').trim() }, () => toast.success('基础设置已保存')); } catch { toast.error('保存失败'); } }
 
+// 删除通道：二次确认 + 撤回
+function confirmRemoveChannel(ch: any) {
+  const name = ch?.name || '';
+  toast.action(`确认删除通道 ${name} ?`, {
+    label: '删除',
+    type: 'error',
+    onClick: () => {
+      try {
+        removeChannel(name, (snapshot) => {
+          toast.action(`已删除通道 ${name}`, {
+            label: '撤回',
+            onClick: () => restoreChannelsSnapshot(snapshot)
+          });
+        });
+      } catch { toast.error('删除失败'); }
+    }
+  });
+}
+
 // 助手（流式输出）
 const assistantDraft = ref('');
 const assistantModelValue = ref('');
@@ -80,6 +101,8 @@ function handleSaveEdit(original: string) { editStatus.value = ''; try { saveEdi
 function handleTestChannel(name: string) { const model = testModel[name] || undefined; try { chrome.runtime.sendMessage({ action:'testChannel', channel:name, model }, (resp:any) => { if (!resp) { toast.error('测试失败：无响应'); return; } if (resp.ok) toast.success('测试成功'); else toast.error(`测试失败：${resp.error || '未知错误'}`); }); } catch { toast.error('测试调用失败'); } }
 
 onMounted(loadAll);
+
+// 统一从 shared/icons 获取图标
 </script>
 
 <template>
@@ -98,10 +121,13 @@ onMounted(loadAll);
             { id:'about', label:'关于' }
           ]"
           :key="item.id"
-          class="w-full text-left rounded-md px-3 py-2 text-sm hover:bg-secondary"
+          class="w-full text-left rounded-md px-3 py-2 text-sm hover:bg-secondary flex items-center gap-2"
           :class="nav === (item.id as any) ? 'bg-secondary' : ''"
           @click="nav = item.id as any"
-        >{{ item.label }}</button>
+        >
+          <Icon :icon="iconOfNav(item.id)" width="16" class="opacity-80" />
+          <span>{{ item.label }}</span>
+        </button>
       </nav>
     </aside>
 
@@ -151,7 +177,10 @@ onMounted(loadAll);
           </div>
           <Textarea v-model="assistantDraft" class="min-h-28" placeholder="在此粘贴需要处理的文本..." />
           <div class="flex items-center gap-2">
-            <Button class="bg-primary text-primary-foreground" @click="startAssistantStream">执行</Button>
+            <Button class="bg-primary text-primary-foreground flex items-center gap-1" @click="startAssistantStream">
+              <Icon icon="proicons:bolt" width="16" />
+              执行
+            </Button>
           </div>
           <div class="rounded-md border bg-secondary/40 p-3 text-sm whitespace-pre-wrap min-h-12">{{ assistantResult }}</div>
         </div>
@@ -201,7 +230,10 @@ onMounted(loadAll);
             <div v-for="ch in channels" :key="ch.name" class="rounded-lg border p-3 space-y-3">
               <div class="flex items-center justify-between gap-2">
                 <div class="text-sm">
-                  <div class="font-medium">{{ ch.name }}</div>
+                  <div class="font-medium inline-flex items-center gap-2">
+                    <Icon :icon="iconOfChannelType(ch.type)" width="16" />
+                    {{ ch.name }}
+                  </div>
                   <div class="text-muted-foreground">{{ ch.type }} · {{ ch.apiUrl || '-' }}</div>
                   <div class="text-muted-foreground">{{ (ch.models || []).join(', ') }}</div>
                 </div>
@@ -214,9 +246,15 @@ onMounted(loadAll);
                       </SelectContent>
                     </Select>
                   </div>
-                  <Button variant="ghost" @click="handleTestChannel(ch.name)">测试</Button>
-                  <Button variant="ghost" @click="openEdit(ch)">编辑</Button>
-                  <Button variant="ghost" class="text-red-600" @click="removeChannel(ch.name)">删除</Button>
+                  <Button variant="ghost" class="flex items-center gap-1" @click="handleTestChannel(ch.name)">
+                    <Icon icon="proicons:bug" width="16" /> 测试
+                  </Button>
+                  <Button variant="ghost" class="flex items-center gap-1" @click="openEdit(ch)">
+                    <Icon icon="proicons:pencil" width="16" /> 编辑
+                  </Button>
+                  <Button variant="ghost" class="flex items-center gap-1 text-red-600" @click="confirmRemoveChannel(ch)">
+                    <Icon :icon="iconOfAction('delete')" width="16" /> 删除
+                  </Button>
                 </div>
               </div>
 
@@ -246,12 +284,14 @@ onMounted(loadAll);
                     <Input v-model="editForm.apiKey" placeholder="留空表示不修改" />
                   </div>
                 </div>
-                <div>
-                  <Label class="mb-1 block">Models（每行一个）</Label>
-                  <Textarea v-model="editForm.modelsText" class="min-h-28" />
-                </div>
+              <div>
+                <Label class="mb-1 block">Models（每行一个）</Label>
+                <Textarea v-model="editForm.modelsText" class="min-h-28" />
+              </div>
                 <div class="flex items-center gap-2">
-                  <Button class="bg-primary text-primary-foreground" @click="handleSaveEdit(ch.name)">保存</Button>
+                  <Button class="bg-primary text-primary-foreground flex items-center gap-1" @click="handleSaveEdit(ch.name)">
+                    <Icon :icon="iconOfAction('save')" width="16" /> 保存
+                  </Button>
                   <Button variant="ghost" @click="cancelEdit">取消</Button>
                   <span class="text-xs text-muted-foreground">{{ editStatus }}</span>
                 </div>
@@ -272,7 +312,12 @@ onMounted(loadAll);
                 <SelectTrigger><SelectValue placeholder="未设置" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">（未设置）</SelectItem>
-                  <SelectItem v-for="p in modelPairs" :key="p.value" :value="p.value">{{ p.label }}</SelectItem>
+                  <SelectItem v-for="p in modelPairs" :key="p.value" :value="p.value">
+                    <span class="inline-flex items-center gap-2">
+                      <Icon :icon="iconOfChannelType(parsePair(p.value)?.channel ? (channels.find(c=>c.name===parsePair(p.value)?.channel)?.type||'') : '')" width="14" />
+                      {{ p.label }}
+                    </span>
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -282,13 +327,20 @@ onMounted(loadAll);
                 <SelectTrigger><SelectValue placeholder="未设置" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">（未设置）</SelectItem>
-                  <SelectItem v-for="p in modelPairs" :key="p.value" :value="p.value">{{ p.label }}</SelectItem>
+                  <SelectItem v-for="p in modelPairs" :key="p.value" :value="p.value">
+                    <span class="inline-flex items-center gap-2">
+                      <Icon :icon="iconOfChannelType(parsePair(p.value)?.channel ? (channels.find(c=>c.name===parsePair(p.value)?.channel)?.type||'') : '')" width="14" />
+                      {{ p.label }}
+                    </span>
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
           <div>
-            <Button class="bg-primary text-primary-foreground" @click="saveModels">保存</Button>
+            <Button class="bg-primary text-primary-foreground flex items-center gap-1" @click="saveModels">
+              <Icon :icon="iconOfAction('save')" width="16" /> 保存
+            </Button>
           </div>
         </div>
 
@@ -331,7 +383,9 @@ onMounted(loadAll);
             </div>
           </div>
           <div>
-            <Button class="bg-primary text-primary-foreground" @click="saveBasics">保存</Button>
+            <Button class="bg-primary text-primary-foreground flex items-center gap-1" @click="saveBasics">
+              <Icon :icon="iconOfAction('save')" width="16" /> 保存
+            </Button>
             <p class="mt-2 text-xs text-muted-foreground">全局快捷键需在 chrome://extensions/shortcuts 配置。</p>
           </div>
         </div>
@@ -380,7 +434,9 @@ onMounted(loadAll);
             <p class="mt-2 text-xs text-muted-foreground">勾选/取消即自动保存。</p>
           </div>
           <div>
-            <Button class="bg-primary text-primary-foreground" @click="saveBasics">保存其他设置</Button>
+            <Button class="bg-primary text-primary-foreground flex items-center gap-1" @click="saveBasics">
+              <Icon :icon="iconOfAction('save')" width="16" /> 保存其他设置
+            </Button>
           </div>
         </div>
       </section>

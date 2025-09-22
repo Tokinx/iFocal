@@ -101,16 +101,34 @@ export function useChannels() {
     });
   }
 
-  function removeChannel(name: string) {
+  type ChannelsSnapshot = { list: Channel[]; defaultModel: any; translateModel: any; activeModel: any };
+
+  function removeChannel(name: string, onRemoved?: (snapshot: ChannelsSnapshot) => void) {
     chrome.storage.sync.get(['channels','defaultModel','translateModel','activeModel'], (items) => {
       const list: Channel[] = Array.isArray((items as any).channels) ? (items as any).channels : [];
+      const snapshot: ChannelsSnapshot = {
+        list,
+        defaultModel: (items as any).defaultModel ?? null,
+        translateModel: (items as any).translateModel ?? null,
+        activeModel: (items as any).activeModel ?? null
+      };
       const filtered = list.filter(c => c.name !== name);
       const next: any = { channels: filtered };
       if ((items as any).defaultModel?.channel === name) next.defaultModel = null;
       if ((items as any).translateModel?.channel === name) next.translateModel = null;
       if ((items as any).activeModel?.channel === name) next.activeModel = null;
-      chrome.storage.sync.set(next, () => { channels.value = filtered; });
+      chrome.storage.sync.set(next, () => { channels.value = filtered; onRemoved && onRemoved(snapshot); });
     });
+  }
+
+  function restoreChannelsSnapshot(snapshot: ChannelsSnapshot, onRestored?: () => void) {
+    const next: any = {
+      channels: snapshot.list,
+      defaultModel: snapshot.defaultModel ?? null,
+      translateModel: snapshot.translateModel ?? null,
+      activeModel: snapshot.activeModel ?? null
+    };
+    chrome.storage.sync.set(next, () => { channels.value = snapshot.list; onRestored && onRestored(); });
   }
 
   return {
@@ -126,7 +144,7 @@ export function useChannels() {
     openEdit,
     cancelEdit,
     saveEdit,
-    removeChannel
+    removeChannel,
+    restoreChannelsSnapshot
   };
 }
-

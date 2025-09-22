@@ -1,15 +1,57 @@
-﻿import type { App } from 'vue';
+import type { App } from 'vue';
+import { Icon } from '@iconify/vue';
+
 import { Button } from '@/sidebar/components/ui/button';
 import { Textarea } from '@/sidebar/components/ui/textarea';
 import { Input } from '@/sidebar/components/ui/input';
 import { Label } from '@/sidebar/components/ui/label';
-import { Select, SelectTrigger, SelectContent, SelectValue, SelectItem, SelectGroup, SelectLabel, SelectSeparator, SelectScrollDownButton, SelectScrollUpButton, SelectItemText } from '@/sidebar/components/ui/select';
+import {
+  Select,
+  SelectTrigger,
+  SelectContent,
+  SelectValue,
+  SelectItem,
+  SelectGroup,
+  SelectLabel,
+  SelectSeparator,
+  SelectScrollDownButton,
+  SelectScrollUpButton,
+  SelectItemText
+} from '@/sidebar/components/ui/select';
 import { Popover, PopoverTrigger, PopoverContent } from '@/sidebar/components/ui/popover';
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuGroup, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent, DropdownMenuShortcut, DropdownMenuCheckboxItem, DropdownMenuRadioGroup, DropdownMenuRadioItem } from '@/sidebar/components/ui/dropdown-menu';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+  DropdownMenuShortcut,
+  DropdownMenuCheckboxItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem
+} from '@/sidebar/components/ui/dropdown-menu';
 import { ScrollArea, ScrollBar } from '@/sidebar/components/ui/scroll-area';
-import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator, CommandShortcut } from '@/sidebar/components/ui/command';
+import {
+  Command,
+  CommandDialog,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandSeparator,
+  CommandShortcut
+} from '@/sidebar/components/ui/command';
 
 export function setupUI(app: App) {
+  // Iconify global icon component
+  app.component('Icon', Icon);
+
   app.component('Button', Button);
   app.component('Textarea', Textarea);
   app.component('Input', Input);
@@ -59,3 +101,4 @@ export function setupUI(app: App) {
   app.component('CommandSeparator', CommandSeparator);
   app.component('CommandShortcut', CommandShortcut);
 }
+
