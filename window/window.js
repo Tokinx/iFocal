@@ -1,5 +1,6 @@
-﻿// window/window.js锛圲TF-8锛?
-console.log('鍏ㄥ眬鍔╂墜绐楀彛宸插姞杞?);
+// window/window.js（UTF-8）
+
+console.log('全局助手窗口已加载');
 
 const mainInput = document.getElementById('main-input');
 const resultArea = document.getElementById('result-area');
@@ -50,10 +51,10 @@ function startStream(task) {
     } else if (m.type === 'done') {
       // done
     } else if (m.type === 'error') {
-      resultArea.textContent += `\n[閿欒] ${m.error}`;
+      resultArea.textContent += `\n[错误] ${m.error}`;
     }
   });
-  try { port.onDisconnect.addListener(() => { try { const err = chrome.runtime.lastError; if (err) { resultArea.textContent += `\n[閿欒] ${err.message}`; } } catch {} }); } catch {}
+  try { port.onDisconnect.addListener(() => { try { const err = chrome.runtime.lastError; if (err) { resultArea.textContent += `\n[错误] ${err.message}`; } } catch {} }); } catch {}
   port.postMessage(msg);
 }
 
@@ -77,7 +78,7 @@ runBtn.addEventListener('click', () => {
   startStream(task);
 });
 
-// 褰撶洰鏍囪瑷€鍦ㄨ缃潰鏉夸腑鏇存敼鏃讹紝濡傛灉褰撳墠鏈夋枃鏈垯閲嶈窇
+// 当目标语言在设置面板中更改时，如果当前有文本则重跑
 try {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'sync' && changes.translateTargetLang) {

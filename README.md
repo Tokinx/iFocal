@@ -1,4 +1,4 @@
-﻿# FloatingCopilot
+# FloatingCopilot
 
 FloatingCopilot 是一款面向 Chrome / Edge 的 AI 助手插件，现已重构为 **Vue 3 + shadcn-vue** 架构，采用响应式布局与侧边栏聊天体验。插件可在当前网页内快速执行翻译、总结、改写等任务，并支持读取页面内容做进一步分析。
 

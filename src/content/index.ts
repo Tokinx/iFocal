@@ -1,4 +1,4 @@
-﻿import './style.css';
+import './style.css';
 import { createApp, ref } from 'vue';
 import { Select, SelectTrigger, SelectContent, SelectValue, SelectItem } from '@/sidebar/components/ui/select';
 import { Button } from '@/sidebar/components/ui/button';

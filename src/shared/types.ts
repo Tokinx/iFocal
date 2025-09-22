@@ -1,4 +1,4 @@
-﻿export type SidebarMessageType = 'bootstrap' | 'capture-page' | 'stream-message';
+export type SidebarMessageType = 'bootstrap' | 'capture-page' | 'stream-message';
 
 export interface SidebarBootstrapResponse {
   models: string[];

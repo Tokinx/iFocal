@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <textarea
     v-bind="attrs"
     :value="modelValue ?? ''"

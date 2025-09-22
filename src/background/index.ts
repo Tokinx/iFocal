@@ -1,4 +1,4 @@
-﻿export {};
+export {};
 
 const SIDEBAR_PATH = 'dist/sidebar.html';
 let selectionBuffer = '';
