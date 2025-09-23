@@ -1,1 +1,0 @@
-const h="[FloatingCopilot]";console.log(`${h} content script ready`);let L=null,y="Alt",E="insert",m=null,w=!1,f="",T=null,K;const P=200;function B(){
