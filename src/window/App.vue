@@ -1,12 +1,5 @@
 <template>
   <div class="flex h-screen w-full flex-col bg-background text-foreground">
-    <header class="flex items-center justify-between gap-3 border-b px-4 py-3">
-      <div class="text-sm font-medium">FloatingCopilot · 全局助手</div>
-      <div class="flex items-center gap-2 text-xs text-muted-foreground">
-        <span v-if="activeModelLabel">{{ activeModelLabel }}</span>
-      </div>
-    </header>
-
     <main class="flex-1 grid grid-rows-[1fr_auto_1.25fr] gap-3 px-4 py-3">
       <Textarea
         v-model="state.text"
@@ -16,48 +9,40 @@
       />
 
       <div class="flex flex-wrap items-center gap-2">
-        <div class="flex items-center gap-2">
-          <span class="text-xs text-muted-foreground">模型</span>
-          <Select v-model="selectedPairKey" class="w-56" @update:modelValue="onModelChange">
-            <SelectTrigger>
-              <SelectValue placeholder="选择模型" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem v-for="p in modelPairs" :key="p.key" :value="p.key">
-                {{ p.model }} <span class="text-xs text-muted-foreground">({{ p.channel }})</span>
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <Select v-model="selectedPairKey" class="w-56" @update:modelValue="onModelChange">
+          <SelectTrigger>
+            <span class="truncate">{{ currentModelName || '选择模型' }}</span>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="p in modelPairs" :key="p.key" :value="p.key">
+              <div class="flex flex-col">
+                <span>{{ p.model }}</span>
+                <span class="text-xs text-muted-foreground">{{ p.channel }}</span>
+              </div>
+            </SelectItem>
+          </SelectContent>
+        </Select>
 
-        <div class="flex items-center gap-2">
-          <span class="text-xs text-muted-foreground">任务</span>
-          <Select v-model="state.task" class="w-36">
-            <SelectTrigger>
-              <SelectValue placeholder="选择任务" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="translate">翻译</SelectItem>
-              <SelectItem value="summarize">总结</SelectItem>
-              <SelectItem value="rewrite">改写</SelectItem>
-              <SelectItem value="polish">润色</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <Select v-model="state.task" class="w-36">
+          <SelectTrigger>
+            <SelectValue placeholder="选择任务" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="translate">翻译</SelectItem>
+            <SelectItem value="summarize">总结</SelectItem>
+            <SelectItem value="rewrite">改写</SelectItem>
+            <SelectItem value="polish">润色</SelectItem>
+          </SelectContent>
+        </Select>
 
-        <div class="flex items-center gap-2">
-          <span class="text-xs text-muted-foreground">目标语言</span>
-          <Select v-model="state.targetLang" class="w-40" @update:modelValue="onLangChange">
-            <SelectTrigger>
-              <SelectValue placeholder="选择语言" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem v-for="lang in languages" :key="lang.value" :value="lang.value">{{ lang.label }}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <Button class="bg-primary text-primary-foreground" :disabled="!canRun || sending" @click="run">执行</Button>
+        <Select v-model="state.targetLang" class="w-40" @update:modelValue="onLangChange">
+          <SelectTrigger>
+            <SelectValue placeholder="选择语言" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="lang in languages" :key="lang.value" :value="lang.value">{{ lang.label }}</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <section class="rounded-xl border bg-popover/50 p-3 text-sm leading-relaxed whitespace-pre-wrap overflow-y-auto">
@@ -68,9 +53,7 @@
           {{ result }}
         </template>
         <template v-else>
-          <div class="text-muted-foreground">
-            结果将在此显示。输入文本并点击“执行”，或按 Enter 运行。
-          </div>
+          <div class="text-muted-foreground">结果将在此显示。按 Enter 运行，或切换下拉重新生成。</div>
         </template>
       </section>
     </main>
@@ -97,9 +80,9 @@ const state = reactive({
 });
 
 const canRun = computed(() => !!state.text.trim());
-const activeModelLabel = computed(() => {
+const currentModelName = computed(() => {
   const cur = modelPairs.value.find(p => p.key === selectedPairKey.value);
-  return cur ? `${cur.model} (${cur.channel})` : '';
+  return cur ? cur.model : '';
 });
 
 function keyOf(pair: Pair) {
