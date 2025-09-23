@@ -18,6 +18,7 @@ export default defineConfig({
       input: {
         sidebar: path.resolve(__dirname, 'sidebar.html'),
         options: path.resolve(__dirname, 'options.html'),
+        window: path.resolve(__dirname, 'window.html'),
         background: path.resolve(__dirname, 'src/background/index.ts'),
         content: path.resolve(__dirname, 'src/content/index.ts')
       },

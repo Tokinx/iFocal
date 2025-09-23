@@ -382,17 +382,31 @@ function sseLoopFromReader(reader: ReadableStreamDefaultReader<Uint8Array>, onLi
   });
 }
 
-function openOrFocusGlobalWindow() {
-  const url = chrome.runtime.getURL('window/window.html');
-  chrome.tabs.query({ url }, (tabs) => {
+async function openOrFocusGlobalWindow() {
+  const distUrl = chrome.runtime.getURL('dist/window.html');
+  const fallbackUrl = chrome.runtime.getURL('window/dev-fallback.html');
+  try {
+    const tabs = await new Promise<chrome.tabs.Tab[]>((resolve) => chrome.tabs.query({ url: [distUrl, fallbackUrl] as any }, resolve));
     if (tabs && tabs.length > 0) {
       const tab = tabs[0];
       chrome.windows.update(tab.windowId, { focused: true });
-      chrome.tabs.update(tab.id!, { active: true });
-    } else {
-      chrome.windows.create({ url, type: 'popup', width: 400, height: 600, focused: true });
+      if (tab.id) chrome.tabs.update(tab.id, { active: true });
+      return;
     }
-  });
+  } catch {}
+  const targetUrl = await pickExistingExtensionUrl(['dist/window.html', 'dist/src/window/index.html', 'window/dev-fallback.html']);
+  chrome.windows.create({ url: targetUrl, type: 'popup', width: 400, height: 600, focused: true });
+}
+
+async function pickExistingExtensionUrl(paths: string[]): Promise<string> {
+  for (const p of paths) {
+    const url = chrome.runtime.getURL(p);
+    try {
+      const res = await fetch(url, { method: 'GET' });
+      if (res.ok) return url;
+    } catch {}
+  }
+  return chrome.runtime.getURL(paths[0]!);
 }
 
 function openOrFocusSidebarPopup() {
@@ -458,4 +472,3 @@ chrome.runtime.onConnect.addListener((port) => {
     }
   });
 });
-
