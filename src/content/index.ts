@@ -84,7 +84,7 @@ readHotkeys();
 function findTextBlockElement(target: EventTarget | null): HTMLElement | null {
   const element = target instanceof HTMLElement ? target : null;
   if (!element) return null;
-  const BLOCK_TAGS = new Set(['P', 'DIV', 'ARTICLE', 'SECTION', 'LI', 'TD']);
+  const BLOCK_TAGS = new Set(['P', 'DIV', 'ARTICLE', 'SECTION', 'LI', 'TD', 'A', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6']);
   const INVALID_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT']);
   let current: HTMLElement | null = element;
   while (current && current !== document.body) {
@@ -205,7 +205,41 @@ function createOverlayAt(x: number, y: number): OverlayHandle {
 }
 
 function needsLineBreak(tag: string) {
-  return tag === 'p' || tag === 'div' || tag === 'section' || tag === 'article';
+  return ['p', 'div', 'section', 'article', 'li', 'td', 'a',
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag);
+}
+
+function shouldInsertBreakFromSource(text: string): boolean {
+  // 仅当译文中空格数量 > 3 时添加换行
+  const spaces = (text.match(/ /g) || []).length;
+  return spaces > 3;
+}
+
+function updateBreakForTranslated(blockEl: HTMLElement, source: string) {
+  const tag = (blockEl.tagName || 'div').toLowerCase();
+  const exists = blockEl.querySelector('br.floating-copilot-target-break');
+  const wrapper = blockEl.querySelector('font.floating-copilot-target-wrapper.notranslate');
+  if (!needsLineBreak(tag)) {
+    if (exists) exists.remove();
+    return;
+  }
+  const needBr = shouldInsertBreakFromSource(source);
+  if (needBr) {
+    if (exists) {
+      // 确保 br 位于 wrapper 之前
+      if (wrapper && exists.nextSibling !== wrapper) {
+        blockEl.insertBefore(exists, wrapper);
+      }
+      return;
+    }
+    const br = document.createElement('br');
+    br.className = 'floating-copilot-target-break';
+    if (wrapper) blockEl.insertBefore(br, wrapper);
+    else if (blockEl.firstChild) blockEl.insertBefore(br, blockEl.firstChild);
+    else blockEl.appendChild(br);
+  } else if (exists) {
+    exists.remove();
+  }
 }
 
 function toggleHoverTranslate(blockEl: HTMLElement) {
@@ -242,12 +276,6 @@ function toggleHoverTranslate(blockEl: HTMLElement) {
       wrapper.className = 'notranslate floating-copilot-target-wrapper';
       wrapper.setAttribute('lang', langCode);
       if (styleText) wrapper.setAttribute('style', styleText);
-      const tag = (blockEl.tagName || 'div').toLowerCase();
-      if (needsLineBreak(tag)) {
-        const br = document.createElement('br');
-        br.className = 'floating-copilot-target-break';
-        blockEl.appendChild(br);
-      }
       const spin = document.createElement('div');
       spin.className = 'fc-spinner';
       wrapper.appendChild(spin);
@@ -257,13 +285,15 @@ function toggleHoverTranslate(blockEl: HTMLElement) {
       chrome.runtime.sendMessage({ action: 'performAiAction', task: 'translate', text: sourceText }, (response: { ok?: boolean; result?: string; error?: string } | undefined) => {
         // 读取 lastError 抑制“Unchecked runtime.lastError”告警
         // 即便忽略，也要先触达该属性以避免控制台噪音
-        try { void chrome.runtime.lastError; } catch {}
+        try { void chrome.runtime.lastError; } catch { }
         blockEl.dataset.fcTranslated = '1';
         const msg = response && response.ok ? response.result : response?.error || '';
         wrapper.innerHTML = '';
         const inner = document.createElement('font');
         inner.textContent = msg || '';
         wrapper.appendChild(inner);
+        // 根据原文空格数决定是否插入换行（加载时不插入）
+        updateBreakForTranslated(blockEl, sourceText || '');
       });
     });
   } catch (error) {
@@ -338,9 +368,9 @@ function startStreamForOverlay(overlay: OverlayHandle, task: string, text: strin
           overlay.setLoading(false);
           overlay.append(`\n[Error] ${err.message}`);
         }
-      } catch {}
+      } catch { }
     });
-  } catch {}
+  } catch { }
   const payload: Record<string, unknown> = { type: 'start', task, text };
   if (pair?.channel && pair.model) {
     payload.channel = pair.channel;
@@ -400,8 +430,8 @@ function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair
   closeBtn.title = 'Close';
   closeBtn.className = 'h-6 w-6 rounded-md border border-input bg-background hover:bg-accent text-foreground';
   closeBtn.addEventListener('click', () => {
-    try { if (overlay._port) { overlay._port.disconnect(); overlay._port = null; } } catch {}
-    try { overlay.root.remove(); } catch {}
+    try { if (overlay._port) { overlay._port.disconnect(); overlay._port = null; } } catch { }
+    try { overlay.root.remove(); } catch { }
   });
   right.appendChild(closeBtn);
 
@@ -500,11 +530,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   return undefined;
 });
-
-
-
-
-
 
 
 
