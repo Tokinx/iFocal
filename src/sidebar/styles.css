@@ -75,3 +75,6 @@
   body { @apply bg-background text-foreground; }
 }
 
+/* AI 消息渲染内容：去除首尾多余外边距 */
+.ai-message > :first-child { margin-top: 0; }
+.ai-message > :last-child { margin-bottom: 0; }

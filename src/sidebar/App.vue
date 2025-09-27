@@ -15,8 +15,6 @@
 
     <main ref="messagesRef" class="flex-1 overflow-y-auto px-4 py-3 space-y-3">
       <template v-if="messages.length">
-        <!-- ,
-            selectedId === message.id ? 'ring-2 ring-primary/40' : '' -->
         <article
           v-for="message in messages"
           :key="message.id"
@@ -49,7 +47,7 @@
                 </div>
                 <span class="text-muted-foreground text-xs">Thinking...</span>
               </div>
-              <div v-else v-html="renderMarkdown(message.content)"></div>
+              <div v-else class="ai-message" v-html="renderMarkdown(message.content)"></div>
             </div>
           </div>
 
@@ -444,7 +442,6 @@ onMounted(async () => {
   }
 });
 </script>
-
 
 
 

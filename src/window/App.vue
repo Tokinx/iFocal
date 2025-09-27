@@ -46,7 +46,7 @@
           <div class="text-red-600">{{ errorText }}</div>
         </template>
         <template v-else-if="result">
-          <div v-html="renderedResult"></div>
+          <div class="ai-message" v-html="renderedResult"></div>
         </template>
         <!-- <template v-else>
           <div class="text-muted-foreground">结果将在此显示。按 Enter 运行，或切换下拉重新生成。</div>
@@ -202,3 +202,9 @@ onMounted(async () => {
 watch(() => state.task, () => { if (state.text.trim()) run(); });
 
 </script>
+
+<style scoped>
+/* AI 消息渲染内容：去除首尾多余外边距 */
+.ai-message > :first-child { margin-top: 0; }
+.ai-message > :last-child { margin-bottom: 0; }
+</style>
