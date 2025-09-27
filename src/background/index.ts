@@ -384,9 +384,9 @@ function sseLoopFromReader(reader: ReadableStreamDefaultReader<Uint8Array>, onLi
 
 async function openOrFocusGlobalWindow() {
   const distUrl = chrome.runtime.getURL('dist/window.html');
-  const fallbackUrl = chrome.runtime.getURL('window/dev-fallback.html');
+  const altDistUrl = chrome.runtime.getURL('dist/src/window/index.html');
   try {
-    const tabs = await new Promise<chrome.tabs.Tab[]>((resolve) => chrome.tabs.query({ url: [distUrl, fallbackUrl] as any }, resolve));
+    const tabs = await new Promise<chrome.tabs.Tab[]>((resolve) => chrome.tabs.query({ url: [distUrl, altDistUrl] as any }, resolve));
     if (tabs && tabs.length > 0) {
       const tab = tabs[0];
       chrome.windows.update(tab.windowId, { focused: true });
@@ -394,7 +394,7 @@ async function openOrFocusGlobalWindow() {
       return;
     }
   } catch {}
-  const targetUrl = await pickExistingExtensionUrl(['dist/window.html', 'dist/src/window/index.html', 'window/dev-fallback.html']);
+  const targetUrl = await pickExistingExtensionUrl(['dist/window.html', 'dist/src/window/index.html']);
   chrome.windows.create({ url: targetUrl, type: 'popup', width: 400, height: 600, focused: true });
 }
 
