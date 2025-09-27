@@ -1,5 +1,5 @@
 <template>
-  <div class="flex h-screen w-full flex-col bg-background text-foreground">
+  <div ref="rootEl" class="flex h-screen w-full flex-col bg-background text-foreground">
     <main class="h-screen flex-1 flex flex-col gap-2 p-2">
       <div class="flex items-center gap-2">
         <Select v-model="selectedPairKey" class="w-full" @update:modelValue="onModelChange">
@@ -57,7 +57,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { marked } from 'marked';
 import { SUPPORTED_LANGUAGES, SUPPORTED_TASKS, loadConfig } from '@/shared/config';
 
@@ -70,6 +70,7 @@ const sending = ref(false);
 const result = ref('');
 const errorText = ref('');
 let port: chrome.runtime.Port | null = null;
+const rootEl = ref<HTMLElement | null>(null);
 
 const state = reactive({
   text: '',
@@ -183,6 +184,19 @@ onMounted(async () => {
       } catch (e) { console.warn('[FloatingCopilot] clipboard read failed', e); }
     }
   } catch {}
+
+  // 用户主动粘贴时，粘贴完成后立即触发运行
+  const handlePaste = (e: ClipboardEvent) => {
+    const t = e.target as HTMLElement | null;
+    // 仅在本应用根节点内的粘贴才处理
+    if (!t || !rootEl.value || !rootEl.value.contains(t)) return;
+    // 等待 v-model 更新后触发（下一轮宏任务）
+    setTimeout(() => {
+      if (state.text.trim()) run();
+    }, 0);
+  };
+  document.addEventListener('paste', handlePaste, true);
+  onBeforeUnmount(() => document.removeEventListener('paste', handlePaste, true));
 });
 
 watch(() => state.task, () => { if (state.text.trim()) run(); });
