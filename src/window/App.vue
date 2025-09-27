@@ -1,13 +1,6 @@
 <template>
   <div class="flex h-screen w-full flex-col bg-background text-foreground">
-    <main class="flex-1 grid grid-rows-[1fr_auto_1.25fr] gap-3 px-4 py-3">
-      <Textarea
-        v-model="state.text"
-        class="min-h-[5rem]"
-        placeholder="在此输入要处理的文本...（空白将不会执行）"
-        @keydown.enter.exact.prevent="run()"
-      />
-
+    <main class="h-screen flex-1 flex flex-col gap-2 p-2">
       <div class="flex items-center gap-2">
         <Select v-model="selectedPairKey" class="w-full" @update:modelValue="onModelChange">
           <SelectTrigger>
@@ -22,7 +15,14 @@
             </SelectItem>
           </SelectContent>
         </Select>
-
+      </div>
+      <Textarea
+        v-model="state.text"
+        rows="4"
+        placeholder="在此输入要处理的文本...（空白将不会执行）"
+        @keydown.enter.exact.prevent="run()"
+      />
+      <div class="flex items-center gap-2">
         <Select v-model="state.task" class="w-full">
           <SelectTrigger>
             <SelectValue placeholder="选择任务" />
@@ -31,8 +31,7 @@
             <SelectItem v-for="task in SUPPORTED_TASKS" :key="task.value" :value="task.value">{{ task.label }}</SelectItem>
           </SelectContent>
         </Select>
-
-        <Select v-model="state.targetLang" class="w-full" @update:modelValue="onLangChange">
+        <Select v-model="state.targetLang" @update:modelValue="onLangChange">
           <SelectTrigger>
             <SelectValue placeholder="选择语言" />
           </SelectTrigger>
@@ -42,16 +41,16 @@
         </Select>
       </div>
 
-      <section class="rounded-xl border bg-popover/50 p-3 text-sm leading-relaxed whitespace-pre-wrap overflow-y-auto">
+      <section class="flex-1 rounded-xl border bg-popover/50 p-3 text-sm leading-relaxed whitespace-pre-wrap overflow-y-auto">
         <template v-if="errorText">
           <div class="text-red-600">{{ errorText }}</div>
         </template>
         <template v-else-if="result">
           {{ result }}
         </template>
-        <template v-else>
+        <!-- <template v-else>
           <div class="text-muted-foreground">结果将在此显示。按 Enter 运行，或切换下拉重新生成。</div>
-        </template>
+        </template> -->
       </section>
     </main>
   </div>
