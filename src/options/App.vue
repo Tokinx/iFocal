@@ -5,6 +5,7 @@ import { iconOfNav, iconOfChannelType, iconOfAction } from '@/shared/icons';
 import { useChannels } from '@/options/composables/useChannels';
 import { promptTemplates, defaultTemplates, initTemplates, saveTemplates as saveTpls, resetTemplates as resetTpls } from '@/options/composables/useTemplates';
 import { useToast } from '@/options/composables/useToast';
+import { SUPPORTED_LANGUAGES, SUPPORTED_TASKS, DEFAULT_CONFIG, loadConfig, saveConfig, CONFIG_KEYS } from '@/shared/config';
 
 type ModelPair = { channel: string; model: string } | null;
 
@@ -16,12 +17,8 @@ const toast = useToast();
 const defaultModel = ref<ModelPair>(null);
 const translateModel = ref<ModelPair>(null);
 const activeModel = ref<ModelPair>(null);
-const autoPasteGlobalAssistant = ref<boolean>(false);
-const translateTargetLang = ref<string>('zh-CN');
-const sidebarHistoryLimit = ref<number>(10);
-const actionKey = ref<string>('Alt');
-const displayMode = ref<'insert' | 'overlay'>('insert');
-const wrapperStyle = ref<string>('');
+// 使用全局配置
+const config = ref({ ...DEFAULT_CONFIG });
 
 const defaultModelValue = ref('');
 const translateModelValue = ref('');
@@ -34,29 +31,61 @@ function joinPair(pair: ModelPair) { return pair && (pair as any).channel && (pa
 function parsePair(value: string): ModelPair { if (!value || value === '__unset__') return null; const [channel, model] = value.split('|'); if (!channel || !model) return null; return { channel, model }; }
 
 async function loadAll() {
-  await new Promise<void>((resolve) => {
-    try {
-      chrome.storage.sync.get(['channels','defaultModel','translateModel','autoPasteGlobalAssistant','translateTargetLang','actionKey','hoverKey','selectKey','displayMode','wrapperStyle','promptTemplates','activeModel','sidebarHistoryLimit'], (items:any) => {
-        channels.value = Array.isArray(items.channels) ? items.channels : [];
-        defaultModel.value = items.defaultModel || null;
-        translateModel.value = items.translateModel || null;
-        activeModel.value = items.activeModel || null;
-        autoPasteGlobalAssistant.value = !!items.autoPasteGlobalAssistant;
-        translateTargetLang.value = items.translateTargetLang || 'zh-CN';
-        actionKey.value = items.actionKey || items.hoverKey || items.selectKey || 'Alt';
-        displayMode.value = items.displayMode || 'insert';
-        wrapperStyle.value = items.wrapperStyle || '';
-        sidebarHistoryLimit.value = Number(items.sidebarHistoryLimit || 10) || 10;
-        initTemplates(items.promptTemplates || {});
-        initTestModels();
-        resolve();
-      });
-    } catch { resolve(); }
-  });
+  try {
+    // 加载全局配置
+    const globalConfig = await loadConfig();
+    config.value = { ...globalConfig };
+    
+    // 加载其他设置
+    await new Promise<void>((resolve) => {
+      try {
+        chrome.storage.sync.get(['channels','defaultModel','translateModel','promptTemplates','activeModel'], (items:any) => {
+          channels.value = Array.isArray(items.channels) ? items.channels : [];
+          defaultModel.value = items.defaultModel || null;
+          translateModel.value = items.translateModel || null;
+          activeModel.value = items.activeModel || null;
+          initTemplates(items.promptTemplates || {});
+          initTestModels();
+          resolve();
+        });
+      } catch { resolve(); }
+    });
+  } catch (error) {
+    console.error('加载配置失败:', error);
+  }
 }
 
 function saveModels() { const dm = parsePair(defaultModelValue.value); const tm = parsePair(translateModelValue.value); try { chrome.storage.sync.set({ defaultModel: dm, translateModel: tm }, () => toast.success('模型设置已保存')); } catch { toast.error('保存失败'); } }
-function saveBasics() { try { const k = (actionKey.value || 'Alt').trim() || 'Alt'; const lang = (translateTargetLang.value || 'zh-CN').trim() || 'zh-CN'; if (!k) { toast.error('快捷键不能为空'); return; } chrome.storage.sync.set({ actionKey: k, hoverKey: k, selectKey: k, translateTargetLang: lang, displayMode: displayMode.value || 'insert', wrapperStyle: (wrapperStyle.value || '').trim() }, () => toast.success('基础设置已保存')); } catch { toast.error('保存失败'); } }
+async function saveBasics() {
+  try {
+    const k = (config.value.actionKey || 'Alt').trim() || 'Alt';
+    const lang = (config.value.translateTargetLang || 'zh-CN').trim() || 'zh-CN';
+    if (!k) {
+      toast.error('快捷键不能为空');
+      return;
+    }
+    
+    // 更新配置
+    config.value.actionKey = k;
+    config.value.translateTargetLang = lang;
+    config.value.displayMode = config.value.displayMode || 'insert';
+    config.value.wrapperStyle = (config.value.wrapperStyle || '').trim();
+    
+    // 保存配置
+    await saveConfig({
+      actionKey: k,
+      hoverKey: k,
+      selectKey: k,
+      translateTargetLang: lang,
+      displayMode: config.value.displayMode,
+      wrapperStyle: config.value.wrapperStyle
+    });
+    
+    toast.success('基础设置已保存');
+  } catch {
+    toast.error('保存失败');
+  }
+}
 
 // 删除渠道：二次确认 + 撤回
 function confirmRemoveChannel(ch: any) {
@@ -85,13 +114,28 @@ const assistantResult = ref('');
 let assistantPort: chrome.runtime.Port | null = null;
 watch(channels, () => { const prefer = joinPair(activeModel.value) || joinPair(defaultModel.value) || modelPairs.value[0]?.value || ''; if (prefer) assistantModelValue.value = prefer; }, { immediate: true, deep: true });
 // 保存侧边栏历史会话保存数量
-watch(sidebarHistoryLimit, (v) => { try { chrome.storage.sync.set({ sidebarHistoryLimit: Number(v || 10) || 10 }); } catch {} });
+watch(() => config.value.sidebarHistoryLimit, async (v) => {
+  try {
+    config.value.sidebarHistoryLimit = Number(v || 10) || 10;
+    await saveConfig({ sidebarHistoryLimit: config.value.sidebarHistoryLimit });
+  } catch {}
+});
 function startAssistantStream() { const text = assistantDraft.value.trim(); if (!text) return; if (assistantPort) { try { assistantPort.disconnect(); } catch {} assistantPort = null; } assistantResult.value = ''; const pair = parsePair(assistantModelValue.value); const msg:any = { type: 'start', task: assistantTask.value, text }; if (pair) { msg.channel = pair.channel; msg.model = pair.model; } try { const port = chrome.runtime.connect({ name: 'ai-stream' }); assistantPort = port; port.onMessage.addListener((m:any) => { if (m?.type === 'delta') assistantResult.value += String(m.text || ''); else if (m?.type === 'error') assistantResult.value += `\n[错误] ${m.error}`; }); try { port.onDisconnect.addListener(() => { try { const err = chrome.runtime.lastError; if (err) assistantResult.value += `\n[错误] ${err.message}`; } catch {} }); } catch {} port.postMessage(msg); } catch {} }
-function onLangChange() { try { chrome.storage.sync.set({ translateTargetLang: translateTargetLang.value }); } catch {} if (assistantDraft.value.trim()) startAssistantStream(); }
+async function onLangChange() {
+  try {
+    await saveConfig({ translateTargetLang: config.value.translateTargetLang });
+  } catch {}
+  if (assistantDraft.value.trim()) startAssistantStream();
+}
 watch(assistantModelValue, (val) => { const pair = parsePair(val); try { chrome.storage.sync.set({ activeModel: pair || null }); } catch {} });
 
 // 切换自动粘贴开关时持久化
-watch(autoPasteGlobalAssistant, (val) => { try { chrome.storage.sync.set({ autoPasteGlobalAssistant: !!val }); } catch {} });
+watch(() => config.value.autoPasteGlobalAssistant, async (val) => {
+  try {
+    config.value.autoPasteGlobalAssistant = !!val;
+    await saveConfig({ autoPasteGlobalAssistant: config.value.autoPasteGlobalAssistant });
+  } catch {}
+});
 
 // 导入导出
 const importerRef = ref<HTMLInputElement|null>(null);
@@ -126,7 +170,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="min-h-screen flex bg-background text-foreground">
+  <div class="min-h-screen flex bg-background text-foreground mx-auto" style="max-width: 80rem;">
     <!-- 左侧导航 -->
     <aside class="w-60 shrink-0 border-r bg-white">
       <div class="p-4 text-lg font-semibold">设置</div>
@@ -181,16 +225,10 @@ onMounted(async () => {
             </div>
             <div class="w-36">
               <Label class="mb-1 block">翻译目标</Label>
-              <Select v-model="translateTargetLang" @update:modelValue="onLangChange">
+              <Select v-model="config.translateTargetLang" @update:modelValue="onLangChange">
                 <SelectTrigger><SelectValue placeholder="语言" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="zh-CN">zh-CN</SelectItem>
-                  <SelectItem value="en">en</SelectItem>
-                  <SelectItem value="ja">ja</SelectItem>
-                  <SelectItem value="ko">ko</SelectItem>
-                  <SelectItem value="fr">fr</SelectItem>
-                  <SelectItem value="es">es</SelectItem>
-                  <SelectItem value="de">de</SelectItem>
+                  <SelectItem v-for="lang in SUPPORTED_LANGUAGES" :key="lang.value" :value="lang.value">{{ lang.label }}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -198,7 +236,7 @@ onMounted(async () => {
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <Label class="mb-1 block">侧边栏历史会话保存数量</Label>
-              <Input type="number" v-model.number="sidebarHistoryLimit" min="1" max="100" placeholder="10" />
+              <Input type="number" v-model.number="config.sidebarHistoryLimit" min="1" max="100" placeholder="10" />
             </div>
           </div>
           <Textarea v-model="assistantDraft" class="min-h-28" placeholder="在此粘贴需要处理的文本..." />
@@ -405,7 +443,7 @@ onMounted(async () => {
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <Label class="mb-1 block">触发键（如 Alt）</Label>
-              <Input v-model="actionKey" placeholder="如 Alt" />
+              <Input v-model="config.actionKey" placeholder="如 Alt" />
             </div>
           </div>
           <div>
@@ -424,22 +462,16 @@ onMounted(async () => {
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <Label class="mb-1 block">翻译目标语言</Label>
-              <Select v-model="translateTargetLang">
+              <Select v-model="config.translateTargetLang">
                 <SelectTrigger><SelectValue placeholder="语言" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="zh-CN">zh-CN</SelectItem>
-                  <SelectItem value="en">en</SelectItem>
-                  <SelectItem value="ja">ja</SelectItem>
-                  <SelectItem value="ko">ko</SelectItem>
-                  <SelectItem value="fr">fr</SelectItem>
-                  <SelectItem value="es">es</SelectItem>
-                  <SelectItem value="de">de</SelectItem>
+                  <SelectItem v-for="lang in SUPPORTED_LANGUAGES" :key="lang.value" :value="lang.value">{{ lang.label }}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div>
               <Label class="mb-1 block">结果显示方式</Label>
-              <Select v-model="displayMode">
+              <Select v-model="config.displayMode">
                 <SelectTrigger><SelectValue placeholder="显示方式" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="insert">插入原文下方</SelectItem>
@@ -450,11 +482,11 @@ onMounted(async () => {
           </div>
           <div>
             <Label class="mb-1 block">包裹样式（floating-copilot-target-wrapper）</Label>
-            <Textarea v-model="wrapperStyle" class="min-h-28" placeholder="background-image: linear-gradient(to right, rgba(71,71,71,.5) 30%, rgba(255,255,255,0) 0%);&#10;background-position: bottom;" />
+            <Textarea v-model="config.wrapperStyle" class="min-h-28" placeholder="background-image: linear-gradient(to right, rgba(71,71,71,.5) 30%, rgba(255,255,255,0) 0%);&#10;background-position: bottom;" />
           </div>
           <div>
             <label class="flex items-center gap-2 text-sm">
-              <input type="checkbox" v-model="autoPasteGlobalAssistant" class="h-4 w-4" />
+              <input type="checkbox" v-model="config.autoPasteGlobalAssistant" class="h-4 w-4" />
               全局助手：自动粘贴剪贴板
             </label>
             <p class="mt-2 text-xs text-muted-foreground">勾选/取消即自动保存。</p>

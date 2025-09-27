@@ -4,13 +4,11 @@
     <header class="flex items-center justify-between gap-3 border-b px-4 py-3">
       <div class="text-sm font-medium">FloatingCopilot</div>
       <div class="flex items-center gap-2">
-        <Button variant="ghost" class="flex items-center gap-1" @click="startNewSession" :disabled="sending">
+        <Button variant="ghost" class="flex items-center gap-1" @click="startNewSession" :disabled="sending" title="新会话">
           <Icon icon="material-symbols:add-circle-outline-rounded" width="16" />
-          新会话
         </Button>
-        <Button variant="ghost" class="flex items-center gap-1" @click="toggleHistory" :disabled="sending">
+        <Button variant="ghost" class="flex items-center gap-1" @click="toggleHistory" :disabled="sending" title="历史消息">
           <Icon icon="material-symbols:history" width="16" />
-          历史消息
         </Button>
       </div>
     </header>
@@ -75,8 +73,8 @@
     <SelectValue placeholder="Feature" />
   </SelectTrigger>
   <SelectContent>
-    <SelectItem v-for="feature in features" :key="feature.id" :value="feature.id">
-      <span class="inline-flex items-center gap-2"><Icon :icon="iconOfFeature(feature.id)" width="14" /> {{ feature.label }}</span>
+    <SelectItem v-for="feature in features" :key="feature.value" :value="feature.value">
+      <span class="inline-flex items-center gap-2"><Icon :icon="iconOfFeature(feature.value)" width="14" /> {{ feature.label }}</span>
     </SelectItem>
   </SelectContent>
 </Select>
@@ -146,6 +144,7 @@ import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 import { Icon } from '@iconify/vue';
 import { iconOfFeature, iconOfRole, iconOfAction } from '@/shared/icons';
 import { useToast } from '@/options/composables/useToast';
+import { SUPPORTED_LANGUAGES, SUPPORTED_TASKS, loadConfig } from '@/shared/config';
 
 interface ChatMessage {
   id: string;
@@ -164,18 +163,10 @@ const toast = useToast();
 
 const models = ref<string[]>(['gpt-4o-mini', 'gpt-4o', 'claude-3-haiku']);
 const features = ref([
-  { id: 'chat', label: 'Chat' },
-  { id: 'translate', label: 'Translate' },
-  { id: 'summarize', label: 'Summarize' },
-  { id: 'analyze-page', label: 'Page insight' }
+  { value: 'chat', label: 'Chat' },
+  ...SUPPORTED_TASKS
 ]);
-const languages = ref([
-  { value: 'zh-CN', label: 'Chinese (zh-CN)' },
-  { value: 'en', label: 'English' },
-  { value: 'ja', label: 'Japanese' },
-  { value: 'ko', label: 'Korean' },
-  { value: 'fr', label: 'French' }
-]);
+const languages = ref(SUPPORTED_LANGUAGES);
 
 const state = reactive({
   selectedModel: models.value[0],
@@ -405,6 +396,9 @@ function persistSessions() {
 
 onMounted(async () => {
   try {
+    // 加载全局配置
+    const globalConfig = await loadConfig();
+    
     const bootstrap = await requestSidebarAction<{ models: string[]; defaultFeature: string; targetLang: string }>({ type: 'bootstrap' });
     if (bootstrap?.models?.length) {
       models.value = bootstrap.models;
@@ -412,13 +406,20 @@ onMounted(async () => {
     }
     if (bootstrap?.defaultFeature) {
       state.selectedFeature = bootstrap.defaultFeature;
+    } else {
+      // 使用全局配置中的默认任务
+      state.selectedFeature = globalConfig.defaultTask;
     }
     if (bootstrap?.targetLang) {
       state.targetLang = bootstrap.targetLang;
+    } else {
+      // 使用全局配置中的目标语言
+      state.targetLang = globalConfig.translateTargetLang;
     }
+    
     // 加载历史设置与会话
     try {
-      chrome.storage.sync.get(['sidebarHistoryLimit'], (cfg:any) => { historyLimit.value = Number(cfg?.sidebarHistoryLimit || 10) || 10; });
+      historyLimit.value = globalConfig.sidebarHistoryLimit;
       chrome.storage.local.get(['sidebarSessions','sidebarCurrentSessionId'], (items:any) => {
         const list = Array.isArray(items?.sidebarSessions) ? items.sidebarSessions : [];
         sessions.splice(0, sessions.length, ...(list as any));

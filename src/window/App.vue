@@ -3,13 +3,13 @@
     <main class="flex-1 grid grid-rows-[1fr_auto_1.25fr] gap-3 px-4 py-3">
       <Textarea
         v-model="state.text"
-        class="min-h-[120px]"
+        class="min-h-[5rem]"
         placeholder="在此输入要处理的文本...（空白将不会执行）"
         @keydown.enter.exact.prevent="run()"
       />
 
-      <div class="flex flex-wrap items-center gap-2">
-        <Select v-model="selectedPairKey" class="w-56" @update:modelValue="onModelChange">
+      <div class="flex items-center gap-2">
+        <Select v-model="selectedPairKey" class="w-full" @update:modelValue="onModelChange">
           <SelectTrigger>
             <span class="truncate">{{ currentModelName || '选择模型' }}</span>
           </SelectTrigger>
@@ -23,24 +23,21 @@
           </SelectContent>
         </Select>
 
-        <Select v-model="state.task" class="w-36">
+        <Select v-model="state.task" class="w-full">
           <SelectTrigger>
             <SelectValue placeholder="选择任务" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="translate">翻译</SelectItem>
-            <SelectItem value="summarize">总结</SelectItem>
-            <SelectItem value="rewrite">改写</SelectItem>
-            <SelectItem value="polish">润色</SelectItem>
+            <SelectItem v-for="task in SUPPORTED_TASKS" :key="task.value" :value="task.value">{{ task.label }}</SelectItem>
           </SelectContent>
         </Select>
 
-        <Select v-model="state.targetLang" class="w-40" @update:modelValue="onLangChange">
+        <Select v-model="state.targetLang" class="w-full" @update:modelValue="onLangChange">
           <SelectTrigger>
             <SelectValue placeholder="选择语言" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem v-for="lang in languages" :key="lang.value" :value="lang.value">{{ lang.label }}</SelectItem>
+            <SelectItem v-for="lang in SUPPORTED_LANGUAGES" :key="lang.value" :value="lang.value">{{ lang.label }}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -62,6 +59,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { SUPPORTED_LANGUAGES, SUPPORTED_TASKS, loadConfig } from '@/shared/config';
 
 type Pair = { channel: string; model: string };
 type Channel = { name: string; type: string; apiKey?: string; apiUrl?: string; models?: string[] };
@@ -97,11 +95,15 @@ function parseKey(key: string): Pair | null {
 }
 
 async function loadModels() {
-  const cfg: any = await new Promise(resolve => chrome.storage.sync.get(['channels', 'defaultModel', 'activeModel', 'translateTargetLang'], resolve));
+  // 加载全局配置
+  const globalConfig = await loadConfig();
+  
+  const cfg: any = await new Promise(resolve => chrome.storage.sync.get(['channels', 'defaultModel', 'activeModel'], resolve));
   const channels: Channel[] = Array.isArray(cfg.channels) ? cfg.channels : [];
   const pairs = channels.flatMap(ch => (ch.models || []).map(m => ({ key: keyOf({ channel: ch.name, model: m }), channel: ch.name, model: m })));
   modelPairs.value = pairs;
-  state.targetLang = cfg.translateTargetLang || 'zh-CN';
+  state.targetLang = globalConfig.translateTargetLang;
+  state.task = globalConfig.defaultTask;
 
   // prefer activeModel (object), then defaultModel (object), else first
   const prefer: Pair | null = cfg.activeModel || cfg.defaultModel || null;
@@ -146,9 +148,16 @@ function onModelChange() {
   if (state.text.trim()) run();
 }
 
-function onLangChange() {
+async function onLangChange() {
   const lang = state.targetLang || 'zh-CN';
-  chrome.storage.sync.set({ translateTargetLang: lang });
+  try {
+    const { saveConfig } = await import('@/shared/config');
+    await saveConfig({ translateTargetLang: lang });
+  } catch (error) {
+    console.error('保存语言设置失败:', error);
+    // 回退到直接使用 chrome.storage
+    chrome.storage.sync.set({ translateTargetLang: lang });
+  }
   if (state.text.trim()) run();
 }
 
@@ -178,13 +187,4 @@ onMounted(async () => {
 
 watch(() => state.task, () => { if (state.text.trim()) run(); });
 
-const languages = [
-  { value: 'zh-CN', label: 'Chinese (zh-CN)' },
-  { value: 'en', label: 'English' },
-  { value: 'ja', label: 'Japanese' },
-  { value: 'ko', label: 'Korean' },
-  { value: 'fr', label: 'French' },
-  { value: 'de', label: 'German' },
-  { value: 'es', label: 'Spanish' }
-];
 </script>
