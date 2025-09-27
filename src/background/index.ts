@@ -2,6 +2,46 @@ export {};
 
 const SIDEBAR_PATH = 'dist/sidebar.html';
 let selectionBuffer = '';
+let isOpeningGlobalWindow = false; // 打开全局窗口的重入保护
+// 全局助手窗口单例 ID 存储键
+const GLOBAL_WIN_KEY = 'globalAssistantWindowId';
+
+// 监听窗口关闭，若为全局助手，则清理存储的 ID
+try {
+  chrome.windows.onRemoved.addListener((windowId) => {
+    try {
+      chrome.storage.local.get([GLOBAL_WIN_KEY], (items) => {
+        if (items && items[GLOBAL_WIN_KEY] === windowId) {
+          chrome.storage.local.remove([GLOBAL_WIN_KEY]);
+        }
+      });
+    } catch {}
+  });
+} catch {}
+
+async function getStoredGlobalWindowId(): Promise<number | null> {
+  return new Promise((resolve) => {
+    try {
+      chrome.storage.local.get([GLOBAL_WIN_KEY], (items) => {
+        const id = items && typeof items[GLOBAL_WIN_KEY] === 'number' ? items[GLOBAL_WIN_KEY] : null;
+        resolve(id);
+      });
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+async function setStoredGlobalWindowId(id: number | null): Promise<void> {
+  return new Promise((resolve) => {
+    try {
+      if (typeof id === 'number') chrome.storage.local.set({ [GLOBAL_WIN_KEY]: id }, () => resolve());
+      else chrome.storage.local.remove([GLOBAL_WIN_KEY], () => resolve());
+    } catch {
+      resolve();
+    }
+  });
+}
 
 chrome.runtime.onInstalled.addListener(async () => {
   try {
@@ -383,19 +423,78 @@ function sseLoopFromReader(reader: ReadableStreamDefaultReader<Uint8Array>, onLi
 }
 
 async function openOrFocusGlobalWindow() {
+  if (isOpeningGlobalWindow) return;
+  isOpeningGlobalWindow = true;
+  try {
   const distUrl = chrome.runtime.getURL('dist/window.html');
   const altDistUrl = chrome.runtime.getURL('dist/src/window/index.html');
+  // 先尝试通过已记录的窗口 ID 聚焦，确保单例
+  try {
+    const storedId = await getStoredGlobalWindowId();
+    if (typeof storedId === 'number') {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          chrome.windows.update(storedId, { focused: true }, (w) => {
+            const err = chrome.runtime.lastError; if (err || !w) reject(err || new Error('no window'));
+            else resolve();
+          });
+        });
+        return;
+      } catch {
+        // 若失败，说明记录已失效，继续走后续逻辑
+        await setStoredGlobalWindowId(null);
+      }
+    }
+  } catch {}
   try {
     const tabs = await new Promise<chrome.tabs.Tab[]>((resolve) => chrome.tabs.query({ url: [distUrl, altDistUrl] as any }, resolve));
     if (tabs && tabs.length > 0) {
-      const tab = tabs[0];
-      chrome.windows.update(tab.windowId, { focused: true });
-      if (tab.id) chrome.tabs.update(tab.id, { active: true });
+      // 仅保留第一个，全局窗口保持单例
+      const primary = tabs[0];
+      try {
+        chrome.windows.update(primary.windowId, { focused: true });
+        if (primary.id) chrome.tabs.update(primary.id, { active: true });
+        // 记录主窗口 ID
+        if (typeof primary.windowId === 'number') { try { await setStoredGlobalWindowId(primary.windowId); } catch {} }
+      } catch {}
+      // 关闭多余的重复页面（若有）
+      const extras = tabs.slice(1).map((t) => t.id).filter((id): id is number => typeof id === 'number');
+      if (extras.length) { try { chrome.tabs.remove(extras); } catch {}
+      }
       return;
     }
   } catch {}
+
   const targetUrl = await pickExistingExtensionUrl(['dist/window.html', 'dist/src/window/index.html']);
-  chrome.windows.create({ url: targetUrl, type: 'popup', width: 400, height: 600, focused: true });
+  // 居中计算：基于最后聚焦的浏览器窗口
+  const width = 420;
+  const height = 640;
+  let left: number | undefined;
+  let top: number | undefined;
+  try {
+    const last = await new Promise<chrome.windows.Window>((resolve) => chrome.windows.getLastFocused(resolve));
+    const hasBounds = typeof last.left === 'number' && typeof last.top === 'number' && typeof last.width === 'number' && typeof last.height === 'number';
+    if (hasBounds) {
+      left = Math.max(0, (last.left as number) + Math.round(((last.width as number) - width) / 2));
+      top = Math.max(0, (last.top as number) + Math.round(((last.height as number) - height) / 2));
+    }
+  } catch {}
+  const createData: chrome.windows.CreateData = { url: targetUrl, type: 'popup', width, height, focused: true } as any;
+  if (typeof left === 'number' && typeof top === 'number') {
+    (createData as any).left = left;
+    (createData as any).top = top;
+  }
+  try {
+    const win = await new Promise<chrome.windows.Window | null>((resolve) => chrome.windows.create(createData, (w) => resolve(w || null)));
+    if (win && typeof win.id === 'number') { try { await setStoredGlobalWindowId(win.id); } catch {} }
+  } catch {
+    chrome.windows.create({ url: targetUrl, type: 'popup', width, height, focused: true }, (w) => {
+      try { if (w && typeof w.id === 'number') setStoredGlobalWindowId(w.id); } catch {}
+    });
+  }
+  } finally {
+    isOpeningGlobalWindow = false;
+  }
 }
 
 async function pickExistingExtensionUrl(paths: string[]): Promise<string> {
