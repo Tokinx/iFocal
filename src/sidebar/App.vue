@@ -4,10 +4,10 @@
     <header class="flex items-center justify-between gap-3 border-b px-4 py-3">
       <div class="text-sm font-medium">FloatingCopilot</div>
       <div class="flex items-center gap-2">
-        <Button variant="ghost" class="flex items-center gap-1" @click="startNewSession" :disabled="sending" title="新会话">
+        <Button variant="outline" size="icon" class="flex items-center gap-1" @click="startNewSession" :disabled="sending" title="新会话">
           <Icon icon="material-symbols:add-circle-outline-rounded" width="16" />
         </Button>
-        <Button variant="ghost" class="flex items-center gap-1" @click="toggleHistory" :disabled="sending" title="历史消息">
+        <Button variant="outline" size="icon" class="flex items-center gap-1" @click="toggleHistory" :disabled="sending" title="历史消息">
           <Icon icon="material-symbols:history" width="16" />
         </Button>
       </div>
@@ -15,13 +15,14 @@
 
     <main ref="messagesRef" class="flex-1 overflow-y-auto px-4 py-3 space-y-3">
       <template v-if="messages.length">
-<article
+        <!-- ,
+            selectedId === message.id ? 'ring-2 ring-primary/40' : '' -->
+        <article
           v-for="message in messages"
           :key="message.id"
           :class="[
             'flex w-full flex-col gap-1 rounded-xl border p-3 text-sm',
-            message.role === 'user' ? 'border-primary/40 bg-primary/5 self-end' : 'border-slate-200 bg-white shadow-sm',
-            selectedId === message.id ? 'ring-2 ring-primary/40' : ''
+            message.role === 'user' ? 'border-primary/40 bg-primary/5 self-end' : 'border-slate-200 bg-white shadow-sm'
           ]"
           class="group relative focus:outline-none"
           tabindex="0"
@@ -37,55 +38,65 @@
             </span>
             <span>{{ formatTime(message.createdAt) }}</span>
           </header>
-          <div class="text-sm whitespace-pre-wrap leading-relaxed">
-            {{ message.content }}
+          <div class="text-sm leading-relaxed prose prose-sm max-w-none">
+            <div v-if="message.role === 'user'">{{ message.content }}</div>
+            <div v-else>
+              <div v-if="sending && message.content === ''" class="flex items-center gap-1">
+                <div class="animate-pulse flex space-x-1">
+                  <div class="h-2 w-2 bg-primary rounded-full"></div>
+                  <div class="h-2 w-2 bg-primary rounded-full animation-delay-200"></div>
+                  <div class="h-2 w-2 bg-primary rounded-full animation-delay-400"></div>
+                </div>
+                <span class="text-muted-foreground text-xs">Thinking...</span>
+              </div>
+              <div v-else v-html="renderMarkdown(message.content)"></div>
+            </div>
           </div>
 
           <!-- hover tools -->
           <div class="absolute -top-2 right-2 opacity-0 group-hover:opacity-100 transition pointer-events-auto">
-            <div class="flex items-center gap-1 rounded-md border bg-white/95 px-1 py-0.5 shadow">
-              <button class="inline-flex items-center gap-1 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded"
+            <div class="flex items-center gap-1 rounded-full border bg-white/95 p-1 shadow">
+              <Button variant="outline" size="icon" class="inline-flex items-center w-6 h-6 gap-1 text-xs text-slate-600 hover:bg-slate-100 rounded-full"
                       title="Copy" @click="copyMessage(message)">
-                <Icon :icon="iconOfAction('copy')" width="14" />
-              </button>
-              <button class="inline-flex items-center gap-1 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded"
+                <Icon :icon="iconOfAction('copy')" />
+              </Button>
+              <Button variant="outline" size="icon" class="inline-flex items-center w-6 h-6 gap-1 text-xs text-slate-600 hover:bg-slate-100 rounded-full"
                       title="Retry" @click="resendMessage(message)">
-                <Icon :icon="iconOfAction('resend')" width="14" />
-              </button>
-              <button class="inline-flex items-center gap-1 px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded"
+                <Icon :icon="iconOfAction('resend')" />
+              </Button>
+              <Button variant="outline" size="icon" class="inline-flex items-center w-6 h-6 gap-1 text-xs text-red-600 hover:bg-red-50 rounded-full"
                       title="Delete" @click="deleteMessage(message, true)">
-                <Icon :icon="iconOfAction('delete')" width="14" />
-              </button>
+                <Icon :icon="iconOfAction('delete')" />
+              </Button>
             </div>
           </div>
         </article>
       </template>
       <p v-else class="mt-12 text-center text-sm text-muted-foreground">
-        No conversation yet. Capture the current page or ask a question to get started.
+        Feel free to ask me if you have any questions.
       </p>
     </main>
 
     <section class="border-t px-4 py-3 space-y-3">
-      <div class="flex flex-wrap gap-2">
-        
-        <Select v-model="state.selectedFeature" class="w-40">
-  <SelectTrigger>
-    <SelectValue placeholder="Feature" />
-  </SelectTrigger>
-  <SelectContent>
-    <SelectItem v-for="feature in features" :key="feature.value" :value="feature.value">
-      <span class="inline-flex items-center gap-2"><Icon :icon="iconOfFeature(feature.value)" width="14" /> {{ feature.label }}</span>
-    </SelectItem>
-  </SelectContent>
-</Select>
-        <Select v-if="isTranslate" v-model="state.targetLang" class="w-36">
-  <SelectTrigger>
-    <SelectValue placeholder="Language" />
-  </SelectTrigger>
-  <SelectContent>
-    <SelectItem v-for="lang in languages" :key="lang.value" :value="lang.value">{{ lang.label }}</SelectItem>
-  </SelectContent>
-</Select>
+      <div class="flex gap-2">
+        <Select v-model="state.selectedFeature" class="w-full">
+          <SelectTrigger>
+            <SelectValue placeholder="Feature" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="feature in features" :key="feature.value" :value="feature.value">
+              <span class="inline-flex items-center gap-2"><Icon :icon="iconOfFeature(feature.value)" width="14" /> {{ feature.label }}</span>
+            </SelectItem>
+          </SelectContent>
+        </Select>
+        <Select v-model="state.targetLang" class="w-full">
+          <SelectTrigger>
+            <SelectValue placeholder="Language" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="lang in languages" :key="lang.value" :value="lang.value">{{ lang.label }}</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
       <Textarea
         v-model="state.draft"
@@ -142,6 +153,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 import { Icon } from '@iconify/vue';
+import { marked } from 'marked';
 import { iconOfFeature, iconOfRole, iconOfAction } from '@/shared/icons';
 import { useToast } from '@/options/composables/useToast';
 import { SUPPORTED_LANGUAGES, SUPPORTED_TASKS, loadConfig } from '@/shared/config';
@@ -175,9 +187,6 @@ const state = reactive({
   draft: ''
 });
 
-const isTranslate = computed(() => state.selectedFeature === 'translate');
-const currentFeature = computed(() => features.value.find((f) => f.id === state.selectedFeature));
-
 // 历史会话
 type Session = { id: string; title: string; updatedAt: number; messages: ChatMessage[] };
 const sessions = reactive<Session[]>([]);
@@ -197,6 +206,10 @@ function pushMessage(payload: Omit<ChatMessage, 'id' | 'createdAt'>) {
 
 function formatTime(timestamp: number) {
   return new Date(timestamp).toLocaleTimeString();
+}
+
+function renderMarkdown(content: string) {
+  return marked(content);
 }
 
 async function handleRefresh() {

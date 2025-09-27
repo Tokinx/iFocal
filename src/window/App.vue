@@ -41,12 +41,12 @@
         </Select>
       </div>
 
-      <section class="flex-1 rounded-xl border bg-popover/50 p-3 text-sm leading-relaxed whitespace-pre-wrap overflow-y-auto">
+      <section class="flex-1 rounded-xl border bg-popover/50 p-3 text-sm leading-relaxed overflow-y-auto prose prose-sm max-w-none">
         <template v-if="errorText">
           <div class="text-red-600">{{ errorText }}</div>
         </template>
         <template v-else-if="result">
-          {{ result }}
+          <div v-html="renderedResult"></div>
         </template>
         <!-- <template v-else>
           <div class="text-muted-foreground">结果将在此显示。按 Enter 运行，或切换下拉重新生成。</div>
@@ -58,6 +58,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { marked } from 'marked';
 import { SUPPORTED_LANGUAGES, SUPPORTED_TASKS, loadConfig } from '@/shared/config';
 
 type Pair = { channel: string; model: string };
@@ -76,11 +77,11 @@ const state = reactive({
   targetLang: 'zh-CN'
 });
 
-const canRun = computed(() => !!state.text.trim());
 const currentModelName = computed(() => {
   const cur = modelPairs.value.find(p => p.key === selectedPairKey.value);
   return cur ? cur.model : '';
 });
+const renderedResult = computed(() => marked(result.value));
 
 function keyOf(pair: Pair) {
   return `${pair.channel}:${pair.model}`;
