@@ -189,11 +189,10 @@ function handleAddChannelDialog() {
 
 <template>
   <div class="min-h-screen flex bg-background text-foreground mx-auto" style="max-width: 80rem;">
-    <!-- 左侧导航 -->
-    <aside class="w-60 shrink-0 border-r bg-white">
-      <div class="p-4 text-lg font-semibold">设置</div>
-      <nav class="px-2 pb-4 space-y-1">
-        <button
+    <!-- 左侧导航（sticky） -->
+    <aside class="w-60 shrink-0 bg-white sticky top-0 self-start">
+      <nav class="my-6 space-y-1">
+        <Button
           v-for="item in [
             { id:'channels', label:'渠道' },
             { id:'settings', label:'设置' },
@@ -202,13 +201,15 @@ function handleAddChannelDialog() {
             { id:'about', label:'关于' }
           ] as Array<{id:'channels'|'settings'|'debug'|'keys'|'about';label:string}>"
           :key="item.id"
-          class="w-full text-left rounded-md px-3 py-2 text-sm hover:bg-secondary flex items-center gap-2"
+          variant="ghost"
+          size="sm"
+          class="w-full justify-start rounded-md px-3 py-2 text-sm flex items-center gap-2"
           :class="nav === (item.id as any) ? 'bg-secondary' : ''"
           @click="nav = item.id as any; scrollToSection(item.id)"
         >
           <Icon :icon="iconOfNav(item.id)" width="16" class="opacity-80" />
           <span>{{ item.label }}</span>
-        </button>
+        </Button>
       </nav>
     </aside>
 
@@ -228,7 +229,7 @@ function handleAddChannelDialog() {
 
           <div v-if="!channels.length" class="text-sm text-muted-foreground">暂无渠道，请先添加。</div>
           <div v-else class="space-y-2">
-            <div v-for="ch in channels" :key="ch.name" class="rounded-lg border p-3 space-y-3">
+            <div v-for="ch in channels" :key="ch.name" class="rounded-lg border p-4 space-y-3">
               <div class="flex items-center justify-between gap-2">
                 <div class="text-sm">
                   <div class="font-medium inline-flex items-center gap-2">
@@ -247,14 +248,11 @@ function handleAddChannelDialog() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <Button variant="ghost" size="outline" class="flex items-center gap-1" @click="handleTestChannel(ch.name)" title="测试">
+                  <Button variant="outline" size="icon" class="flex items-center gap-1" @click="handleTestChannel(ch.name)" title="测试">
                     <Icon icon="proicons:bug" width="16" />
                   </Button>
-                  <Button variant="ghost" size="outline" class="flex items-center gap-1" @click="openEdit(ch)" title="编辑">
+                  <Button variant="outline" size="icon" class="flex items-center gap-1" @click="openEdit(ch)" title="编辑">
                     <Icon icon="proicons:pencil" width="16" />
-                  </Button>
-                  <Button variant="ghost" size="outline" class="flex items-center gap-1 text-red-600" @click="confirmRemoveChannel(ch)" title="删除">
-                    <Icon :icon="iconOfAction('delete')" width="16" />
                   </Button>
                 </div>
               </div>
@@ -290,6 +288,10 @@ function handleAddChannelDialog() {
                   <Textarea v-model="editForm.modelsText" class="min-h-28" />
                 </div>
                 <div class="flex items-center gap-2">
+                  <Button variant="ghost" class="flex items-center gap-1 text-red-600" @click="confirmRemoveChannel(ch)">
+                    <Icon :icon="iconOfAction('delete')" width="16" /> 删除
+                  </Button>
+                  <div class="w-full"></div>
                   <Button class="bg-primary text-primary-foreground flex items-center gap-1" @click="handleSaveEdit(ch.name)">
                     <Icon :icon="iconOfAction('save')" width="16" /> 保存
                   </Button>
@@ -365,10 +367,11 @@ function handleAddChannelDialog() {
             <Textarea v-model="config.wrapperStyle" class="min-h-28" placeholder="background-image: linear-gradient(to right, rgba(71,71,71,.5) 30%, rgba(255,255,255,0) 0%);&#10;background-position: bottom;" />
           </div>
           <div>
-            <label class="flex items-center gap-2 text-sm">
-              <input type="checkbox" v-model="config.autoPasteGlobalAssistant" class="h-4 w-4" />
-              全局助手：自动粘贴剪贴板
-            </label>
+            <Label class="mb-1 block">全局助手</Label>
+            <div class="flex items-center gap-2 text-sm">
+              <Checkbox v-model="config.autoPasteGlobalAssistant" />
+              <span>自动粘贴剪贴板</span>
+            </div>
             <p class="mt-2 text-xs text-muted-foreground">勾选/取消即自动保存。</p>
           </div>
           <div>
@@ -488,7 +491,7 @@ function handleAddChannelDialog() {
 
   <!-- 添加渠道 Dialog -->
   <Dialog :open="showAddChannel" @update:open="(v:boolean)=>showAddChannel=v">
-    <DialogScrollContent class="max-h-[80vh] w-[560px]">
+    <DialogScrollContent class="max-h-[80vh] w-[800px]">
       <div class="space-y-4">
         <div class="text-base font-semibold">添加渠道</div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -521,6 +524,7 @@ function handleAddChannelDialog() {
           <Textarea v-model="addForm.modelsText" class="min-h-28" placeholder="例如：&#10;gpt-4o-mini&#10;gpt-4o" />
         </div>
         <div class="flex items-center gap-2">
+          <div class="w-full"></div>
           <Button class="bg-primary text-primary-foreground" @click="handleAddChannelDialog">添加</Button>
           <Button variant="ghost" @click="closeAddChannel">取消</Button>
         </div>

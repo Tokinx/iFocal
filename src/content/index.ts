@@ -1,7 +1,7 @@
 import './style.css';
 import { createApp, ref } from 'vue';
-import { Select, SelectTrigger, SelectContent, SelectValue, SelectItem } from '@/sidebar/components/ui/select';
-import { Button } from '@/sidebar/components/ui/button';
+import { Select, SelectTrigger, SelectContent, SelectValue, SelectItem } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
 
 (function injectFallbackStyles() {
   try {
@@ -530,6 +530,5 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   return undefined;
 });
-
 
 

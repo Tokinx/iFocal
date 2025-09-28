@@ -41,20 +41,19 @@ export function iconOfRole(role: 'user' | 'assistant'): string {
 export function iconOfAction(action: 'copy' | 'delete' | 'resend' | 'edit' | 'test' | 'save' | 'reset'): string {
   switch (action) {
     case 'copy':
-      // 使用 material-symbols 作为补充集合
-      return 'material-symbols:content-copy-outline-rounded';
+      return 'proicons:copy';
     case 'delete':
-      return 'material-symbols:delete-outline-rounded';
+      return 'proicons:delete';
     case 'resend':
-      return 'material-symbols:refresh-rounded';
+      return 'proicons:arrow-clockwise';
     case 'edit':
       return 'proicons:pencil';
     case 'test':
       return 'proicons:bug';
     case 'save':
-      return 'material-symbols:check-small-rounded';
+      return 'proicons:save';
     case 'reset':
-      return 'material-symbols:restart-alt-rounded';
+      return 'proicons:alert-triangle';
     default:
       return 'proicons:info';
   }

@@ -1,10 +1,11 @@
 import type { App } from 'vue';
 import { Icon } from '@iconify/vue';
 
-import { Button } from '@/sidebar/components/ui/button';
-import { Textarea } from '@/sidebar/components/ui/textarea';
-import { Input } from '@/sidebar/components/ui/input';
-import { Label } from '@/sidebar/components/ui/label';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Select,
   SelectTrigger,
@@ -17,8 +18,8 @@ import {
   SelectScrollDownButton,
   SelectScrollUpButton,
   SelectItemText
-} from '@/sidebar/components/ui/select';
-import { Popover, PopoverTrigger, PopoverContent } from '@/sidebar/components/ui/popover';
+} from '@/components/ui/select';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -34,9 +35,9 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem
-} from '@/sidebar/components/ui/dropdown-menu';
-import { ScrollArea, ScrollBar } from '@/sidebar/components/ui/scroll-area';
-import { Dialog, DialogTrigger, DialogContent, DialogTitle, DialogDescription, DialogClose, DialogHeader, DialogFooter, DialogScrollContent } from '@/sidebar/components/ui/dialog';
+} from '@/components/ui/dropdown-menu';
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
+import { Dialog, DialogTrigger, DialogContent, DialogTitle, DialogDescription, DialogClose, DialogHeader, DialogFooter, DialogScrollContent } from '@/components/ui/dialog';
 import {
   Command,
   CommandDialog,
@@ -47,7 +48,7 @@ import {
   CommandList,
   CommandSeparator,
   CommandShortcut
-} from '@/sidebar/components/ui/command';
+} from '@/components/ui/command';
 
 export function setupUI(app: App) {
   // Iconify global icon component
@@ -57,6 +58,7 @@ export function setupUI(app: App) {
   app.component('Textarea', Textarea);
   app.component('Input', Input);
   app.component('Label', Label);
+  app.component('Checkbox', Checkbox);
 
   app.component('Select', Select);
   app.component('SelectTrigger', SelectTrigger);

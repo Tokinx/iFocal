@@ -8,7 +8,10 @@
         "build": "vite build",
         "preview": "vite preview",
         "check:encoding": "node scripts/normalize-encoding.mjs --check",
-        "fix:encoding": "node scripts/normalize-encoding.mjs --fix"
+        "fix:encoding": "node scripts/normalize-encoding.mjs --fix",
+        "ui:add": "shadcn-vue add",
+        "ui:add:base": "shadcn-vue add button input label textarea select dialog dropdown-menu popover scroll-area command checkbox",
+        "ui:add:more": "shadcn-vue add tooltip badge tabs separator avatar breadcrumb card progress skeleton switch toggle"
     },
     "dependencies": {
         "@iconify/vue": "^4.1.1",
