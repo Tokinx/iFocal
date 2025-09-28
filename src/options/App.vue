@@ -9,7 +9,7 @@ import { SUPPORTED_LANGUAGES, SUPPORTED_TASKS, DEFAULT_CONFIG, loadConfig, saveC
 
 type ModelPair = { channel: string; model: string } | null;
 
-const nav = ref<'assistant' | 'channels' | 'models' | 'keys' | 'others' | 'about'>('channels');
+const nav = ref<'channels' | 'settings' | 'debug' | 'keys' | 'about'>('channels');
 
 const { channels, modelPairs, addForm, addChannel, testModel, initTestModels, editingName, editForm, openEdit, cancelEdit, saveEdit, removeChannel, restoreChannelsSnapshot } = useChannels();
 const toast = useToast();
@@ -167,6 +167,24 @@ onMounted(async () => {
 });
 
 // 统一从 shared/icons 获取图标
+
+// 单页滚动定位
+function scrollToSection(id: 'channels'|'settings'|'debug'|'keys'|'about') {
+  try {
+    const el = document.getElementById(`opt-${id}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  } catch {}
+}
+
+// 添加渠道使用 Dialog
+const showAddChannel = ref(false);
+function openAddChannel() { showAddChannel.value = true; }
+function closeAddChannel() { showAddChannel.value = false; }
+function handleAddChannelDialog() {
+  try { handleAddChannel(); closeAddChannel(); } catch (e:any) { /* 内部已 toast */ }
+}
 </script>
 
 <template>
@@ -177,17 +195,16 @@ onMounted(async () => {
       <nav class="px-2 pb-4 space-y-1">
         <button
           v-for="item in [
-            { id:'assistant', label:'助手' },
             { id:'channels', label:'渠道' },
-            { id:'models', label:'模型' },
+            { id:'settings', label:'设置' },
+            { id:'debug', label:'调试' },
             { id:'keys', label:'快捷键' },
-            { id:'others', label:'其他' },
             { id:'about', label:'关于' }
-          ]"
+          ] as Array<{id:'channels'|'settings'|'debug'|'keys'|'about';label:string}>"
           :key="item.id"
           class="w-full text-left rounded-md px-3 py-2 text-sm hover:bg-secondary flex items-center gap-2"
           :class="nav === (item.id as any) ? 'bg-secondary' : ''"
-          @click="nav = item.id as any"
+          @click="nav = item.id as any; scrollToSection(item.id)"
         >
           <Icon :icon="iconOfNav(item.id)" width="16" class="opacity-80" />
           <span>{{ item.label }}</span>
@@ -197,98 +214,18 @@ onMounted(async () => {
 
     <!-- 右侧内容 -->
     <main class="flex-1 p-6 space-y-6">
-      <!-- 助手 -->
-      <section v-if="nav==='assistant'" class="space-y-4">
-        <header class="text-base font-semibold">快速助手</header>
-        <div class="rounded-xl border bg-white p-4 space-y-3">
-          <div class="flex flex-wrap gap-2">
-            <div class="w-56">
-              <Label class="mb-1 block">模型</Label>
-              <Select v-model="assistantModelValue">
-                <SelectTrigger><SelectValue placeholder="选择模型" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem v-for="p in modelPairs" :key="p.value" :value="p.value">{{ p.label }}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div class="w-40">
-              <Label class="mb-1 block">任务</Label>
-              <Select v-model="assistantTask">
-                <SelectTrigger><SelectValue placeholder="任务" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="translate">翻译</SelectItem>
-                  <SelectItem value="summarize">总结</SelectItem>
-                  <SelectItem value="rewrite">改写</SelectItem>
-                  <SelectItem value="polish">润色</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div class="w-36">
-              <Label class="mb-1 block">翻译目标</Label>
-              <Select v-model="config.translateTargetLang" @update:modelValue="onLangChange">
-                <SelectTrigger><SelectValue placeholder="语言" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem v-for="lang in SUPPORTED_LANGUAGES" :key="lang.value" :value="lang.value">{{ lang.label }}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label class="mb-1 block">侧边栏历史会话保存数量</Label>
-              <Input type="number" v-model.number="config.sidebarHistoryLimit" min="1" max="100" placeholder="10" />
-            </div>
-          </div>
-          <Textarea v-model="assistantDraft" class="min-h-28" placeholder="在此粘贴需要处理的文本..." />
-          <div class="flex items-center gap-2">
-            <Button class="bg-primary text-primary-foreground flex items-center gap-1" @click="startAssistantStream">
-              <Icon icon="proicons:bolt" width="16" />
-              执行
-            </Button>
-          </div>
-          <div class="rounded-md border bg-secondary/40 p-3 text-sm whitespace-pre-wrap min-h-12">{{ assistantResult }}</div>
-        </div>
-      </section>
-
       <!-- 渠道 -->
-      <section v-else-if="nav==='channels'" class="space-y-4">
-        <header class="text-base font-semibold">管理渠道</header>
-        <div class="rounded-xl border bg-white p-4 space-y-3">
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label class="mb-1 block">类型</Label>
-              <Select v-model="addForm.type">
-                <SelectTrigger><SelectValue placeholder="选择类型" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="openai">OpenAI</SelectItem>
-                  <SelectItem value="gemini">Google Gemini</SelectItem>
-                  <SelectItem value="openai-compatible">OpenAI 兼容</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label class="mb-1 block">名称</Label>
-              <Input v-model="addForm.name" placeholder="如 my-openai" />
-            </div>
-            <div>
-              <Label class="mb-1 block">API URL</Label>
-              <Input v-model="addForm.apiUrl" placeholder="留空使用默认" />
-            </div>
-            <div>
-              <Label class="mb-1 block">API KEY</Label>
-              <Input v-model="addForm.apiKey" placeholder="可留空（不更新）" />
-            </div>
-          </div>
-          <div>
-            <Label class="mb-1 block">Models（每行一个）</Label>
-            <Textarea v-model="addForm.modelsText" class="min-h-28" placeholder="例如：&#10;gpt-4o-mini&#10;gpt-4o" />
-          </div>
-          <div class="flex gap-2">
-            <Button class="bg-primary text-primary-foreground" @click="handleAddChannel">添加渠道</Button>
-          </div>
-        </div>
+      <section :id="'opt-channels'" class="space-y-4">
+        <header class="flex items-center text-base font-semibold">
+          <div class="shrink-0">管理渠道</div>
+          <div class="w-full"></div>
+          <Button @click="openAddChannel">
+            <Icon icon="proicons:box-add" width="16" />
+            添加渠道
+          </Button>
+        </header>
 
-        <div class="rounded-xl border bg-white p-4">
+
           <div v-if="!channels.length" class="text-sm text-muted-foreground">暂无渠道，请先添加。</div>
           <div v-else class="space-y-2">
             <div v-for="ch in channels" :key="ch.name" class="rounded-lg border p-3 space-y-3">
@@ -310,19 +247,19 @@ onMounted(async () => {
                       </SelectContent>
                     </Select>
                   </div>
-                  <Button variant="ghost" class="flex items-center gap-1" @click="handleTestChannel(ch.name)">
-                    <Icon icon="proicons:bug" width="16" /> 测试
+                  <Button variant="ghost" size="outline" class="flex items-center gap-1" @click="handleTestChannel(ch.name)" title="测试">
+                    <Icon icon="proicons:bug" width="16" />
                   </Button>
-                  <Button variant="ghost" class="flex items-center gap-1" @click="openEdit(ch)">
-                    <Icon icon="proicons:pencil" width="16" /> 编辑
+                  <Button variant="ghost" size="outline" class="flex items-center gap-1" @click="openEdit(ch)" title="编辑">
+                    <Icon icon="proicons:pencil" width="16" />
                   </Button>
-                  <Button variant="ghost" class="flex items-center gap-1 text-red-600" @click="confirmRemoveChannel(ch)">
-                    <Icon :icon="iconOfAction('delete')" width="16" /> 删除
+                  <Button variant="ghost" size="outline" class="flex items-center gap-1 text-red-600" @click="confirmRemoveChannel(ch)" title="删除">
+                    <Icon :icon="iconOfAction('delete')" width="16" />
                   </Button>
                 </div>
               </div>
 
-              <div v-if="editingName===ch.name" class="rounded-md border bg-secondary/30 p-3 space-y-3">
+              <div v-if="editingName===ch.name" class="space-y-3">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label class="mb-1 block">类型</Label>
@@ -348,10 +285,10 @@ onMounted(async () => {
                     <Input v-model="editForm.apiKey" placeholder="留空表示不修改" />
                   </div>
                 </div>
-              <div>
-                <Label class="mb-1 block">Models（每行一个）</Label>
-                <Textarea v-model="editForm.modelsText" class="min-h-28" />
-              </div>
+                <div>
+                  <Label class="mb-1 block">Models（每行一个）</Label>
+                  <Textarea v-model="editForm.modelsText" class="min-h-28" />
+                </div>
                 <div class="flex items-center gap-2">
                   <Button class="bg-primary text-primary-foreground flex items-center gap-1" @click="handleSaveEdit(ch.name)">
                     <Icon :icon="iconOfAction('save')" width="16" /> 保存
@@ -362,12 +299,11 @@ onMounted(async () => {
               </div>
             </div>
           </div>
-        </div>
       </section>
 
-      <!-- 模型 -->
-      <section v-else-if="nav==='models'" class="space-y-4">
-        <header class="text-base font-semibold">默认与翻译模型</header>
+      <!-- 设置（包含：默认/翻译模型、Prompt 模板、通用设置、历史会话上限） -->
+      <section :id="'opt-settings'" class="space-y-4">
+        <header class="text-base font-semibold">设置</header>
         <div class="rounded-xl border bg-white p-4 space-y-4">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -400,10 +336,44 @@ onMounted(async () => {
                 </SelectContent>
               </Select>
             </div>
+            <div>
+              <Label class="mb-1 block">侧边栏历史会话保存数量</Label>
+              <Input type="number" v-model.number="config.sidebarHistoryLimit" min="1" max="100" placeholder="10" />
+            </div>
+            <div>
+              <Label class="mb-1 block">默认目标语言</Label>
+              <Select v-model="config.translateTargetLang">
+                <SelectTrigger><SelectValue placeholder="语言" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="lang in SUPPORTED_LANGUAGES" :key="lang.value" :value="lang.value">{{ lang.label }}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label class="mb-1 block">结果显示方式</Label>
+              <Select v-model="config.displayMode">
+                <SelectTrigger><SelectValue placeholder="显示方式" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="insert">插入原文下方</SelectItem>
+                  <SelectItem value="overlay">覆盖原文</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <div>
-            <Button class="bg-primary text-primary-foreground flex items-center gap-1" @click="saveModels">
-              <Icon :icon="iconOfAction('save')" width="16" /> 保存
+            <Label class="mb-1 block">包裹样式（floating-copilot-target-wrapper）</Label>
+            <Textarea v-model="config.wrapperStyle" class="min-h-28" placeholder="background-image: linear-gradient(to right, rgba(71,71,71,.5) 30%, rgba(255,255,255,0) 0%);&#10;background-position: bottom;" />
+          </div>
+          <div>
+            <label class="flex items-center gap-2 text-sm">
+              <input type="checkbox" v-model="config.autoPasteGlobalAssistant" class="h-4 w-4" />
+              全局助手：自动粘贴剪贴板
+            </label>
+            <p class="mt-2 text-xs text-muted-foreground">勾选/取消即自动保存。</p>
+          </div>
+          <div>
+            <Button class="bg-primary text-primary-foreground flex items-center gap-1" @click="() => { saveModels(); saveBasics(); }">
+              <Icon :icon="iconOfAction('save')" width="16" /> 保存设置
             </Button>
           </div>
         </div>
@@ -436,8 +406,54 @@ onMounted(async () => {
         </div>
       </section>
 
+      <!-- 调试（原助手） -->
+      <section :id="'opt-debug'" class="space-y-4">
+        <header class="text-base font-semibold">调试</header>
+        <div class="rounded-xl border bg-white p-4 space-y-3">
+          <div class="flex flex-wrap gap-2">
+            <div class="w-56">
+              <Label class="mb-1 block">模型</Label>
+              <Select v-model="assistantModelValue">
+                <SelectTrigger><SelectValue placeholder="选择模型" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="p in modelPairs" :key="p.value" :value="p.value">{{ p.label }}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div class="w-40">
+              <Label class="mb-1 block">任务</Label>
+              <Select v-model="assistantTask">
+                <SelectTrigger><SelectValue placeholder="任务" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="translate">翻译</SelectItem>
+                  <SelectItem value="summarize">总结</SelectItem>
+                  <SelectItem value="rewrite">改写</SelectItem>
+                  <SelectItem value="polish">润色</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div class="w-36">
+              <Label class="mb-1 block">语言</Label>
+              <Select v-model="config.translateTargetLang" @update:modelValue="onLangChange">
+                <SelectTrigger><SelectValue placeholder="语言" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="lang in SUPPORTED_LANGUAGES" :key="lang.value" :value="lang.value">{{ lang.label }}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <Textarea v-model="assistantDraft" class="min-h-28" placeholder="在此粘贴需要处理的文本..." />
+          <div class="flex items-center gap-2">
+            <Button class="bg-primary text-primary-foreground flex items-center gap-1" @click="startAssistantStream">
+              <Icon icon="proicons:bolt" width="16" />
+              执行
+            </Button>
+          </div>
+          <div class="rounded-md border bg-secondary/40 p-3 text-sm whitespace-pre-wrap min-h-12">{{ assistantResult }}</div>
+        </div>
+      </section>
       <!-- 快捷键 -->
-      <section v-else-if="nav==='keys'" class="space-y-4">
+      <section :id="'opt-keys'" class="space-y-4">
         <header class="text-base font-semibold">页面快捷键</header>
         <div class="rounded-xl border bg-white p-4 space-y-4">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -455,52 +471,8 @@ onMounted(async () => {
         </div>
       </section>
 
-      <!-- 其他 -->
-      <section v-else-if="nav==='others'" class="space-y-4">
-        <header class="text-base font-semibold">其他</header>
-        <div class="rounded-xl border bg-white p-4 space-y-4">
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label class="mb-1 block">翻译目标语言</Label>
-              <Select v-model="config.translateTargetLang">
-                <SelectTrigger><SelectValue placeholder="语言" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem v-for="lang in SUPPORTED_LANGUAGES" :key="lang.value" :value="lang.value">{{ lang.label }}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label class="mb-1 block">结果显示方式</Label>
-              <Select v-model="config.displayMode">
-                <SelectTrigger><SelectValue placeholder="显示方式" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="insert">插入原文下方</SelectItem>
-                  <SelectItem value="overlay">覆盖原文</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div>
-            <Label class="mb-1 block">包裹样式（floating-copilot-target-wrapper）</Label>
-            <Textarea v-model="config.wrapperStyle" class="min-h-28" placeholder="background-image: linear-gradient(to right, rgba(71,71,71,.5) 30%, rgba(255,255,255,0) 0%);&#10;background-position: bottom;" />
-          </div>
-          <div>
-            <label class="flex items-center gap-2 text-sm">
-              <input type="checkbox" v-model="config.autoPasteGlobalAssistant" class="h-4 w-4" />
-              全局助手：自动粘贴剪贴板
-            </label>
-            <p class="mt-2 text-xs text-muted-foreground">勾选/取消即自动保存。</p>
-          </div>
-          <div>
-            <Button class="bg-primary text-primary-foreground flex items-center gap-1" @click="saveBasics">
-              <Icon :icon="iconOfAction('save')" width="16" /> 保存其他设置
-            </Button>
-          </div>
-        </div>
-      </section>
-
       <!-- 关于 -->
-      <section v-else-if="nav==='about'" class="space-y-4">
+      <section :id="'opt-about'" class="space-y-4">
         <header class="text-base font-semibold">关于</header>
         <div class="rounded-xl border bg-white p-4 space-y-3 text-sm">
           <div>版本：{{ version }}</div>
@@ -513,4 +485,46 @@ onMounted(async () => {
       </section>
     </main>
   </div>
+
+  <!-- 添加渠道 Dialog -->
+  <Dialog :open="showAddChannel" @update:open="(v:boolean)=>showAddChannel=v">
+    <DialogScrollContent class="max-h-[80vh] w-[560px]">
+      <div class="space-y-4">
+        <div class="text-base font-semibold">添加渠道</div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label class="mb-1 block">类型</Label>
+            <Select v-model="addForm.type">
+              <SelectTrigger><SelectValue placeholder="选择类型" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="openai">OpenAI</SelectItem>
+                <SelectItem value="gemini">Google Gemini</SelectItem>
+                <SelectItem value="openai-compatible">OpenAI 兼容</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label class="mb-1 block">名称</Label>
+            <Input v-model="addForm.name" placeholder="如 my-openai" />
+          </div>
+          <div>
+            <Label class="mb-1 block">API URL</Label>
+            <Input v-model="addForm.apiUrl" placeholder="留空使用默认" />
+          </div>
+          <div>
+            <Label class="mb-1 block">API KEY</Label>
+            <Input v-model="addForm.apiKey" placeholder="可留空" />
+          </div>
+        </div>
+        <div>
+          <Label class="mb-1 block">Models（每行一个）</Label>
+          <Textarea v-model="addForm.modelsText" class="min-h-28" placeholder="例如：&#10;gpt-4o-mini&#10;gpt-4o" />
+        </div>
+        <div class="flex items-center gap-2">
+          <Button class="bg-primary text-primary-foreground" @click="handleAddChannelDialog">添加</Button>
+          <Button variant="ghost" @click="closeAddChannel">取消</Button>
+        </div>
+      </div>
+    </DialogScrollContent>
+  </Dialog>
 </template>
