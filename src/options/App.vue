@@ -24,6 +24,8 @@ const defaultModelValue = ref('');
 const translateModelValue = ref('');
 // 关于页版本号：优先 chrome.runtime.getManifest()，回退到读取 manifest.json
 const version = ref('-');
+// 编辑渠道：API KEY 显示/隐藏切换
+const showEditApiKey = ref(false);
 watch(defaultModel, (val) => { defaultModelValue.value = joinPair(val); }, { immediate: true });
 watch(translateModel, (val) => { translateModelValue.value = joinPair(val); }, { immediate: true });
 
@@ -185,6 +187,9 @@ function closeAddChannel() { showAddChannel.value = false; }
 function handleAddChannelDialog() {
   try { handleAddChannel(); closeAddChannel(); } catch (e:any) { /* 内部已 toast */ }
 }
+
+// 打开编辑表单时重置 API KEY 显示状态
+function onOpenEdit(ch: any) { showEditApiKey.value = false; openEdit(ch); }
 </script>
 
 <template>
@@ -251,7 +256,7 @@ function handleAddChannelDialog() {
                   <Button variant="outline" size="icon" class="flex items-center gap-1" @click="handleTestChannel(ch.name)" title="测试">
                     <Icon icon="proicons:bug" width="16" />
                   </Button>
-                  <Button variant="outline" size="icon" class="flex items-center gap-1" @click="openEdit(ch)" title="编辑">
+                  <Button variant="outline" size="icon" class="flex items-center gap-1" @click="onOpenEdit(ch)" title="编辑">
                     <Icon icon="proicons:pencil" width="16" />
                   </Button>
                 </div>
@@ -280,7 +285,12 @@ function handleAddChannelDialog() {
                   </div>
                   <div>
                     <Label class="mb-1 block">API KEY</Label>
-                    <Input v-model="editForm.apiKey" placeholder="留空表示不修改" />
+                    <div class="relative">
+                      <Input :type="showEditApiKey ? 'text' : 'password'" v-model="editForm.apiKey" placeholder="留空表示不修改" class="pr-10" />
+                      <Button variant="ghost" size="icon" class="absolute right-1 top-1 h-7 w-7" :title="showEditApiKey ? '隐藏' : '显示'" @click="showEditApiKey = !showEditApiKey">
+                        <Icon :icon="showEditApiKey ? 'material-symbols:visibility-off-outline-rounded' : 'material-symbols:visibility-outline-rounded'" width="16" />
+                      </Button>
+                    </div>
                   </div>
                 </div>
                 <div>
@@ -491,7 +501,7 @@ function handleAddChannelDialog() {
 
   <!-- 添加渠道 Dialog -->
   <Dialog :open="showAddChannel" @update:open="(v:boolean)=>showAddChannel=v">
-    <DialogScrollContent class="max-h-[80vh] w-[800px]">
+    <DialogScrollContent class="max-h-[80vh] max-w-[800px]">
       <div class="space-y-4">
         <div class="text-base font-semibold">添加渠道</div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">

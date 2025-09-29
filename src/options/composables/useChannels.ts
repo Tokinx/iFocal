@@ -69,7 +69,8 @@ export function useChannels() {
     editForm.type = ch.type as any;
     editForm.name = ch.name;
     editForm.apiUrl = ch.apiUrl || '';
-    editForm.apiKey = '';
+    // 编辑时显示已保存的 API KEY（与设置页的显示/隐藏切换配合，默认密码态）
+    editForm.apiKey = ch.apiKey || '';
     editForm.modelsText = (ch.models || []).join('\n');
   }
   function cancelEdit() { editingName.value = null; }
