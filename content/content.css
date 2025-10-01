@@ -1,7 +1,7 @@
 /* content/content.css（UTF-8） */
 
 /* 悬浮图标样式 */
-.floating-copilot-icon {
+.ifocal-icon {
   position: absolute;
   z-index: 99999;
   cursor: pointer;
@@ -9,7 +9,7 @@
 }
 
 /* 结果展示样式（可直接插入页面显示） */
-.floating-copilot-result {
+.ifocal-result {
   background-color: #f0f0f0;
   border: 1px solid #ccc;
   padding: 5px;
@@ -18,7 +18,7 @@
 }
 
 /* 选区悬浮结果卡片（覆盖在页面上） */
-.floating-copilot-overlay {
+.ifocal-overlay {
   position: fixed;
   z-index: 2147483647;
   max-width: 420px;
@@ -34,7 +34,7 @@
 }
 
 /* 默认译文包裹样式（可被面板自定义样式覆盖） */
-.floating-copilot-target-wrapper {
+.ifocal-target-wrapper {
   background-image: linear-gradient(to right, rgba(71, 71, 71, 0.5) 30%, rgba(255, 255, 255, 0) 0%);
   background-position: bottom;
   background-size: 5px 1px;
@@ -54,7 +54,7 @@
   vertical-align: text-bottom;
 }
 
-.floating-copilot-overlay .close-btn {
+.ifocal-overlay .close-btn {
   position: absolute;
   top: 4px;
   right: 6px;

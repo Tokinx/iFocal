@@ -1,12 +1,12 @@
-/* FloatingCopilot content styles */
+/* iFocal content styles */
 
-.floating-copilot-icon {
+.ifocal-icon {
   position: absolute;
   z-index: 99999;
   cursor: pointer;
 }
 
-.floating-copilot-result {
+.ifocal-result {
   background-color: #f1f5f9;
   border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 8px;
@@ -15,7 +15,7 @@
   line-height: 1.55;
 }
 
-.floating-copilot-overlay {
+.ifocal-overlay {
   position: fixed;
   z-index: 2147483647;
   max-width: 420px;
@@ -30,7 +30,7 @@
   -webkit-backdrop-filter: saturate(180%) blur(12px);
 }
 
-.floating-copilot-overlay .close-btn {
+.ifocal-overlay .close-btn {
   position: absolute;
   top: 6px;
   right: 8px;
@@ -39,7 +39,7 @@
   font-size: 16px;
 }
 
-.floating-copilot-target-wrapper {
+.ifocal-target-wrapper {
   background-image: linear-gradient(to right, rgba(71, 71, 71, 0.45) 30%, rgba(255, 255, 255, 0) 0%);
   background-position: bottom;
   background-size: 5px 1px;

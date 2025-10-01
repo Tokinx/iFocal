@@ -2,7 +2,7 @@
 <template>
   <div class="flex h-screen w-full flex-col bg-background text-foreground">
     <header class="flex items-center justify-between gap-3 border-b px-4 py-3">
-      <div class="text-sm font-medium">FloatingCopilot</div>
+      <div class="text-sm font-medium">iFocal</div>
       <div class="flex items-center gap-2">
         <Button variant="outline" size="icon" class="flex items-center gap-1" @click="startNewSession" :disabled="sending" title="新会话">
           <Icon icon="material-symbols:add-circle-outline-rounded" width="16" />
@@ -218,7 +218,7 @@ async function handleRefresh() {
       pushMessage({ role: 'assistant', content: summary.preview });
     }
   } catch (error) {
-    console.error('[FloatingCopilot] capture page failed', error);
+    console.error('[iFocal] capture page failed', error);
   } finally {
     loading.value = false;
   }
@@ -312,7 +312,7 @@ async function sendMessage(textOverride?: string, uptoMessageId?: string) {
     } catch {}
     port.postMessage(msg);
   } catch (error) {
-    console.error('[FloatingCopilot] stream start failed', error);
+    console.error('[iFocal] stream start failed', error);
     sending.value = false;
   }
 }
@@ -320,7 +320,7 @@ async function sendMessage(textOverride?: string, uptoMessageId?: string) {
 function requestSidebarAction<T = unknown>(payload: Record<string, unknown>): Promise<T> {
   return new Promise((resolve, reject) => {
     try {
-      chrome.runtime.sendMessage({ source: 'floating-copilot', ...payload }, (response) => {
+      chrome.runtime.sendMessage({ source: 'ifocal', ...payload }, (response) => {
         const err = chrome.runtime.lastError;
         if (err) {
           reject(err);
@@ -438,12 +438,10 @@ onMounted(async () => {
       });
     } catch {}
   } catch (error) {
-    console.warn('[FloatingCopilot] failed to bootstrap sidebar state', error);
+    console.warn('[iFocal] failed to bootstrap sidebar state', error);
   }
 });
 </script>
-
-
 
 
 

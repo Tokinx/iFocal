@@ -48,15 +48,15 @@ chrome.runtime.onInstalled.addListener(async () => {
     if ((chrome as any).sidePanel?.setOptions) {
       await (chrome as any).sidePanel.setOptions({ enabled: true, path: SIDEBAR_PATH });
     } else {
-      console.info('[FloatingCopilot] sidePanel API not available, using popup fallback');
+      console.info('[iFocal] sidePanel API not available, using popup fallback');
     }
   } catch (error) {
-    console.warn('[FloatingCopilot] sidePanel.setOptions failed, using popup fallback', error);
+    console.warn('[iFocal] sidePanel.setOptions failed, using popup fallback', error);
   }
   try {
-    chrome.contextMenus.create({ id: 'floating-copilot-selection', title: 'Use FloatingCopilot', contexts: ['selection'] });
+    chrome.contextMenus.create({ id: 'ifocal-selection', title: 'Use iFocal', contexts: ['selection'] });
   } catch (error) {
-    console.warn('[FloatingCopilot] failed to create context menu', error);
+    console.warn('[iFocal] failed to create context menu', error);
   }
 });
 
@@ -69,14 +69,14 @@ chrome.action.onClicked.addListener(async (tab) => {
     }
     openOrFocusSidebarPopup();
   } catch (error) {
-    console.warn('[FloatingCopilot] sidePanel open failed, using popup fallback', error);
+    console.warn('[iFocal] sidePanel open failed, using popup fallback', error);
     openOrFocusSidebarPopup();
   }
 });
 
 chrome.contextMenus.onClicked.addListener((info) => {
-  if (info.menuItemId === 'floating-copilot-selection') {
-    chrome.runtime.sendMessage({ source: 'floating-copilot', type: 'selection', text: info.selectionText || '' });
+  if (info.menuItemId === 'ifocal-selection') {
+    chrome.runtime.sendMessage({ source: 'ifocal', type: 'selection', text: info.selectionText || '' });
   }
 });
 
@@ -89,7 +89,7 @@ chrome.commands.onCommand.addListener((command) => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message) return;
 
-  if (message.source === 'floating-copilot') {
+  if (message.source === 'ifocal') {
     const handler = message.type as string;
     if (handler === 'bootstrap') {
       bootstrap().then(sendResponse).catch((error) => sendResponse({ error: String(error) }));
@@ -159,7 +159,7 @@ async function collectPagePreview(tabId?: number | null) {
     const { title, excerpt } = result.result as { title: string; excerpt: string };
     return { preview: `Page: ${title}\n${excerpt}` };
   } catch (error) {
-    console.warn('[FloatingCopilot] collectPagePreview failed', error);
+    console.warn('[iFocal] collectPagePreview failed', error);
     return { preview: fallback };
   }
 }
@@ -371,7 +371,7 @@ async function streamOpenAI(baseUrl: string, apiKey: string, model: string, prom
       const token = json?.choices?.[0]?.delta?.content || '';
       if (token) onDelta(token, false);
     } catch (error) {
-      console.warn('[FloatingCopilot] OpenAI chunk parse failed', error);
+      console.warn('[iFocal] OpenAI chunk parse failed', error);
     }
   });
 }
@@ -398,7 +398,7 @@ async function streamGemini(baseUrl: string, apiKey: string, model: string, prom
       const out = Array.isArray(parts) ? parts.map((p: any) => p?.text || '').join('') : '';
       if (out) onDelta(out, false);
     } catch (error) {
-      console.warn('[FloatingCopilot] Gemini chunk parse failed', error);
+      console.warn('[iFocal] Gemini chunk parse failed', error);
     }
   });
 }

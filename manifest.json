@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "FloatingCopilot",
+  "name": "iFocal",
   "version": "0.2.0",
-  "description": "FloatingCopilot side panel assistant built with Vue + shadcn-vue. Supports chat, translation and page insight.",
+  "description": "iFocal side panel assistant built with Vue + shadcn-vue. Supports chat, translation and page insight.",
   "permissions": ["storage","activeTab","scripting","clipboardRead","contextMenus","sidePanel"],
   "host_permissions": [
     "<all_urls>"
@@ -12,7 +12,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Open FloatingCopilot Side Panel"
+    "default_title": "Open iFocal Side Panel"
   },
   "side_panel": {
     "default_path": "dist/sidebar.html"
@@ -37,7 +37,7 @@
       "suggested_key": {
         "default": "Ctrl+Shift+O"
       },
-      "description": "Open FloatingCopilot global assistant window"
+      "description": "Open iFocal global assistant window"
     }
   },
   "web_accessible_resources": [
@@ -51,4 +51,3 @@
     }
   ]
 }
-

@@ -142,7 +142,7 @@ watch(() => config.value.autoPasteGlobalAssistant, async (val) => {
 // 导入导出
 const importerRef = ref<HTMLInputElement|null>(null);
 const STORAGE_KEYS = ['channels','defaultModel','translateModel','activeModel','actionKey','hoverKey','selectKey','translateTargetLang','displayMode','wrapperStyle','promptTemplates','autoPasteGlobalAssistant'];
-function onExport() { try { chrome.storage.sync.get(STORAGE_KEYS, (items:any) => { try { const payload = JSON.stringify(items, null, 2); const blob = new Blob([payload], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'floatingcopilot-settings.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); toast.success('已导出设置'); } catch {} }); } catch {} }
+function onExport() { try { chrome.storage.sync.get(STORAGE_KEYS, (items:any) => { try { const payload = JSON.stringify(items, null, 2); const blob = new Blob([payload], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'ifocal-settings.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); toast.success('已导出设置'); } catch {} }); } catch {} }
 function triggerImport() { importerRef.value?.click(); }
 function onImportChange(e: Event) { const input = e.target as HTMLInputElement; const file = input && input.files && input.files[0]; if (!file) return; try { const reader = new FileReader(); reader.onload = () => { try { const data = JSON.parse(String(reader.result || '{}')); const toSet:any = {}; STORAGE_KEYS.forEach(k => { if (k in (data || {})) toSet[k] = (data as any)[k]; }); chrome.storage.sync.set(toSet, () => { toast.success('导入成功，正在刷新'); window.location.reload(); }); } catch { toast.error('导入失败：JSON 解析错误'); } }; reader.readAsText(file); } catch {} }
 
@@ -373,7 +373,7 @@ function onOpenEdit(ch: any) { showEditApiKey.value = false; openEdit(ch); }
             </div>
           </div>
           <div>
-            <Label class="mb-1 block">包裹样式（floating-copilot-target-wrapper）</Label>
+            <Label class="mb-1 block">包裹样式（ifocal-target-wrapper）</Label>
             <Textarea v-model="config.wrapperStyle" class="min-h-28" placeholder="background-image: linear-gradient(to right, rgba(71,71,71,.5) 30%, rgba(255,255,255,0) 0%);&#10;background-position: bottom;" />
           </div>
           <div>

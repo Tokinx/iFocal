@@ -5,12 +5,12 @@ import { Button } from '@/components/ui/button';
 
 (function injectFallbackStyles() {
   try {
-    const STYLE_ID = 'floating-copilot-inline-style';
+    const STYLE_ID = 'ifocal-inline-style';
     if (document.getElementById(STYLE_ID)) return;
     const CSS = `
-.floating-copilot-overlay{position:fixed;z-index:2147483647;max-width:420px;background:rgba(255,255,255,0.82);border:1px solid rgba(255,255,255,0.35);border-radius:12px;box-shadow:0 12px 32px rgba(15,23,42,0.18);padding:12px 16px 16px 16px;color:#0f172a;line-height:1.55;backdrop-filter:saturate(180%) blur(12px);-webkit-backdrop-filter:saturate(180%) blur(12px)}
-.floating-copilot-overlay .close-btn{position:absolute;top:6px;right:8px;cursor:pointer;color:#64748b;font-size:16px}
-.floating-copilot-target-wrapper{background-image:linear-gradient(to right, rgba(71,71,71,.45) 30%, rgba(255,255,255,0) 0%);background-position:bottom;background-size:5px 1px;background-repeat:repeat-x;padding-bottom:3px;font-family:inherit}
+.ifocal-overlay{position:fixed;z-index:2147483647;max-width:420px;background:rgba(255,255,255,0.82);border:1px solid rgba(255,255,255,0.35);border-radius:12px;box-shadow:0 12px 32px rgba(15,23,42,0.18);padding:12px 16px 16px 16px;color:#0f172a;line-height:1.55;backdrop-filter:saturate(180%) blur(12px);-webkit-backdrop-filter:saturate(180%) blur(12px)}
+.ifocal-overlay .close-btn{position:absolute;top:6px;right:8px;cursor:pointer;color:#64748b;font-size:16px}
+.ifocal-target-wrapper{background-image:linear-gradient(to right, rgba(71,71,71,.45) 30%, rgba(255,255,255,0) 0%);background-position:bottom;background-size:5px 1px;background-repeat:repeat-x;padding-bottom:3px;font-family:inherit}
 @keyframes fc-spin{to{transform:rotate(360deg)}}
 .fc-spinner{width:16px;height:16px;border:2px solid rgba(15,23,42,0.18);border-top-color:#0f172a;border-radius:50%;animation:fc-spin 1s linear infinite;display:inline-block;vertical-align:text-bottom}
 `;
@@ -19,10 +19,10 @@ import { Button } from '@/components/ui/button';
     style.textContent = CSS;
     (document.head || document.documentElement).appendChild(style);
   } catch (error) {
-    console.warn('[FloatingCopilot] failed to inject fallback styles', error);
+    console.warn('[iFocal] failed to inject fallback styles', error);
   }
 })();
-const LOG_PREFIX = '[FloatingCopilot]';
+const LOG_PREFIX = '[iFocal]';
 
 console.log(`${LOG_PREFIX} content script ready`);
 
@@ -108,7 +108,7 @@ function scheduleSelectionSync(text: string) {
   if (!chrome?.runtime?.sendMessage) return;
   window.clearTimeout(selectionSyncTimer);
   selectionSyncTimer = window.setTimeout(() => {
-    chrome.runtime.sendMessage({ source: 'floating-copilot', type: 'selection', text });
+    chrome.runtime.sendMessage({ source: 'ifocal', type: 'selection', text });
   }, SELECTION_SYNC_DELAY);
 }
 
@@ -158,7 +158,7 @@ function getSelectionRect(): DOMRect | null {
 function createOverlayAt(x: number, y: number): OverlayHandle {
   if (lastOverlay?.root?.remove) lastOverlay.root.remove();
   const root = document.createElement('div');
-  root.className = 'floating-copilot-overlay';
+  root.className = 'ifocal-overlay';
   root.style.left = `${Math.max(8, Math.floor(x))}px`;
   root.style.top = `${Math.max(8, Math.floor(y))}px`;
 
@@ -217,8 +217,8 @@ function shouldInsertBreakFromSource(text: string): boolean {
 
 function updateBreakForTranslated(blockEl: HTMLElement, source: string) {
   const tag = (blockEl.tagName || 'div').toLowerCase();
-  const exists = blockEl.querySelector('br.floating-copilot-target-break');
-  const wrapper = blockEl.querySelector('font.floating-copilot-target-wrapper.notranslate');
+  const exists = blockEl.querySelector('br.ifocal-target-break');
+  const wrapper = blockEl.querySelector('font.ifocal-target-wrapper.notranslate');
   if (!needsLineBreak(tag)) {
     if (exists) exists.remove();
     return;
@@ -233,7 +233,7 @@ function updateBreakForTranslated(blockEl: HTMLElement, source: string) {
       return;
     }
     const br = document.createElement('br');
-    br.className = 'floating-copilot-target-break';
+    br.className = 'ifocal-target-break';
     if (wrapper) blockEl.insertBefore(br, wrapper);
     else if (blockEl.firstChild) blockEl.insertBefore(br, blockEl.firstChild);
     else blockEl.appendChild(br);
@@ -260,10 +260,10 @@ function toggleHoverTranslate(blockEl: HTMLElement) {
       return;
     }
 
-    const existWrapper = blockEl.querySelector<HTMLElement>('font.floating-copilot-target-wrapper.notranslate');
+    const existWrapper = blockEl.querySelector<HTMLElement>('font.ifocal-target-wrapper.notranslate');
     if (existWrapper || blockEl.dataset.fcTranslated === '1') {
       existWrapper?.remove();
-      const br = blockEl.querySelector('br.floating-copilot-target-break');
+      const br = blockEl.querySelector('br.ifocal-target-break');
       br?.remove();
       blockEl.dataset.fcTranslated = '';
       return;
@@ -273,7 +273,7 @@ function toggleHoverTranslate(blockEl: HTMLElement) {
       const langCode = (cfg.translateTargetLang || 'zh-CN').trim();
       const styleText = (cfg.wrapperStyle || '').trim();
       const wrapper = document.createElement('font');
-      wrapper.className = 'notranslate floating-copilot-target-wrapper';
+      wrapper.className = 'notranslate ifocal-target-wrapper';
       wrapper.setAttribute('lang', langCode);
       if (styleText) wrapper.setAttribute('style', styleText);
       const spin = document.createElement('div');
@@ -530,5 +530,4 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   return undefined;
 });
-
 

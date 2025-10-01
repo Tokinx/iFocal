@@ -1,6 +1,6 @@
-# FloatingCopilot
+# iFocal
 
-FloatingCopilot 是一款面向 Chrome / Edge 的 AI 助手插件，现已重构为 **Vue 3 + shadcn-vue** 架构，采用响应式布局与侧边栏聊天体验。插件可在当前网页内快速执行翻译、总结、改写等任务，并支持读取页面内容做进一步分析。
+iFocal 是一款面向 Chrome / Edge 的 AI 助手插件，现已重构为 **Vue 3 + shadcn-vue** 架构，采用响应式布局与侧边栏聊天体验。插件可在当前网页内快速执行翻译、总结、改写等任务，并支持读取页面内容做进一步分析。
 
 ## 核心体验
 - ⏱️ **侧边栏聊天面板**：点击插件图标立即唤起 Side Panel，消息流布局 + 底部输入框，支持快捷发送。
@@ -57,7 +57,7 @@ FloatingCopilot 是一款面向 Chrome / Edge 的 AI 助手插件，现已重构
 - Chrome / Edge 114+（Side Panel API）
 - 需在浏览器中允许访问的站点：`<all_urls>`（用于抓取页面文本）
 
-欢迎根据业务需求扩展更多 shadcn 组件或任务预设，构建自己的浮动 Copilot。
+欢迎根据业务需求扩展更多 shadcn 组件或任务预设，构建自己的 iFocal。
 ## 验证清单
 1. 运行 `npm install` 安装依赖。
 2. 执行 `npm run build`，确认在 `dist/` 目录生成 `sidebar.html`、`background.js`、`content.js` 等产物。

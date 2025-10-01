@@ -181,7 +181,7 @@ onMounted(async () => {
       try {
         const text = await navigator.clipboard.readText();
         if (text) { state.text = text; run(); }
-      } catch (e) { console.warn('[FloatingCopilot] clipboard read failed', e); }
+      } catch (e) { console.warn('[iFocal] clipboard read failed', e); }
     }
   } catch {}
 
