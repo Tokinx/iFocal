@@ -29,6 +29,8 @@ export const DEFAULT_CONFIG = {
   
   // 显示设置
   displayMode: 'insert' as 'insert' | 'overlay',
+  // 划词：是否启用划词翻译（显示小圆点）
+  enableSelectionTranslation: true,
   
   // 快捷键设置
   actionKey: 'Alt',
@@ -44,6 +46,7 @@ export const CONFIG_KEYS = [
   'translateTargetLang',
   'defaultTask',
   'displayMode',
+  'enableSelectionTranslation',
   'actionKey',
   'autoPasteGlobalAssistant',
   'sidebarHistoryLimit',

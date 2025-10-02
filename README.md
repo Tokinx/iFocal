@@ -39,7 +39,7 @@ iFocal 是一款面向 Chrome / Edge 的 AI 助手插件，现已重构为 **Vue
 1. 克隆项目到本地
    ```bash
    git clone [项目地址]
-   cd floating-copilot
+   cd ifocal-copilot
    ```
 
 2. 安装依赖

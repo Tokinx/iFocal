@@ -1,4 +1,5 @@
 export {};
+import { SUPPORTED_LANGUAGES } from '../shared/config';
 
 const SIDEBAR_PATH = 'dist/sidebar.html';
 let selectionBuffer = '';
@@ -107,6 +108,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       selectionBuffer = message.text || '';
       return;
     }
+  }
+
+  // 提供语言列表（供内容脚本读取，避免内容脚本直接 import 模块导致 ESM 报错）
+  if (message.action === 'getSupportedLanguages') {
+    try {
+      sendResponse({ ok: true, data: SUPPORTED_LANGUAGES });
+    } catch (error) {
+      sendResponse({ ok: false, error: String(error) });
+    }
+    return true;
   }
 
   if (message.action === 'performAiAction') {

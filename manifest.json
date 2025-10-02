@@ -22,9 +22,7 @@
       "matches": [
         "<all_urls>"
       ],
-      "css": [
-        "dist/assets/content.css"
-      ],
+      "all_frames": true,
       "js": [
         "dist/content.js"
       ],

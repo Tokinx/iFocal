@@ -72,6 +72,7 @@ async function saveBasics() {
     config.value.translateTargetLang = lang;
     config.value.displayMode = config.value.displayMode || 'insert';
     config.value.wrapperStyle = (config.value.wrapperStyle || '').trim();
+    if (typeof config.value.enableSelectionTranslation !== 'boolean') config.value.enableSelectionTranslation = true;
     
     // 保存配置
     await saveConfig({
@@ -80,7 +81,8 @@ async function saveBasics() {
       selectKey: k,
       translateTargetLang: lang,
       displayMode: config.value.displayMode,
-      wrapperStyle: config.value.wrapperStyle
+      wrapperStyle: config.value.wrapperStyle,
+      enableSelectionTranslation: config.value.enableSelectionTranslation
     });
     
     toast.success('基础设置已保存');
@@ -263,7 +265,7 @@ function onOpenEdit(ch: any) { showEditApiKey.value = false; openEdit(ch); }
               </div>
 
               <div v-if="editingName===ch.name" class="space-y-3">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label class="mb-1 block">类型</Label>
                     <Select v-model="editForm.type">
@@ -361,16 +363,24 @@ function onOpenEdit(ch: any) { showEditApiKey.value = false; openEdit(ch); }
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <Label class="mb-1 block">结果显示方式</Label>
-              <Select v-model="config.displayMode">
-                <SelectTrigger><SelectValue placeholder="显示方式" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="insert">插入原文下方</SelectItem>
-                  <SelectItem value="overlay">覆盖原文</SelectItem>
-                </SelectContent>
-              </Select>
+          <div>
+            <Label class="mb-1 block">结果显示方式</Label>
+            <Select v-model="config.displayMode">
+              <SelectTrigger><SelectValue placeholder="显示方式" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="insert">插入原文下方</SelectItem>
+                <SelectItem value="overlay">覆盖原文</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label class="mb-1 block">划词翻译</Label>
+            <div class="flex items-center gap-2 text-sm">
+              <Checkbox v-model="config.enableSelectionTranslation" />
+              <span>选中文本后显示小圆点触发翻译</span>
             </div>
+            <p class="mt-2 text-xs text-muted-foreground">关闭后不再显示划词触发圆点。</p>
+          </div>
           </div>
           <div>
             <Label class="mb-1 block">包裹样式（ifocal-target-wrapper）</Label>

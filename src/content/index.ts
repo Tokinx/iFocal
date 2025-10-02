@@ -1,27 +1,58 @@
-import './style.css';
-import { createApp, ref } from 'vue';
-import { Select, SelectTrigger, SelectContent, SelectValue, SelectItem } from '@/components/ui/select';
-import { Button } from '@/components/ui/button';
-
-(function injectFallbackStyles() {
-  try {
-    const STYLE_ID = 'ifocal-inline-style';
-    if (document.getElementById(STYLE_ID)) return;
-    const CSS = `
-.ifocal-overlay{position:fixed;z-index:2147483647;max-width:420px;background:rgba(255,255,255,0.82);border:1px solid rgba(255,255,255,0.35);border-radius:12px;box-shadow:0 12px 32px rgba(15,23,42,0.18);padding:12px 16px 16px 16px;color:#0f172a;line-height:1.55;backdrop-filter:saturate(180%) blur(12px);-webkit-backdrop-filter:saturate(180%) blur(12px)}
-.ifocal-overlay .close-btn{position:absolute;top:6px;right:8px;cursor:pointer;color:#64748b;font-size:16px}
+// 注意：为避免打包为 ESM 并在内容脚本环境报错，这里不再使用 import 语句。
+// 样式通过 Shadow DOM 注入；语言列表通过后台消息读取。
+let uiHost: HTMLElement | null = null;
+let uiShadow: ShadowRoot | null = null;
+const SHADOW_STYLE = `
+:host{ all: initial; }
+.ifocal-overlay{position:absolute;z-index:2147483647;max-width:420px;width:100%;background:rgba(255,255,255,0.88);border-radius:12px;box-shadow:0 12px 32px rgba(15,23,42,0.18);color:#0f172a;line-height:1.55;backdrop-filter:saturate(180%) blur(12px);-webkit-backdrop-filter:saturate(180%) blur(12px);pointer-events:auto}
+.ifocal-overlay-body{white-space:pre-wrap;max-height:50vh;overflow-y:auto;position:relative;padding:0 12px 12px;}
+.ifocal-overlay-header{cursor:move;display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;padding:12px 12px 0;}
+.ifocal-header-left{display:flex;align-items:center;gap:8px}
+.ifocal-dd-wrap{position:relative}
+.ifocal-dd-btn{height:36px;padding:0 8px;font-size:12px;border:1px solid rgba(15,23,42,.12);border-radius:8px;background:rgba(255,255,255,.95);color:#0f172a;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.ifocal-dd-menu{position:absolute;top:40px;left:0;min-width:220px;max-height:220px;overflow:auto;background:#fff;border:1px solid rgba(15,23,42,.12);border-radius:10px;box-shadow:0 8px 24px rgba(15,23,42,.12);padding:6px;z-index:3}
+.ifocal-dd-item{padding:8px 10px;border-radius:8px;cursor:pointer}
+.ifocal-dd-item:hover{background:rgba(15,23,42,.06)}
+.ifocal-dd-item .title{font-weight:600;line-height:1.1}
+.ifocal-dd-item .sub{opacity:.65;font-size:12px;line-height:1.1}
+.ifocal-close{height:24px;width:24px;border:1px solid rgba(15,23,42,.12);border-radius:6px;background:rgba(255,255,255,.9);color:#0f172a;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.ifocal-close:hover{background:rgba(15,23,42,.06)}
+.copy-btn{position:absolute;top:4px;right:4px;height:24px;width:28px;border:1px solid rgba(15,23,42,0.15);border-radius:6px;background:rgba(255,255,255,0.9);cursor:pointer;opacity:0;transition:opacity .15s ease}
+.ifocal-overlay:hover .copy-btn{opacity:1}
 .ifocal-target-wrapper{background-image:linear-gradient(to right, rgba(71,71,71,.45) 30%, rgba(255,255,255,0) 0%);background-position:bottom;background-size:5px 1px;background-repeat:repeat-x;padding-bottom:3px;font-family:inherit}
 @keyframes fc-spin{to{transform:rotate(360deg)}}
 .fc-spinner{width:16px;height:16px;border:2px solid rgba(15,23,42,0.18);border-top-color:#0f172a;border-radius:50%;animation:fc-spin 1s linear infinite;display:inline-block;vertical-align:text-bottom}
+.ifocal-dot{position:absolute;width:10px;height:10px;border-radius:50%;background:#0f172a;opacity:.9;cursor:pointer;box-shadow:0 0 0 2px rgba(255,255,255,.9);z-index:2147483647;pointer-events:auto}
+.hidden{display:none}
 `;
-    const style = document.createElement('style');
-    style.id = STYLE_ID;
-    style.textContent = CSS;
-    (document.head || document.documentElement).appendChild(style);
+
+function ensureUiRoot(): ShadowRoot {
+  if (uiShadow) return uiShadow;
+  try {
+    uiHost = document.getElementById('ifocal-host') as HTMLElement | null;
+    if (!uiHost) {
+      uiHost = document.createElement('div');
+      uiHost.id = 'ifocal-host';
+      uiHost.style.all = 'initial';
+      uiShadow = uiHost.attachShadow({ mode: 'open' });
+      const style = document.createElement('style');
+      style.textContent = SHADOW_STYLE;
+      uiShadow.appendChild(style);
+      (document.documentElement || document.body).appendChild(uiHost);
+    } else {
+      uiShadow = uiHost.shadowRoot || uiHost.attachShadow({ mode: 'open' });
+      if (!uiShadow.querySelector('style')) {
+        const style = document.createElement('style');
+        style.textContent = SHADOW_STYLE;
+        uiShadow.appendChild(style);
+      }
+    }
   } catch (error) {
-    console.warn('[iFocal] failed to inject fallback styles', error);
+    console.warn('[iFocal] failed to init shadow root', error);
+    return (document as any);
   }
-})();
+  return uiShadow!;
+}
 const LOG_PREFIX = '[iFocal]';
 
 console.log(`${LOG_PREFIX} content script ready`);
@@ -48,23 +79,52 @@ type StorageConfig = {
 let hoveredElement: HTMLElement | null = null;
 let actionKey = 'Alt';
 let displayMode: 'insert' | 'overlay' = 'insert';
+let enableSelectionTranslation = true;
 let lastOverlay: OverlayHandle | null = null;
 let keydownCooldown = false;
 
 let lastSelectionText = '';
 let lastSelectionRect: DOMRect | null = null;
 let selectionSyncTimer: number | undefined;
+let selectionUpdateTimer: number | undefined;
+let selectionDot: HTMLElement | null = null;
 const SELECTION_SYNC_DELAY = 200;
+const SELECTION_DOT_UPDATE_DELAY = 120;
+// 近祖滚动容器监听（仅监听一个，降低成本）
+let currentScrollContainer: HTMLElement | null = null;
+let currentScrollHandler: ((ev?: Event) => void) | null = null;
+// overlay 是否跟随选区移动（点圆点创建的 overlay 默认跟随；用户拖拽后取消跟随）
+let overlayAutoFollow = false;
+
+// 语言列表：默认回退 + 后台拉取覆盖
+type Lang = { value: string; label: string };
+let SUPPORTED_LANGUAGES: Lang[] = [
+  { value: 'zh-CN', label: '中文' },
+  { value: 'en', label: 'English' },
+  { value: 'ja', label: '日本語' },
+  { value: 'ko', label: '한국어' },
+  { value: 'fr', label: 'Français' },
+  { value: 'es', label: 'Español' },
+  { value: 'de', label: 'Deutsch' }
+];
+
+try {
+  chrome.runtime.sendMessage({ action: 'getSupportedLanguages' }, (resp: { ok?: boolean; data?: Lang[] } | undefined) => {
+    try { void chrome.runtime.lastError; } catch {}
+    if (resp && resp.ok && Array.isArray(resp.data)) SUPPORTED_LANGUAGES = resp.data as Lang[];
+  });
+} catch {}
 
 function readHotkeys() {
   try {
-    chrome.storage.sync.get(['actionKey', 'hoverKey', 'selectKey', 'displayMode'], (items) => {
+    chrome.storage.sync.get(['actionKey', 'hoverKey', 'selectKey', 'displayMode', 'enableSelectionTranslation'], (items) => {
       if (items?.actionKey) actionKey = items.actionKey;
       else if (items?.hoverKey) actionKey = items.hoverKey;
       else if (items?.selectKey) actionKey = items.selectKey;
       if (items?.displayMode === 'overlay' || items?.displayMode === 'insert') {
         displayMode = items.displayMode;
       }
+      enableSelectionTranslation = typeof items?.enableSelectionTranslation === 'boolean' ? items.enableSelectionTranslation : true;
     });
     chrome.storage.onChanged.addListener((changes, areaName) => {
       if (areaName !== 'sync') return;
@@ -73,6 +133,7 @@ function readHotkeys() {
         const mode = changes.displayMode.newValue as 'insert' | 'overlay';
         displayMode = mode || 'insert';
       }
+      if (changes.enableSelectionTranslation) enableSelectionTranslation = !!changes.enableSelectionTranslation.newValue;
     });
   } catch (error) {
     console.warn(`${LOG_PREFIX} failed to read hotkeys`, error);
@@ -118,9 +179,13 @@ document.addEventListener('mouseup', () => {
   if (selectedText) {
     lastSelectionText = selectedText;
     lastSelectionRect = getSelectionRect();
+    if (enableSelectionTranslation && lastSelectionRect) showSelectionDot(lastSelectionRect);
+    attachScrollListenerForSelection();
   } else {
     lastSelectionText = '';
     lastSelectionRect = null;
+    hideSelectionDot();
+    maybeDetachScrollListener();
   }
   scheduleSelectionSync(selectedText);
 });
@@ -128,8 +193,37 @@ document.addEventListener('mouseup', () => {
 document.addEventListener('selectionchange', () => {
   const selection = window.getSelection();
   const text = selection ? selection.toString().trim() : '';
+  if (!text) {
+    hideSelectionDot();
+  } else {
+    if (selectionUpdateTimer) window.clearTimeout(selectionUpdateTimer);
+    selectionUpdateTimer = window.setTimeout(() => {
+      attachScrollListenerForSelection();
+      updateSelectionDotPosition();
+    }, SELECTION_DOT_UPDATE_DELAY);
+  }
   scheduleSelectionSync(text);
 });
+
+// 触控端：在触摸结束时也做一次最终刷新
+document.addEventListener('touchend', () => {
+  try {
+    const selection = window.getSelection();
+    const selectedText = selection ? selection.toString().trim() : '';
+    if (selectedText) {
+      lastSelectionText = selectedText;
+      lastSelectionRect = getSelectionRect();
+      if (enableSelectionTranslation && lastSelectionRect) showSelectionDot(lastSelectionRect);
+      attachScrollListenerForSelection();
+    } else {
+      lastSelectionText = '';
+      lastSelectionRect = null;
+      hideSelectionDot();
+      maybeDetachScrollListener();
+    }
+    scheduleSelectionSync(selectedText);
+  } catch {}
+}, true);
 
 document.addEventListener('keydown', (event) => {
   if (event.key !== actionKey || keydownCooldown) return;
@@ -138,43 +232,94 @@ document.addEventListener('keydown', (event) => {
   window.setTimeout(() => {
     keydownCooldown = false;
   }, 800);
-  if (lastSelectionText) {
-    triggerSelectionTranslate();
-    return;
-  }
   if (hoveredElement) {
     toggleHoverTranslate(hoveredElement);
   }
 });
 
+// 采用文档坐标定位（left/top 加上 scrollX/scrollY），无需随页面滚动更新。
+
 function getSelectionRect(): DOMRect | null {
   const selection = window.getSelection();
   if (!selection || selection.rangeCount === 0) return null;
-  const rect = selection.getRangeAt(0).getBoundingClientRect();
-  if (rect && rect.width >= 0 && rect.height >= 0) return rect;
+  const range = selection.getRangeAt(0);
+  const rects = range.getClientRects();
+  const last = rects && rects.length ? rects[rects.length - 1] : range.getBoundingClientRect();
+  if (last && last.width >= 0 && last.height >= 0) return last as DOMRect;
   return null;
 }
 
+function getSelectionAnchorNode(): Node | null {
+  try {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return null;
+    return sel.getRangeAt(0).startContainer as Node;
+  } catch { return null; }
+}
+
+function isScrollable(el: HTMLElement): boolean {
+  const cs = getComputedStyle(el);
+  const overflowY = cs.overflowY;
+  const overflowX = cs.overflowX;
+  const canY = (overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') && el.scrollHeight > el.clientHeight;
+  const canX = (overflowX === 'auto' || overflowX === 'scroll' || overflowX === 'overlay') && el.scrollWidth > el.clientWidth;
+  return canY || canX;
+}
+
+function nearestScrollableAncestor(node: Node | null): HTMLElement | null {
+  let el: HTMLElement | null = (node as HTMLElement) && (node as HTMLElement).nodeType === 1 ? (node as HTMLElement) : (node as any)?.parentElement || null;
+  while (el) {
+    if (isScrollable(el)) return el;
+    el = el.parentElement;
+  }
+  return null;
+}
+
+function detachScrollListener() {
+  try { if (currentScrollContainer && currentScrollHandler) currentScrollContainer.removeEventListener('scroll', currentScrollHandler, true); } catch {}
+  currentScrollContainer = null;
+  currentScrollHandler = null;
+}
+
+function maybeDetachScrollListener() {
+  if (!selectionDot && !overlayAutoFollow) detachScrollListener();
+}
+
+function attachScrollListenerForSelection() {
+  const anchor = getSelectionAnchorNode();
+  const container = nearestScrollableAncestor(anchor);
+  if (container === currentScrollContainer) return;
+  detachScrollListener();
+  if (container) {
+    currentScrollContainer = container;
+    currentScrollHandler = () => updateSelectionDotPosition();
+    container.addEventListener('scroll', currentScrollHandler, { passive: true, capture: true } as any);
+  }
+}
+
 function createOverlayAt(x: number, y: number): OverlayHandle {
+  const shadow = ensureUiRoot();
   if (lastOverlay?.root?.remove) lastOverlay.root.remove();
   const root = document.createElement('div');
   root.className = 'ifocal-overlay';
   root.style.left = `${Math.max(8, Math.floor(x))}px`;
   root.style.top = `${Math.max(8, Math.floor(y))}px`;
 
-  const close = document.createElement('span');
-  close.className = 'close-btn';
-  close.textContent = '×';
-  close.addEventListener('click', () => root.remove());
-  root.appendChild(close);
-
   const body = document.createElement('div');
-  body.style.whiteSpace = 'pre-wrap';
-  body.style.maxHeight = '50vh';
-  body.style.overflowY = 'auto';
+  body.className = 'ifocal-overlay-body';
   root.appendChild(body);
 
-  document.body.appendChild(root);
+  // Copy button: show only on overlay hover
+  const copyBtn = document.createElement('button');
+  copyBtn.className = 'copy-btn';
+  copyBtn.title = 'Copy';
+  copyBtn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+  copyBtn.addEventListener('click', () => {
+    try { navigator.clipboard.writeText(body.textContent || ''); } catch {}
+  });
+  body.appendChild(copyBtn);
+
+  (shadow as unknown as HTMLElement).appendChild(root);
 
   let spinner: HTMLElement | null = null;
   const overlay: OverlayHandle = {
@@ -202,6 +347,65 @@ function createOverlayAt(x: number, y: number): OverlayHandle {
 
   lastOverlay = overlay;
   return overlay;
+}
+
+function showSelectionDot(rect: DOMRect) {
+  const shadow = ensureUiRoot();
+  try { hideSelectionDot(); } catch {}
+  const dot = document.createElement('div');
+  dot.className = 'ifocal-dot';
+  const left = Math.floor(rect.right + window.scrollX - 6);
+  const top = Math.floor(rect.top + window.scrollY - 12);
+  dot.style.left = `${left}px`;
+  dot.style.top = `${top}px`;
+  const trigger = (ev: Event) => {
+    ev.preventDefault(); ev.stopPropagation();
+    const overlay = createOverlayAt(left - 8, top + 16);
+    overlayAutoFollow = true;
+    overlay.setLoading(true);
+    chrome.storage.sync.get(['channels', 'defaultModel', 'translateModel', 'activeModel', 'translateTargetLang'], (cfg: StorageConfig) => {
+      const reqPair = cfg.activeModel || null;
+      const pair = pickPair(cfg, 'translate', reqPair);
+      const lang = cfg.translateTargetLang || 'zh-CN';
+      attachOverlayHeaderVue(overlay, cfg, pair, lang, lastSelectionText);
+      startStreamForOverlay(overlay, 'translate', lastSelectionText, pair, lang);
+    });
+    hideSelectionDot();
+  };
+  dot.addEventListener('mousedown', trigger, { passive: false });
+  dot.addEventListener('mouseup', trigger, { passive: false });
+  dot.addEventListener('click', trigger, { passive: false });
+  dot.addEventListener('touchstart', trigger, { passive: false });
+  dot.addEventListener('touchend', trigger, { passive: false });
+  (shadow as unknown as HTMLElement).appendChild(dot);
+  selectionDot = dot;
+}
+
+let rafPending = false;
+function updateSelectionDotPosition() {
+  if (rafPending) return;
+  rafPending = true;
+  requestAnimationFrame(() => {
+    rafPending = false;
+    if (!lastSelectionText) return;
+    const rect = getSelectionRect();
+    if (!rect) { hideSelectionDot(); return; }
+    const left = Math.floor(rect.right + window.scrollX - 6);
+    const top = Math.floor(rect.top + window.scrollY - 12);
+    if (selectionDot) {
+      selectionDot.style.left = `${left}px`;
+      selectionDot.style.top = `${top}px`;
+    }
+    if (overlayAutoFollow && lastOverlay?.root) {
+      lastOverlay.root.style.left = `${left - 8}px`;
+      lastOverlay.root.style.top = `${top + 16}px`;
+    }
+  });
+}
+
+function hideSelectionDot() {
+  if (selectionDot && selectionDot.parentNode) selectionDot.parentNode.removeChild(selectionDot);
+  selectionDot = null;
 }
 
 function needsLineBreak(tag: string) {
@@ -247,7 +451,7 @@ function toggleHoverTranslate(blockEl: HTMLElement) {
   try {
     if (displayMode === 'overlay') {
       const rect = blockEl.getBoundingClientRect();
-      const overlay = createOverlayAt(rect.left, rect.bottom + 8);
+      const overlay = createOverlayAt(rect.left + window.scrollX, rect.bottom + window.scrollY + 8);
       overlay.setLoading(true);
       const source = (blockEl.innerText || '').trim();
       chrome.storage.sync.get(['channels', 'defaultModel', 'translateModel', 'activeModel', 'translateTargetLang'], (cfg: StorageConfig) => {
@@ -321,7 +525,7 @@ function pickPair(cfg: StorageConfig, task: string, reqPair: ChannelPair): Chann
 function triggerSelectionTranslate() {
   if (!lastSelectionText) return;
   const rect = lastSelectionRect || getSelectionRect();
-  const overlay = rect ? createOverlayAt(rect.left, rect.bottom + 8) : createOverlayAt(80, 80);
+  const overlay = rect ? createOverlayAt(rect.left + window.scrollX, rect.bottom + window.scrollY + 8) : createOverlayAt(80, 80);
   overlay.setLoading(true);
   chrome.storage.sync.get(['channels', 'defaultModel', 'translateModel', 'activeModel', 'translateTargetLang'], (cfg: StorageConfig) => {
     const reqPair = cfg.activeModel || null;
@@ -382,56 +586,83 @@ function startStreamForOverlay(overlay: OverlayHandle, task: string, text: strin
 
 function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair: ChannelPair, lang: string, text: string) {
   const header = document.createElement('div');
-  header.style.cursor = 'move';
-  header.style.display = 'flex';
-  header.style.alignItems = 'center';
-  header.style.justifyContent = 'space-between';
-  header.style.marginBottom = '8px';
+  header.className = 'ifocal-overlay-header';
 
+  // 左侧：Models + Language（自定义下拉）
   const left = document.createElement('div');
-  left.style.display = 'flex';
-  left.style.alignItems = 'center';
-  left.style.gap = '8px';
+  left.className = 'ifocal-header-left';
 
-  const modelLabel = document.createElement('span');
-  modelLabel.className = 'text-sm subtle';
-  modelLabel.textContent = pair ? `${pair.model} (${pair.channel})` : 'No model';
+  // 自定义下拉使用预定义 CSS 类，减少内联样式
 
-  const langSelect = document.createElement('select');
-  langSelect.className = 'h-9 px-2 text-sm rounded-md border border-input bg-background';
-  ['zh-CN', 'en', 'ja', 'ko', 'fr', 'es', 'de'].forEach((code) => {
-    const option = document.createElement('option');
-    option.value = code;
-    option.textContent = code;
-    if (code === lang) option.selected = true;
-    langSelect.appendChild(option);
-  });
-
-  left.appendChild(modelLabel);
-  left.appendChild(langSelect);
-
-  const right = document.createElement('div');
-  const modelSelect = document.createElement('select');
-  modelSelect.className = 'h-9 px-2 text-sm rounded-md border border-input bg-background';
+  // 模型下拉
+  const modelWrap = document.createElement('div');
+  modelWrap.className = 'ifocal-dd-wrap';
+  const modelBtn = document.createElement('button');
+  modelBtn.className = 'ifocal-dd-btn';
+  modelBtn.textContent = pair ? `${pair.model}` : 'Models';
+  const modelMenu = document.createElement('div');
+  modelMenu.className = 'ifocal-dd-menu hidden';
   const pairs: ChannelPair[] = [];
-  const channels = Array.isArray(cfg.channels) ? cfg.channels : [];
-  channels.forEach((ch) => (ch.models || []).forEach((m) => pairs.push({ channel: ch.name, model: m })));
+  const list = Array.isArray(cfg.channels) ? cfg.channels : [];
+  list.forEach((ch) => (ch.models || []).forEach((m) => pairs.push({ channel: ch.name, model: m })));
   pairs.forEach((p) => {
-    const opt = document.createElement('option');
-    opt.value = `${p.channel}|${p.model}`;
-    opt.textContent = `${p.model} (${p.channel})`;
-    if (pair && p.channel === pair.channel && p.model === pair.model) opt.selected = true;
-    modelSelect.appendChild(opt);
+    const item = document.createElement('div');
+    item.className = 'ifocal-dd-item';
+    item.innerHTML = `<div class="title">${p.model}</div><div class="sub">${p.channel}</div>`;
+    item.addEventListener('click', (ev) => {
+      ev.stopPropagation(); ev.preventDefault();
+      modelBtn.textContent = p.model;
+      startStreamForOverlay(overlay, 'translate', text, p, lang);
+      modelMenu.classList.add('hidden');
+    });
+    modelMenu.appendChild(item);
   });
+  modelBtn.addEventListener('click', (ev) => { ev.stopPropagation(); ev.preventDefault(); modelMenu.classList.toggle('hidden'); });
+  modelWrap.appendChild(modelBtn);
+  modelWrap.appendChild(modelMenu);
 
-  right.appendChild(modelSelect);
+  // 语言下拉（读取 shared 列表）
+  const langWrap = document.createElement('div');
+  langWrap.className = 'ifocal-dd-wrap';
+  const langBtn = document.createElement('button');
+  langBtn.className = 'ifocal-dd-btn';
+  const currentLang = SUPPORTED_LANGUAGES.find(l => l.value === lang)?.label || lang;
+  langBtn.textContent = currentLang || 'Language';
+  const langMenu = document.createElement('div');
+  langMenu.className = 'ifocal-dd-menu hidden';
+  SUPPORTED_LANGUAGES.forEach((L) => {
+    const item = document.createElement('div');
+    item.className = 'ifocal-dd-item';
+    item.textContent = `${L.label}`;
+    item.addEventListener('click', (ev) => {
+      ev.stopPropagation(); ev.preventDefault();
+      chrome.storage.sync.set({ translateTargetLang: L.value }, () => {
+        langBtn.textContent = L.label;
+        startStreamForOverlay(overlay, 'translate', text, parsePair(modelBtn.textContent || ''), L.value);
+      });
+      langMenu.classList.add('hidden');
+    });
+    langMenu.appendChild(item);
+  });
+  langBtn.addEventListener('click', (ev) => { ev.stopPropagation(); ev.preventDefault(); langMenu.classList.toggle('hidden'); });
+  langWrap.appendChild(langBtn);
+  langWrap.appendChild(langMenu);
+
+  left.appendChild(modelWrap);
+  left.appendChild(langWrap);
+
+  // 右侧：Close Icon
+  const right = document.createElement('div');
   const closeBtn = document.createElement('button');
-  closeBtn.textContent = '×';
+  // 统一 Iconify 风格的内联 SVG 关闭图标
+  closeBtn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg>';
   closeBtn.title = 'Close';
-  closeBtn.className = 'h-6 w-6 rounded-md border border-input bg-background hover:bg-accent text-foreground';
+  closeBtn.className = 'ifocal-close';
   closeBtn.addEventListener('click', () => {
     try { if (overlay._port) { overlay._port.disconnect(); overlay._port = null; } } catch { }
     try { overlay.root.remove(); } catch { }
+    overlayAutoFollow = false;
+    maybeDetachScrollListener();
   });
   right.appendChild(closeBtn);
 
@@ -459,6 +690,7 @@ function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair
 
   header.addEventListener('mousedown', (event) => {
     dragging = true;
+    overlayAutoFollow = false;
     startX = event.clientX;
     startY = event.clientY;
     startLeft = parseInt(overlay.root.style.left, 10) || 0;
@@ -468,7 +700,8 @@ function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair
   });
 
   const outsideClick = (event: MouseEvent) => {
-    if (!overlay.root.contains(event.target as Node)) {
+    const path = (event as any).composedPath ? (event as any).composedPath() : [];
+    if (!(path as any[]).includes(overlay.root)) {
       if (overlay._port) {
         try {
           overlay._port.disconnect();
@@ -478,23 +711,19 @@ function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair
         overlay._port = null;
       }
       overlay.root.remove();
+      overlayAutoFollow = false;
+      maybeDetachScrollListener();
       document.removeEventListener('mousedown', outsideClick, true);
     }
   };
   window.setTimeout(() => document.addEventListener('mousedown', outsideClick, true), 0);
 
-  langSelect.addEventListener('change', () => {
-    const newLang = langSelect.value;
-    chrome.storage.sync.set({ translateTargetLang: newLang }, () => {
-      startStreamForOverlay(overlay, 'translate', text, parsePair(modelSelect.value), newLang);
-    });
-  });
-
-  modelSelect.addEventListener('change', () => {
-    const nextPair = parsePair(modelSelect.value);
-    modelLabel.textContent = nextPair ? `${nextPair.model} (${nextPair.channel})` : 'No model';
-    startStreamForOverlay(overlay, 'translate', text, nextPair, langSelect.value);
-  });
+  // 点击 overlay 内其它区域，自动收起菜单
+  const closeMenus = () => { modelMenu.classList.add('hidden'); langMenu.classList.add('hidden'); };
+  overlay.root.addEventListener('click', (ev) => {
+    const el = ev.target as HTMLElement;
+    if (!el.closest('button')) closeMenus();
+  }, true);
 }
 
 function parsePair(value: string | null | undefined): ChannelPair {
@@ -530,4 +759,3 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   return undefined;
 });
-
