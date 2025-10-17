@@ -1,30 +1,48 @@
 // 注意：为避免打包为 ESM 并在内容脚本环境报错，这里不再使用 import 语句。
+// 页面（非 Shadow DOM）内插入模式所需的全局加载样式，避免仅注入到 Shadow 导致动画丢失
+const DOC_STYLE = `
+.ifocal-target-wrapper{display: inline-flex;vertical-align: middle;}
+@keyframes ifocal-spin{to{transform:rotate(360deg)}}
+.ifocal-loading{width:16px;height:16px;border:2px solid rgba(15,23,42,0.18);margin-left: 5px;border-top-color:#0f172a;border-radius:50%;animation:ifocal-spin 1s linear infinite;display:inline-block;vertical-align:middle;line-height:1}
+`;
+
 // 样式通过 Shadow DOM 注入；语言列表通过后台消息读取。
 let uiHost: HTMLElement | null = null;
 let uiShadow: ShadowRoot | null = null;
 const SHADOW_STYLE = `
 :host{ all: initial; }
+:host ::-webkit-scrollbar {width: 10px;height: 10px;}
+:host ::-webkit-scrollbar-thumb {background-color: #656D78;background-clip: padding-box;border: 3px solid transparent;border-radius:5px;}
 .ifocal-overlay{position:absolute;z-index:2147483647;max-width:420px;width:100%;background:rgba(255,255,255,0.88);border-radius:12px;box-shadow:0 12px 32px rgba(15,23,42,0.18);color:#0f172a;line-height:1.55;backdrop-filter:saturate(180%) blur(12px);-webkit-backdrop-filter:saturate(180%) blur(12px);pointer-events:auto}
 .ifocal-overlay-body{white-space:pre-wrap;max-height:50vh;overflow-y:auto;position:relative;padding:0 12px 12px;}
 .ifocal-overlay-header{cursor:move;display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;padding:12px 12px 0;}
 .ifocal-header-left{display:flex;align-items:center;gap:8px}
 .ifocal-dd-wrap{position:relative}
-.ifocal-dd-btn{height:36px;padding:0 8px;font-size:12px;border:1px solid rgba(15,23,42,.12);border-radius:8px;background:rgba(255,255,255,.95);color:#0f172a;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
-.ifocal-dd-menu{position:absolute;top:40px;left:0;min-width:220px;max-height:220px;overflow:auto;background:#fff;border:1px solid rgba(15,23,42,.12);border-radius:10px;box-shadow:0 8px 24px rgba(15,23,42,.12);padding:6px;z-index:3}
+.ifocal-dd-btn{height:28px;padding:0 10px;font-size:12px;border:none;border-radius:24px;background:rgba(0,0,0,0.05);color:#0f172a;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.ifocal-dd-menu{position:absolute;top:110%;left:0;min-width:200px;max-height:600px;overflow:auto;background:#fff;border-radius:10px;box-shadow:0 8px 24px rgba(15,23,42,.12);font-size:12px;padding:6px;z-index:3}
 .ifocal-dd-item{padding:8px 10px;border-radius:8px;cursor:pointer}
 .ifocal-dd-item:hover{background:rgba(15,23,42,.06)}
 .ifocal-dd-item .title{font-weight:600;line-height:1.1}
 .ifocal-dd-item .sub{opacity:.65;font-size:12px;line-height:1.1}
-.ifocal-close{height:24px;width:24px;border:1px solid rgba(15,23,42,.12);border-radius:6px;background:rgba(255,255,255,.9);color:#0f172a;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.ifocal-close{height:28px;width:28px;border:none;border-radius:24px;background:unset;color:#6a6a6a;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
 .ifocal-close:hover{background:rgba(15,23,42,.06)}
 .copy-btn{position:absolute;top:4px;right:4px;height:24px;width:28px;border:1px solid rgba(15,23,42,0.15);border-radius:6px;background:rgba(255,255,255,0.9);cursor:pointer;opacity:0;transition:opacity .15s ease}
 .ifocal-overlay:hover .copy-btn{opacity:1}
-.ifocal-target-wrapper{background-image:linear-gradient(to right, rgba(71,71,71,.45) 30%, rgba(255,255,255,0) 0%);background-position:bottom;background-size:5px 1px;background-repeat:repeat-x;padding-bottom:3px;font-family:inherit}
-@keyframes fc-spin{to{transform:rotate(360deg)}}
-.fc-spinner{width:16px;height:16px;border:2px solid rgba(15,23,42,0.18);border-top-color:#0f172a;border-radius:50%;animation:fc-spin 1s linear infinite;display:inline-block;vertical-align:text-bottom}
 .ifocal-dot{position:absolute;width:10px;height:10px;border-radius:50%;background:#0f172a;opacity:.9;cursor:pointer;box-shadow:0 0 0 2px rgba(255,255,255,.9);z-index:2147483647;pointer-events:auto}
 .hidden{display:none}
+
+${DOC_STYLE}
 `;
+
+function ensureDocLoadingStyle() {
+  try {
+    if (document.getElementById('ifocal-loading-style')) return;
+    const s = document.createElement('style');
+    s.id = 'ifocal-loading-style';
+    s.textContent = DOC_STYLE;
+    (document.head || document.documentElement || document.body)?.appendChild(s);
+  } catch {}
+}
 
 function ensureUiRoot(): ShadowRoot {
   if (uiShadow) return uiShadow;
@@ -33,7 +51,6 @@ function ensureUiRoot(): ShadowRoot {
     if (!uiHost) {
       uiHost = document.createElement('div');
       uiHost.id = 'ifocal-host';
-      uiHost.style.all = 'initial';
       uiShadow = uiHost.attachShadow({ mode: 'open' });
       const style = document.createElement('style');
       style.textContent = SHADOW_STYLE;
@@ -88,8 +105,8 @@ let lastSelectionRect: DOMRect | null = null;
 let selectionSyncTimer: number | undefined;
 let selectionUpdateTimer: number | undefined;
 let selectionDot: HTMLElement | null = null;
-const SELECTION_SYNC_DELAY = 200;
-const SELECTION_DOT_UPDATE_DELAY = 120;
+const SELECTION_SYNC_DELAY = 100;
+const SELECTION_DOT_UPDATE_DELAY = 100;
 // 近祖滚动容器监听（仅监听一个，降低成本）
 let currentScrollContainer: HTMLElement | null = null;
 let currentScrollHandler: ((ev?: Event) => void) | null = null;
@@ -115,6 +132,7 @@ try {
   });
 } catch {}
 
+// 重载 
 function readHotkeys() {
   try {
     chrome.storage.sync.get(['actionKey', 'hoverKey', 'selectKey', 'displayMode', 'enableSelectionTranslation'], (items) => {
@@ -334,7 +352,7 @@ function createOverlayAt(x: number, y: number): OverlayHandle {
       if (flag) {
         if (!spinner) {
           spinner = document.createElement('div');
-          spinner.className = 'fc-spinner';
+          spinner.className = 'ifocal-loading';
           body.innerHTML = '';
           body.appendChild(spinner);
         }
@@ -430,17 +448,28 @@ function updateBreakForTranslated(blockEl: HTMLElement, source: string) {
   const needBr = shouldInsertBreakFromSource(source);
   if (needBr) {
     if (exists) {
-      // 确保 br 位于 wrapper 之前
-      if (wrapper && exists.nextSibling !== wrapper) {
-        blockEl.insertBefore(exists, wrapper);
+      // 确保 br 位于 wrapper 内部且作为第一个子节点
+      if (wrapper) {
+        if (exists.parentElement !== wrapper || wrapper.firstChild !== exists) {
+          try { wrapper.insertBefore(exists, wrapper.firstChild || null); } catch {}
+        }
+      } else {
+        // 兜底：若未找到 wrapper，保持原逻辑但不强制位置
+        if (exists.parentElement !== blockEl) {
+          try { blockEl.appendChild(exists); } catch {}
+        }
       }
       return;
     }
     const br = document.createElement('br');
     br.className = 'ifocal-target-break';
-    if (wrapper) blockEl.insertBefore(br, wrapper);
-    else if (blockEl.firstChild) blockEl.insertBefore(br, blockEl.firstChild);
-    else blockEl.appendChild(br);
+    if (wrapper) {
+      try { wrapper.insertBefore(br, wrapper.firstChild || null); } catch { blockEl.appendChild(br); }
+    } else if (blockEl.firstChild) {
+      blockEl.insertBefore(br, blockEl.firstChild);
+    } else {
+      blockEl.appendChild(br);
+    }
   } else if (exists) {
     exists.remove();
   }
@@ -479,9 +508,10 @@ function toggleHoverTranslate(blockEl: HTMLElement) {
       const wrapper = document.createElement('font');
       wrapper.className = 'notranslate ifocal-target-wrapper';
       wrapper.setAttribute('lang', langCode);
-      if (styleText) wrapper.setAttribute('style', styleText);
       const spin = document.createElement('div');
-      spin.className = 'fc-spinner';
+      // 确保在页面文档中也有加载动画样式（插入模式不在 Shadow 内）
+      ensureDocLoadingStyle();
+      spin.className = 'ifocal-loading';
       wrapper.appendChild(spin);
       blockEl.appendChild(wrapper);
 
@@ -493,6 +523,7 @@ function toggleHoverTranslate(blockEl: HTMLElement) {
         blockEl.dataset.fcTranslated = '1';
         const msg = response && response.ok ? response.result : response?.error || '';
         wrapper.innerHTML = '';
+        if (styleText) wrapper.setAttribute('style', styleText);
         const inner = document.createElement('font');
         inner.textContent = msg || '';
         wrapper.appendChild(inner);

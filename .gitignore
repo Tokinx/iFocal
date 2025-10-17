@@ -2,3 +2,4 @@
 dist/
 .vite-cache/
 bun.lock
+yarn.lock

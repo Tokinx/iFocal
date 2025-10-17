@@ -41,15 +41,16 @@
   background-repeat: repeat-x;
   padding-bottom: 3px;
   font-family: inherit;
+  display: inline;
 }
 
-@keyframes fc-spin { to { transform: rotate(360deg); } }
-.fc-spinner {
+@keyframes ifocal-spin { to { transform: rotate(360deg); } }
+.ifocal-loading {
   width: 16px; height: 16px;
   border: 2px solid rgba(0,0,0,0.15);
   border-top-color: #0f172a;
   border-radius: 50%;
-  animation: fc-spin 1s linear infinite;
+  animation: ifocal-spin 1s linear infinite;
   display: inline-block;
   vertical-align: text-bottom;
 }

@@ -1,4 +1,4 @@
-export {};
+export { };
 import { SUPPORTED_LANGUAGES } from '../shared/config';
 
 const SIDEBAR_PATH = 'dist/sidebar.html';
@@ -6,6 +6,8 @@ let selectionBuffer = '';
 let isOpeningGlobalWindow = false; // 打开全局窗口的重入保护
 // 全局助手窗口单例 ID 存储键
 const GLOBAL_WIN_KEY = 'globalAssistantWindowId';
+// 不支持system role的模型
+const NOT_SUPPORT_SYS_ROLE_MODELS = ["translate", "translate-*", "gemma-*", "qwen-mt-*"];
 
 // 监听窗口关闭，若为全局助手，则清理存储的 ID
 try {
@@ -16,9 +18,9 @@ try {
           chrome.storage.local.remove([GLOBAL_WIN_KEY]);
         }
       });
-    } catch {}
+    } catch { }
   });
-} catch {}
+} catch { }
 
 async function getStoredGlobalWindowId(): Promise<number | null> {
   return new Promise((resolve) => {
@@ -305,6 +307,21 @@ function makePrompt(task: string, text: string, lang: string, templates: any) {
   return Object.keys(vars).reduce((acc, key) => acc.split(key).join(vars[key]), tpl);
 }
 
+function makeMessage(model: string, prompt: string, systemText = 'You are a helpful assistant.') {
+  const toRegex = (p: string) =>
+    new RegExp('^' + p.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
+  const noSystem = NOT_SUPPORT_SYS_ROLE_MODELS.some(p => toRegex(p).test(model));
+  if (noSystem) {
+    // 忽略 system 消息
+    // return [{ role: 'user', content: prompt }];
+    // 合并为 1 条 user 消息
+    return [{ role: 'user', content: `${systemText}\n\n${prompt}` }];
+    // 分 2 条 user 消息
+    // return [{ role: 'user', content: systemText }, { role: 'user', content: prompt }];
+  }
+  return [{ role: 'system', content: systemText }, { role: 'user', content: prompt }];
+}
+
 async function runWithStreaming(channel: any, model: string, task: string, prompt: string) {
   const chunks: string[] = [];
   const onChunk = (text: string | null) => {
@@ -340,7 +357,7 @@ async function invokeModel(channel: any, model: string, prompt: string) {
 
 async function callOpenAI(baseUrl: string, apiKey: string, model: string, prompt: string) {
   const url = joinBasePath(baseUrl || 'https://api.openai.com/v1', '/chat/completions');
-  const body = { model, messages: [{ role: 'system', content: 'You are a helpful assistant.' }, { role: 'user', content: prompt }], temperature: 0.2 };
+  const body = { model, messages: makeMessage(model, prompt), temperature: 0.2 };
   const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: JSON.stringify(body) });
   if (!res.ok) throw new Error(`OpenAI HTTP ${res.status}`);
   const json = await res.json();
@@ -364,7 +381,7 @@ async function callGemini(baseUrl: string, apiKey: string, model: string, prompt
 
 async function streamOpenAI(baseUrl: string, apiKey: string, model: string, prompt: string, onDelta: (token: string | null, done?: boolean) => void) {
   const url = joinBasePath(baseUrl || 'https://api.openai.com/v1', '/chat/completions');
-  const body = { model, stream: true, messages: [{ role: 'system', content: 'You are a helpful assistant.' }, { role: 'user', content: prompt }], temperature: 0.2 };
+  const body = { model, stream: true, messages: makeMessage(model, prompt), temperature: 0.2 };
   const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: JSON.stringify(body) });
   if (!res.ok) throw new Error(`OpenAI HTTP ${res.status}`);
   const reader = res.body?.getReader();
@@ -437,72 +454,73 @@ async function openOrFocusGlobalWindow() {
   if (isOpeningGlobalWindow) return;
   isOpeningGlobalWindow = true;
   try {
-  const distUrl = chrome.runtime.getURL('dist/window.html');
-  const altDistUrl = chrome.runtime.getURL('dist/src/window/index.html');
-  // 先尝试通过已记录的窗口 ID 聚焦，确保单例
-  try {
-    const storedId = await getStoredGlobalWindowId();
-    if (typeof storedId === 'number') {
-      try {
-        await new Promise<void>((resolve, reject) => {
-          chrome.windows.update(storedId, { focused: true }, (w) => {
-            const err = chrome.runtime.lastError; if (err || !w) reject(err || new Error('no window'));
-            else resolve();
+    const distUrl = chrome.runtime.getURL('dist/window.html');
+    const altDistUrl = chrome.runtime.getURL('dist/src/window/index.html');
+    // 先尝试通过已记录的窗口 ID 聚焦，确保单例
+    try {
+      const storedId = await getStoredGlobalWindowId();
+      if (typeof storedId === 'number') {
+        try {
+          await new Promise<void>((resolve, reject) => {
+            chrome.windows.update(storedId, { focused: true }, (w) => {
+              const err = chrome.runtime.lastError; if (err || !w) reject(err || new Error('no window'));
+              else resolve();
+            });
           });
-        });
+          return;
+        } catch {
+          // 若失败，说明记录已失效，继续走后续逻辑
+          await setStoredGlobalWindowId(null);
+        }
+      }
+    } catch { }
+    try {
+      const tabs = await new Promise<chrome.tabs.Tab[]>((resolve) => chrome.tabs.query({ url: [distUrl, altDistUrl] as any }, resolve));
+      if (tabs && tabs.length > 0) {
+        // 仅保留第一个，全局窗口保持单例
+        const primary = tabs[0];
+        try {
+          chrome.windows.update(primary.windowId, { focused: true });
+          if (primary.id) chrome.tabs.update(primary.id, { active: true });
+          // 记录主窗口 ID
+          if (typeof primary.windowId === 'number') { try { await setStoredGlobalWindowId(primary.windowId); } catch { } }
+        } catch { }
+        // 关闭多余的重复页面（若有）
+        const extras = tabs.slice(1).map((t) => t.id).filter((id): id is number => typeof id === 'number');
+        if (extras.length) {
+          try { chrome.tabs.remove(extras); } catch { }
+        }
         return;
-      } catch {
-        // 若失败，说明记录已失效，继续走后续逻辑
-        await setStoredGlobalWindowId(null);
       }
-    }
-  } catch {}
-  try {
-    const tabs = await new Promise<chrome.tabs.Tab[]>((resolve) => chrome.tabs.query({ url: [distUrl, altDistUrl] as any }, resolve));
-    if (tabs && tabs.length > 0) {
-      // 仅保留第一个，全局窗口保持单例
-      const primary = tabs[0];
-      try {
-        chrome.windows.update(primary.windowId, { focused: true });
-        if (primary.id) chrome.tabs.update(primary.id, { active: true });
-        // 记录主窗口 ID
-        if (typeof primary.windowId === 'number') { try { await setStoredGlobalWindowId(primary.windowId); } catch {} }
-      } catch {}
-      // 关闭多余的重复页面（若有）
-      const extras = tabs.slice(1).map((t) => t.id).filter((id): id is number => typeof id === 'number');
-      if (extras.length) { try { chrome.tabs.remove(extras); } catch {}
-      }
-      return;
-    }
-  } catch {}
+    } catch { }
 
-  const targetUrl = await pickExistingExtensionUrl(['dist/window.html', 'dist/src/window/index.html']);
-  // 居中计算：基于最后聚焦的浏览器窗口
-  const width = 420;
-  const height = 640;
-  let left: number | undefined;
-  let top: number | undefined;
-  try {
-    const last = await new Promise<chrome.windows.Window>((resolve) => chrome.windows.getLastFocused(resolve));
-    const hasBounds = typeof last.left === 'number' && typeof last.top === 'number' && typeof last.width === 'number' && typeof last.height === 'number';
-    if (hasBounds) {
-      left = Math.max(0, (last.left as number) + Math.round(((last.width as number) - width) / 2));
-      top = Math.max(0, (last.top as number) + Math.round(((last.height as number) - height) / 2));
+    const targetUrl = await pickExistingExtensionUrl(['dist/window.html', 'dist/src/window/index.html']);
+    // 居中计算：基于最后聚焦的浏览器窗口
+    const width = 420;
+    const height = 640;
+    let left: number | undefined;
+    let top: number | undefined;
+    try {
+      const last = await new Promise<chrome.windows.Window>((resolve) => chrome.windows.getLastFocused(resolve));
+      const hasBounds = typeof last.left === 'number' && typeof last.top === 'number' && typeof last.width === 'number' && typeof last.height === 'number';
+      if (hasBounds) {
+        left = Math.max(0, (last.left as number) + Math.round(((last.width as number) - width) / 2));
+        top = Math.max(0, (last.top as number) + Math.round(((last.height as number) - height) / 2));
+      }
+    } catch { }
+    const createData: chrome.windows.CreateData = { url: targetUrl, type: 'popup', width, height, focused: true } as any;
+    if (typeof left === 'number' && typeof top === 'number') {
+      (createData as any).left = left;
+      (createData as any).top = top;
     }
-  } catch {}
-  const createData: chrome.windows.CreateData = { url: targetUrl, type: 'popup', width, height, focused: true } as any;
-  if (typeof left === 'number' && typeof top === 'number') {
-    (createData as any).left = left;
-    (createData as any).top = top;
-  }
-  try {
-    const win = await new Promise<chrome.windows.Window | null>((resolve) => chrome.windows.create(createData, (w) => resolve(w || null)));
-    if (win && typeof win.id === 'number') { try { await setStoredGlobalWindowId(win.id); } catch {} }
-  } catch {
-    chrome.windows.create({ url: targetUrl, type: 'popup', width, height, focused: true }, (w) => {
-      try { if (w && typeof w.id === 'number') setStoredGlobalWindowId(w.id); } catch {}
-    });
-  }
+    try {
+      const win = await new Promise<chrome.windows.Window | null>((resolve) => chrome.windows.create(createData, (w) => resolve(w || null)));
+      if (win && typeof win.id === 'number') { try { await setStoredGlobalWindowId(win.id); } catch { } }
+    } catch {
+      chrome.windows.create({ url: targetUrl, type: 'popup', width, height, focused: true }, (w) => {
+        try { if (w && typeof w.id === 'number') setStoredGlobalWindowId(w.id); } catch { }
+      });
+    }
   } finally {
     isOpeningGlobalWindow = false;
   }
@@ -514,7 +532,7 @@ async function pickExistingExtensionUrl(paths: string[]): Promise<string> {
     try {
       const res = await fetch(url, { method: 'GET' });
       if (res.ok) return url;
-    } catch {}
+    } catch { }
   }
   return chrome.runtime.getURL(paths[0]!);
 }
@@ -542,7 +560,7 @@ function openOrFocusSidebarPopup() {
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'ai-stream') return;
   let disconnected = false;
-  try { port.onDisconnect.addListener(() => { disconnected = true; }); } catch {}
+  try { port.onDisconnect.addListener(() => { disconnected = true; }); } catch { }
   port.onMessage.addListener(async (msg) => {
     if (!msg || msg.type !== 'start') return;
     try {
@@ -553,7 +571,7 @@ chrome.runtime.onConnect.addListener((port) => {
       const ch = ensureChannel(cfg.channels, pair.channel);
       const tLang = targetLang || cfg.translateTargetLang || 'zh-CN';
       const prompt = makePrompt(task, String(text || ''), tLang, cfg.promptTemplates || {});
-      const safePost = (payload: any) => { if (disconnected) return; try { port.postMessage(payload); } catch {} };
+      const safePost = (payload: any) => { if (disconnected) return; try { port.postMessage(payload); } catch { } };
       // 提前告知前端本次实际使用的模型标识
       safePost({ type: 'meta', channel: pair.channel, model: pair.model });
 
@@ -578,7 +596,7 @@ chrome.runtime.onConnect.addListener((port) => {
         safePost({ type: 'done' });
       }
     } catch (error) {
-      if (!disconnected) { try { port.postMessage({ type: 'error', error: String(error) }); } catch {} }
+      if (!disconnected) { try { port.postMessage({ type: 'error', error: String(error) }); } catch { } }
     }
   });
 });

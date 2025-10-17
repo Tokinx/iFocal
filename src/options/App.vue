@@ -384,7 +384,7 @@ function onOpenEdit(ch: any) { showEditApiKey.value = false; openEdit(ch); }
           </div>
           <div>
             <Label class="mb-1 block">包裹样式（ifocal-target-wrapper）</Label>
-            <Textarea v-model="config.wrapperStyle" class="min-h-28" placeholder="background-image: linear-gradient(to right, rgba(71,71,71,.5) 30%, rgba(255,255,255,0) 0%);&#10;background-position: bottom;" />
+            <Textarea v-model="config.wrapperStyle" class="min-h-28" placeholder="background-image: linear-gradient(to right, rgba(71,71,71,.5) 30%, rgba(255,255,255,0) 0%);&#10;background-position: bottom;&#10;display: inline;" />
           </div>
           <div>
             <Label class="mb-1 block">全局助手</Label>
