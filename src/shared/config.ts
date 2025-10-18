@@ -31,6 +31,18 @@ export const DEFAULT_CONFIG = {
   displayMode: 'insert' as 'insert' | 'overlay',
   // 划词：是否启用划词翻译（显示小圆点）
   enableSelectionTranslation: true,
+
+  // 全文翻译（编排器）高级设置
+  // 仅使用缓存（不触发网络批量请求）
+  txCacheOnly: false,
+  // 仅短句优先（只处理短句；用于快速首屏验证）
+  txOnlyShort: false,
+  // 严格 JSON 模式（提示词将更严格要求返回 JSON 数组）
+  txStrictJson: true,
+  // 限流参数（后台）
+  txQps: 2,
+  txQpm: 120,
+  txMaxConcurrent: 1,
   
   // 快捷键设置
   actionKey: 'Alt',
@@ -50,7 +62,11 @@ export const CONFIG_KEYS = [
   'actionKey',
   'autoPasteGlobalAssistant',
   'sidebarHistoryLimit',
-  'wrapperStyle'
+  'wrapperStyle',
+  'txCacheOnly',
+  'txOnlyShort',
+  'txStrictJson'
+  ,'txQps','txQpm','txMaxConcurrent'
 ];
 
 // 从 Chrome 存储中加载配置

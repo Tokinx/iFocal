@@ -82,7 +82,13 @@ async function saveBasics() {
       translateTargetLang: lang,
       displayMode: config.value.displayMode,
       wrapperStyle: config.value.wrapperStyle,
-      enableSelectionTranslation: config.value.enableSelectionTranslation
+      enableSelectionTranslation: config.value.enableSelectionTranslation,
+      txCacheOnly: !!config.value.txCacheOnly,
+      txOnlyShort: !!config.value.txOnlyShort,
+      txStrictJson: !!config.value.txStrictJson,
+      txQps: Number(config.value.txQps) || 2,
+      txQpm: Number(config.value.txQpm) || 120,
+      txMaxConcurrent: Number(config.value.txMaxConcurrent) || 1
     });
     
     toast.success('基础设置已保存');
@@ -192,6 +198,35 @@ function handleAddChannelDialog() {
 
 // 打开编辑表单时重置 API KEY 显示状态
 function onOpenEdit(ch: any) { showEditApiKey.value = false; openEdit(ch); }
+
+// 词汇表（不译词与术语映射）
+const notTranslateText = ref('');
+const termsText = ref('');
+async function loadGlossary() {
+  try {
+    await new Promise<void>((resolve) => {
+      chrome.storage.sync.get(['glossaryNotTranslate','glossaryTerms'], (items:any) => {
+        const list = Array.isArray(items?.glossaryNotTranslate) ? items.glossaryNotTranslate : [];
+        notTranslateText.value = (list as string[]).join('\n');
+        const terms = (items?.glossaryTerms && typeof items.glossaryTerms === 'object') ? items.glossaryTerms : {};
+        const lines = Object.keys(terms).map((k) => `${k}=${terms[k]}`);
+        termsText.value = lines.join('\n');
+        resolve();
+      });
+    });
+  } catch {}
+}
+async function saveGlossary() {
+  try {
+    const nots = notTranslateText.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    const terms: Record<string,string> = {};
+    for (const line of termsText.value.split(/\r?\n/)) {
+      const t = line.trim(); if (!t) continue; const i = t.indexOf('='); if (i <= 0) continue; const k = t.slice(0, i).trim(); const v = t.slice(i+1).trim(); if (k) terms[k] = v;
+    }
+    chrome.storage.sync.set({ glossaryNotTranslate: nots, glossaryTerms: terms }, () => toast.success('词汇表已保存'));
+  } catch { toast.error('保存失败'); }
+}
+onMounted(loadGlossary);
 </script>
 
 <template>
@@ -475,6 +510,58 @@ function onOpenEdit(ch: any) { showEditApiKey.value = false; openEdit(ch); }
           <div class="rounded-md border bg-secondary/40 p-3 text-sm whitespace-pre-wrap min-h-12">{{ assistantResult }}</div>
         </div>
       </section>
+      <!-- 设置：全文翻译 -->
+      <section :id="'opt-settings'" class="space-y-4">
+        <header class="text-base font-semibold">全文翻译</header>
+        <div class="rounded-xl border bg-white p-4 space-y-4 text-sm">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="flex items-center gap-2">
+              <input id="cfg-cache-only" type="checkbox" v-model="config.txCacheOnly" @change="saveBasics" />
+              <label for="cfg-cache-only">仅使用缓存（不请求网络）</label>
+            </div>
+            <div class="flex items-center gap-2">
+              <input id="cfg-only-short" type="checkbox" v-model="config.txOnlyShort" @change="saveBasics" />
+              <label for="cfg-only-short">仅短句优先</label>
+            </div>
+            <div class="flex items-center gap-2">
+              <input id="cfg-json-strict" type="checkbox" v-model="config.txStrictJson" @change="saveBasics" />
+              <label for="cfg-json-strict">严格 JSON 输出（更稳，但可能略慢）</label>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <Label class="mb-1 block">QPS（每秒请求数上限）</Label>
+              <Input type="number" min="1" v-model="(config as any).txQps" @change="saveBasics" />
+            </div>
+            <div>
+              <Label class="mb-1 block">QPM（每分钟请求数上限）</Label>
+              <Input type="number" min="10" v-model="(config as any).txQpm" @change="saveBasics" />
+            </div>
+            <div>
+              <Label class="mb-1 block">并发上限</Label>
+              <Input type="number" min="1" v-model="(config as any).txMaxConcurrent" @change="saveBasics" />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label class="mb-1 block">不译词（每行一个）</Label>
+              <Textarea v-model="notTranslateText" class="min-h-28" placeholder="例如：\nGPU\niPhone" />
+            </div>
+            <div>
+              <Label class="mb-1 block">术语映射（key=value，每行一对）</Label>
+              <Textarea v-model="termsText" class="min-h-28" placeholder="例如：\nSign in=登录\nSettings=设置" />
+            </div>
+          </div>
+          <div>
+            <Button class="bg-primary text-primary-foreground flex items-center gap-1" @click="saveGlossary">
+              <Icon :icon="iconOfAction('save')" width="16" /> 保存词汇表
+            </Button>
+          </div>
+        </div>
+      </section>
+
       <!-- 快捷键 -->
       <section :id="'opt-keys'" class="space-y-4">
         <header class="text-base font-semibold">页面快捷键</header>

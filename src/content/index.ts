@@ -1,9 +1,11 @@
 // 注意：为避免打包为 ESM 并在内容脚本环境报错，这里不再使用 import 语句。
 // 页面（非 Shadow DOM）内插入模式所需的全局加载样式，避免仅注入到 Shadow 导致动画丢失
+import { createWrapper as sharedCreateWrapper, applyWrapperResult as sharedApplyWrapperResult, updateBreakForTranslated } from '@/shared/tx-dom';
 const DOC_STYLE = `
-.ifocal-target-wrapper{display: inline-flex;vertical-align: middle;}
+.ifocal-target-wrapper{display:inline-flex;vertical-align:middle}
+.ifocal-tx{display:inline;overflow-wrap:anywhere;word-break:break-word;hyphens:auto}
 @keyframes ifocal-spin{to{transform:rotate(360deg)}}
-.ifocal-loading{width:16px;height:16px;border:2px solid rgba(15,23,42,0.18);margin-left: 5px;border-top-color:#0f172a;border-radius:50%;animation:ifocal-spin 1s linear infinite;display:inline-block;vertical-align:middle;line-height:1}
+.ifocal-loading{width:16px;height:16px;border:2px solid rgba(15,23,42,0.18);margin-left:5px;border-top-color:#0f172a;border-radius:50%;animation:ifocal-spin 1s linear infinite;display:inline-block;vertical-align:middle;line-height:1}
 `;
 
 // 样式通过 Shadow DOM 注入；语言列表通过后台消息读取。
@@ -30,6 +32,12 @@ const SHADOW_STYLE = `
 .ifocal-overlay:hover .copy-btn{opacity:1}
 .ifocal-dot{position:absolute;width:10px;height:10px;border-radius:50%;background:#0f172a;opacity:.9;cursor:pointer;box-shadow:0 0 0 2px rgba(255,255,255,.9);z-index:2147483647;pointer-events:auto}
 .hidden{display:none}
+
+/* 全文翻译进度气泡（固定右上角） */
+.ifocal-tx-progress{position:fixed;right:12px;top:12px;z-index:2147483647;background:rgba(15,23,42,0.88);color:#fff;font-size:12px;padding:8px 10px;border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,.25);display:flex;align-items:center;gap:8px}
+.ifocal-tx-progress .bar{position:relative;width:120px;height:6px;background:rgba(255,255,255,.2);border-radius:4px;overflow:hidden}
+.ifocal-tx-progress .bar .inner{position:absolute;left:0;top:0;bottom:0;background:#22c55e;width:0%}
+.ifocal-tx-progress .meta{opacity:.85}
 
 ${DOC_STYLE}
 `;
@@ -426,54 +434,7 @@ function hideSelectionDot() {
   selectionDot = null;
 }
 
-function needsLineBreak(tag: string) {
-  return ['p', 'div', 'section', 'article', 'li', 'td', 'a',
-    'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag);
-}
-
-function shouldInsertBreakFromSource(text: string): boolean {
-  // 仅当译文中空格数量 > 3 时添加换行
-  const spaces = (text.match(/ /g) || []).length;
-  return spaces > 3;
-}
-
-function updateBreakForTranslated(blockEl: HTMLElement, source: string) {
-  const tag = (blockEl.tagName || 'div').toLowerCase();
-  const exists = blockEl.querySelector('br.ifocal-target-break');
-  const wrapper = blockEl.querySelector('font.ifocal-target-wrapper.notranslate');
-  if (!needsLineBreak(tag)) {
-    if (exists) exists.remove();
-    return;
-  }
-  const needBr = shouldInsertBreakFromSource(source);
-  if (needBr) {
-    if (exists) {
-      // 确保 br 位于 wrapper 内部且作为第一个子节点
-      if (wrapper) {
-        if (exists.parentElement !== wrapper || wrapper.firstChild !== exists) {
-          try { wrapper.insertBefore(exists, wrapper.firstChild || null); } catch {}
-        }
-      } else {
-        // 兜底：若未找到 wrapper，保持原逻辑但不强制位置
-        if (exists.parentElement !== blockEl) {
-          try { blockEl.appendChild(exists); } catch {}
-        }
-      }
-      return;
-    }
-    const br = document.createElement('br');
-    br.className = 'ifocal-target-break';
-    if (wrapper) {
-      try { wrapper.insertBefore(br, wrapper.firstChild || null); } catch { blockEl.appendChild(br); }
-    } else if (blockEl.firstChild) {
-      blockEl.insertBefore(br, blockEl.firstChild);
-    } else {
-      blockEl.appendChild(br);
-    }
-  } else if (exists) {
-    exists.remove();
-  }
-}
+// updateBreakForTranslated 已抽取到共享模块
 
 function toggleHoverTranslate(blockEl: HTMLElement) {
   if (!chrome?.runtime) return;
@@ -790,3 +751,620 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   return undefined;
 });
+
+// ============ 全文翻译编排器（MVP） ============
+// 采集→ID→分桶→限流→批量→调用后台 translateBatch→按 id 回填
+// 说明：为降低对现有页面影响，使用 <span class="ifocal-tx notranslate" data-tx-id> 包裹文本节点，保持 inline 流水布局；
+// 并提供右上角进度气泡。此为 MVP，可后续接入缓存与 MutationObserver 复播。
+
+type TxItem = { id: string; text: string; bucket: 'short' | 'medium' | 'long' };
+type TxMap = Map<string, { text: string; nodes: HTMLElement[]; done?: boolean }>;
+
+let txTargetLang = 'zh-CN';
+let txWrapperStyle = '';
+let txCacheOnly = false;
+let txOnlyShort = false;
+let txMap: TxMap = new Map();
+let qShort: string[] = []; // id 列表
+let qMedium: string[] = [];
+let qLong: string[] = [];
+let qStrictShort: string[] = [];
+let qStrictMedium: string[] = [];
+let qStrictLong: string[] = [];
+let inFlight = 0;
+let completed = 0;
+let total = 0;
+let progressEl: HTMLElement | null = null;
+let loopRunning = false;
+// 调用计数（本轮）：
+let callsShort = 0, callsMedium = 0, callsLong = 0;
+let strictShort = 0, strictMedium = 0, strictLong = 0;
+
+function djb2Hash(str: string): string {
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) + h) + str.charCodeAt(i);
+  // 转为无符号并以 8 字节十六进制表示
+  return (h >>> 0).toString(16);
+}
+
+function normalizeText(s: string): string {
+  return s.replace(/[\t\n\r ]+/g, ' ').trim();
+}
+
+function computeId(text: string, targetLang: string): string {
+  const norm = normalizeText(text);
+  return `tx_${targetLang}_${djb2Hash(norm)}`;
+}
+
+function isInOurUi(node: Node): boolean {
+  const el = node instanceof HTMLElement ? node : (node.parentElement as HTMLElement | null);
+  if (!el) return false;
+  if (el.closest('#ifocal-host')) return true; // Shadow 宿主
+  // 跳过我们插入的 wrapper 及其任何后代
+  try { if ((el as Element).closest && (el as Element).closest('font.ifocal-target-wrapper, .ifocal-target-wrapper')) return true; } catch {}
+  if (el.classList && (el.classList.contains('ifocal-target-wrapper') || el.classList.contains('ifocal-tx'))) return true;
+  return false;
+}
+
+function isVisibleElement(el: HTMLElement): boolean {
+  const style = window.getComputedStyle(el);
+  if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+  const rect = el.getBoundingClientRect();
+  if (rect.width < 1 && rect.height < 1) return false;
+  return true;
+}
+
+const SKIP_TAGS = new Set(['SCRIPT','STYLE','NOSCRIPT','TEXTAREA','INPUT','SELECT','OPTION','CODE','PRE','CANVAS','SVG']);
+// 块级段落选择器：将其内部 strong/em/i/b/span 等行内文本视为一个整体翻译单元
+const BLOCK_SELECTOR = 'p,li,h1,h2,h3,h4,h5,h6,dt,dd,figcaption,caption';
+
+function processedBlockAncestor(node: Node): HTMLElement | null {
+  try {
+    const el = (node as any).parentElement as HTMLElement | null;
+    if (!el) return null;
+    const block = el.closest(BLOCK_SELECTOR) as HTMLElement | null;
+    if (block && block.hasAttribute('data-tx-block-id')) return block;
+    return null;
+  } catch { return null; }
+}
+
+function wrapBlockElement(blockEl: HTMLElement, id: string): HTMLElement {
+  ensureDocLoadingStyle();
+  const wrapper = sharedCreateWrapper(id, txTargetLang, txWrapperStyle);
+  try { blockEl.setAttribute('data-tx-block-id', id); } catch {}
+  try { blockEl.appendChild(wrapper); } catch {}
+  return wrapper;
+}
+
+function wrapTextNode(node: Text, id: string): HTMLElement | null {
+  const parent = node.parentElement;
+  if (!parent || SKIP_TAGS.has(parent.tagName)) return null;
+  // 跳过隐藏或我们自身 UI
+  if (!isVisibleElement(parent) || isInOurUi(parent)) return null;
+  const text = node.nodeValue || '';
+  // 使用共享模块创建一致的包裹样式
+  ensureDocLoadingStyle();
+  const wrapper = sharedCreateWrapper(id, txTargetLang, txWrapperStyle);
+  // 不替换原文本节点，保持原文可见；将 wrapper 插入到其后，待翻译完成后通过换行策略分隔原文/译文
+  try { parent.insertBefore(wrapper, node.nextSibling); } catch { parent.appendChild(wrapper); }
+  return wrapper as unknown as HTMLElement;
+}
+
+function bucketOf(text: string): 'short' | 'medium' | 'long' {
+  const len = normalizeText(text).length;
+  if (len <= 30) return 'short';
+  if (len <= 120) return 'medium';
+  return 'long';
+}
+
+function collectTranslatableSpans(root: ParentNode): TxItem[] {
+  const items: TxItem[] = [];
+  const nodes: Text[] = [];
+  const filter = (node: Node): number => {
+    if (!(node instanceof Text)) return NodeFilter.FILTER_REJECT;
+    const val = (node.nodeValue || '').trim();
+    if (!val) return NodeFilter.FILTER_REJECT;
+    const parent = node.parentElement;
+    if (!parent) return NodeFilter.FILTER_REJECT;
+    if (SKIP_TAGS.has(parent.tagName)) return NodeFilter.FILTER_REJECT;
+    try { if ((parent as Element).closest && (parent as Element).closest('font.ifocal-target-wrapper, .ifocal-target-wrapper')) return NodeFilter.FILTER_REJECT; } catch {}
+    if (isInOurUi(node)) return NodeFilter.FILTER_REJECT;
+    if (!isVisibleElement(parent)) return NodeFilter.FILTER_REJECT;
+    return NodeFilter.FILTER_ACCEPT;
+  };
+  // 第一遍仅收集节点，避免遍历时修改 DOM 导致遗漏
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: filter } as any);
+  let n: Node | null;
+  let count = 0;
+  const MAX_SCAN = 10000;
+  while ((n = walker.nextNode())) {
+    nodes.push(n as Text);
+    if (++count >= MAX_SCAN) break;
+  }
+  // 第二遍逐个包裹与登记
+  for (const textNode of nodes) {
+    // 节点可能在前面操作中已被替换，需校验仍然存在且满足条件
+    if (!(textNode.parentElement)) continue;
+    if (filter(textNode) !== NodeFilter.FILTER_ACCEPT) continue;
+    // 若存在块级祖先，优先对块级元素作为整体创建一个翻译单元
+    try {
+      const block = (textNode.parentElement as HTMLElement).closest(BLOCK_SELECTOR) as HTMLElement | null;
+      if (block && !block.hasAttribute('data-tx-block-id')) {
+        const whole = (block.innerText || '').trim();
+        const normWhole = normalizeText(whole);
+        if (normWhole) {
+          const id = computeId(normWhole, txTargetLang);
+          const w = wrapBlockElement(block, id);
+          const exists = txMap.get(id);
+          if (exists) exists.nodes.push(w); else {
+            txMap.set(id, { text: normWhole, nodes: [w] });
+            const bucket = bucketOf(normWhole);
+            items.push({ id, text: normWhole, bucket });
+          }
+          // 块级已处理，跳过当前文本节点
+          continue;
+        }
+      }
+      // 若块级已处理，则跳过
+      if (block && block.hasAttribute('data-tx-block-id')) continue;
+    } catch {}
+    const t = textNode.nodeValue || '';
+    const norm = normalizeText(t);
+    if (!norm) continue;
+    const id = computeId(norm, txTargetLang);
+    const span = wrapTextNode(textNode, id);
+    if (!span) continue;
+    const exists = txMap.get(id);
+    if (exists) {
+      exists.nodes.push(span);
+    } else {
+      txMap.set(id, { text: norm, nodes: [span] });
+      const bucket = bucketOf(norm);
+      items.push({ id, text: norm, bucket });
+    }
+  }
+  return items;
+}
+
+function ensureProgressUi() {
+  const shadow = ensureUiRoot();
+  if (progressEl && document.contains(progressEl)) return progressEl;
+  const el = document.createElement('div');
+  el.className = 'ifocal-tx-progress';
+  el.setAttribute('role', 'status');
+  el.setAttribute('aria-live', 'polite');
+  el.innerHTML = `<div class="bar"><div class="inner" style="width:0%"></div></div><div class="meta">翻译中…</div>`;
+  (shadow as unknown as HTMLElement).appendChild(el);
+  progressEl = el;
+  return el;
+}
+
+function updateProgressUi() {
+  if (!progressEl) return;
+  const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+  const inner = progressEl.querySelector('.inner') as HTMLElement | null;
+  const meta = progressEl.querySelector('.meta') as HTMLElement | null;
+  if (inner) inner.style.width = `${pct}%`;
+  if (meta) meta.textContent = `翻译中… ${completed}/${total}`;
+}
+
+function removeProgressUiSoon() {
+  window.setTimeout(() => { try { progressEl?.remove(); } catch {} progressEl = null; }, 1200);
+}
+
+function enqueue(items: TxItem[]) {
+  for (const it of items) {
+    if (it.bucket === 'short') qShort.push(it.id);
+    else if (it.bucket === 'medium') qMedium.push(it.id);
+    else qLong.push(it.id);
+  }
+}
+
+function takeBatch(ids: string[], maxItems: number, maxChars: number): string[] {
+  const picked: string[] = [];
+  let chars = 0;
+  while (ids.length && picked.length < maxItems) {
+    const id = ids[0]!;
+    const ent = txMap.get(id);
+    const len = ent ? ent.text.length : 0;
+    if (chars + len > maxChars && picked.length > 0) break;
+    ids.shift();
+    picked.push(id);
+    chars += len;
+  }
+  return picked;
+}
+
+function applyWrapperResult(node: HTMLElement, text: string, sourceText?: string) {
+  sharedApplyWrapperResult(node, text, txTargetLang, txWrapperStyle, sourceText);
+}
+
+async function sendBatch(bucket: 'short'|'medium'|'long', ids: string[]) {
+  if (!ids.length) return;
+  inFlight++;
+  if (bucket === 'short') callsShort++; else if (bucket === 'medium') callsMedium++; else callsLong++;
+  updateProgressUi();
+  const items = ids.map(id => ({ id, text: txMap.get(id)!.text }));
+  try {
+    const resp = await new Promise<any>((resolve) => {
+      chrome.runtime.sendMessage({ action: 'translateBatch', targetLang: txTargetLang, items, policy: { jsonOnly: true, preservePlaceholders: true, preserveNumbers: true }, constraints: { timeoutMs: 20000 } }, resolve);
+    });
+    try { void chrome.runtime.lastError; } catch {}
+    if (resp && resp.ok && Array.isArray(resp.translations)) {
+      const gotIds = new Set<string>(resp.translations.map((t: any) => String(t.id)));
+      const missing = ids.filter(id => !gotIds.has(id));
+      for (const t of resp.translations) {
+        const entry = txMap.get(String(t.id));
+        const text = String(t.text || '');
+        if (!entry) continue;
+        if (validateConsistency(entry.text, text)) {
+          entry.done = true;
+          cacheSet(String(t.id), text).catch(()=>{});
+          for (const node of entry.nodes) {
+            applyWrapperResult(node, text, entry.text);
+          }
+          completed++;
+        } else {
+          // 一致性校验失败：进入严格重试队列
+          console.warn(`${LOG_PREFIX} consistency check failed for`, t.id);
+          const b = bucketOf(entry.text);
+          if (b === 'short') qStrictShort.push(String(t.id)); else if (b === 'medium') qStrictMedium.push(String(t.id)); else qStrictLong.push(String(t.id));
+          scheduleStrictLoop();
+        }
+      }
+      // 未返回项进入严格重试队列
+      for (const id of missing) {
+        const e = txMap.get(id);
+        if (!e || e.done) continue;
+        const b = bucketOf(e.text);
+        if (b === 'short') qStrictShort.push(id); else if (b === 'medium') qStrictMedium.push(id); else qStrictLong.push(id);
+      }
+      updateProgressUi();
+      scheduleStrictLoop();
+    }
+  } catch (error) {
+    console.warn(`${LOG_PREFIX} batch failed: ${bucket}`, error);
+    // 整批失败：全部进入严格重试
+    for (const id of ids) {
+      const e = txMap.get(id); if (!e || e.done) continue;
+      const b = bucketOf(e.text);
+      if (b === 'short') qStrictShort.push(id); else if (b === 'medium') qStrictMedium.push(id); else qStrictLong.push(id);
+    }
+    scheduleStrictLoop();
+  } finally {
+    inFlight--;
+    if (completed >= total) removeProgressUiSoon();
+  }
+}
+
+async function scheduleLoop() {
+  if (!progressEl) ensureProgressUi();
+  if (loopRunning) return;
+  loopRunning = true;
+  // 目标：一次触发内仅对短/中/长各发起一次 API 调用
+  const drain = (ids: string[]) => {
+    const picked = ids.splice(0, ids.length);
+    return picked;
+  };
+  try {
+    if (completed < total && qShort.length) {
+      const picked = drain(qShort);
+      if (picked.length) await sendBatch('short', picked);
+    }
+    if (completed < total && qMedium.length) {
+      const picked = drain(qMedium);
+      if (picked.length) await sendBatch('medium', picked);
+    }
+    if (completed < total && qLong.length) {
+      const picked = drain(qLong);
+      if (picked.length) await sendBatch('long', picked);
+    }
+  } finally {
+    // 不再持续轮询；严格重试与 DOM 复播将自行调度后续调用
+    loopRunning = false;
+  }
+}
+
+async function sendBatchStrict(bucket: 'short'|'medium'|'long', ids: string[]) {
+  if (!ids.length) return;
+  inFlight++;
+  if (bucket === 'short') strictShort++; else if (bucket === 'medium') strictMedium++; else strictLong++;
+  updateProgressUi();
+  const items = ids.map(id => ({ id, text: txMap.get(id)!.text }));
+  try {
+    const resp = await new Promise<any>((resolve) => {
+      chrome.runtime.sendMessage({ action: 'translateBatch', targetLang: txTargetLang, items, policy: { jsonOnly: true, preservePlaceholders: true, preserveNumbers: true, strict: true }, constraints: { timeoutMs: 25000 } }, resolve);
+    });
+    try { void chrome.runtime.lastError; } catch {}
+    if (resp && resp.ok && Array.isArray(resp.translations)) {
+      const gotIds = new Set<string>(resp.translations.map((t: any) => String(t.id)));
+      const missing = ids.filter(id => !gotIds.has(id));
+      for (const t of resp.translations) {
+        const entry = txMap.get(String(t.id));
+        const text = String(t.text || '');
+        if (!entry) continue;
+        if (validateConsistency(entry.text, text)) {
+          entry.done = true;
+          cacheSet(String(t.id), text).catch(()=>{});
+          for (const node of entry.nodes) {
+            applyWrapperResult(node, text, entry.text);
+          }
+          completed++;
+        } else {
+          console.warn(`${LOG_PREFIX} strict consistency still failed for`, t.id);
+          // A2：占位符兜底修复（在严格模式仍失败时）
+          const fixed = fixPlaceholders(entry.text, text);
+          entry.done = true;
+          cacheSet(String(t.id), fixed).catch(()=>{});
+          for (const node of entry.nodes) {
+            applyWrapperResult(node, fixed, entry.text);
+          }
+          completed++;
+        }
+      }
+      // 严格模式仍缺失：保持为未完成，后续用户可重试
+      if (missing.length) console.warn(`${LOG_PREFIX} strict missing`, missing.length);
+      updateProgressUi();
+    }
+  } catch (error) {
+    console.warn(`${LOG_PREFIX} strict batch failed: ${bucket}`, error);
+  } finally {
+    inFlight--;
+    if (completed >= total) removeProgressUiSoon();
+  }
+}
+
+async function scheduleStrictLoop() {
+  const MAX = { short: { items: 30, chars: 1800 }, medium: { items: 20, chars: 1500 }, long: { items: 8, chars: 1200 } } as const;
+  let running = false;
+  const pickNext = (): 'short'|'medium'|'long' => {
+    if (qStrictShort.length) return 'short';
+    if (qStrictMedium.length) return 'medium';
+    if (qStrictLong.length) return 'long';
+    return 'short';
+  };
+  const tick = async () => {
+    if (completed >= total) { running = false; return; }
+    if (!qStrictShort.length && !qStrictMedium.length && !qStrictLong.length) { running = false; return; }
+    if (inFlight > 0) { window.setTimeout(tick, 250); return; }
+    const b = pickNext();
+    const ids = b === 'short' ? qStrictShort : (b === 'medium' ? qStrictMedium : qStrictLong);
+    const limit = MAX[b];
+    const picked = takeBatch(ids, limit.items, limit.chars);
+    await sendBatchStrict(b, picked);
+    window.setTimeout(tick, 150);
+  };
+  if (!running) { running = true; tick(); }
+}
+
+function fixPlaceholders(src: string, dst: string): string {
+  try {
+    const srcP = collectPlaceholders(src);
+    const dstP = collectPlaceholders(dst);
+    let out = dst;
+    for (const p of srcP) {
+      if (!dstP.includes(p)) {
+        // 简单策略：在末尾补齐缺失占位符，避免语义破坏
+        out = out + (out.endsWith('.') || out.endsWith('。') ? '' : ' ') + p;
+      }
+    }
+    // A3：数字/URL 兜底，避免关键数字和链接缺失
+    const sn = collectNumbers(src);
+    for (const n of sn) { if (!out.includes(n)) out = out + ' ' + n; }
+    const su = (src.match(/https?:\/\/[\w\-\.\/~%?#=&+]+/gi) || []);
+    for (const u of su) { if (!out.includes(u)) out = out + ' ' + u; }
+    return out;
+  } catch { return dst; }
+}
+
+async function startFullTranslate() {
+  // 读取目标语言
+  try {
+    const cfg: any = await new Promise(resolve => chrome.storage.sync.get(['translateTargetLang','txCacheOnly','txOnlyShort','wrapperStyle'], resolve));
+    txTargetLang = cfg?.translateTargetLang || 'zh-CN';
+    txCacheOnly = !!cfg?.txCacheOnly;
+    txOnlyShort = !!cfg?.txOnlyShort;
+    txWrapperStyle = (cfg?.wrapperStyle || '').trim();
+  } catch {}
+  // 清理旧状态
+  txMap = new Map(); qShort = []; qMedium = []; qLong = []; inFlight = 0; completed = 0; total = 0;
+  callsShort = callsMedium = callsLong = 0; strictShort = strictMedium = strictLong = 0;
+  // 采集
+  const items = collectTranslatableSpans(document.body || document.documentElement);
+  enqueue(txOnlyShort ? items.filter(i => i.bucket === 'short') : items);
+  total = items.length;
+  if (!total) return;
+  ensureProgressUi(); updateProgressUi();
+  // 先尝试缓存命中
+  await applyCacheForPending();
+  if (completed >= total) { removeProgressUiSoon(); return; }
+  ensureObserver();
+  if (!txCacheOnly) scheduleLoop();
+}
+
+// 消息触发
+chrome.runtime.onMessage.addListener((message) => {
+  if (message && message.type === 'start-full-translate') {
+    startFullTranslate();
+    return;
+  }
+  if (message && message.type === 'get-tx-metrics') {
+    try { (message as any); } catch {}
+    const resp = {
+      ok: true,
+      completed, total, inFlight,
+      calls: { short: callsShort, medium: callsMedium, long: callsLong, strictShort, strictMedium, strictLong }
+    };
+    try { (window as any).chrome?.runtime?.sendMessage && chrome.runtime.sendMessage({ source: 'ifocal-content', type: 'tx-metrics', data: resp }); } catch {}
+    return resp as any;
+  }
+});
+
+// 控制台触发（便于调试）
+(window as any).iFocalStartFullTranslate = startFullTranslate;
+
+// ============ IndexedDB 缓存（简单 KV） ============
+let dbPromise: Promise<IDBDatabase> | null = null;
+function openDb(): Promise<IDBDatabase> {
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise((resolve, reject) => {
+    try {
+      const req = indexedDB.open('ifocal-tx', 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    } catch (e) { reject(e); }
+  });
+  return dbPromise;
+}
+async function cacheGet(id: string): Promise<string | null> {
+  try {
+    const db = await openDb();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction('kv', 'readonly');
+      const store = tx.objectStore('kv');
+      const req = store.get(id);
+      req.onsuccess = () => resolve((req.result as any) || null);
+      req.onerror = () => reject(req.error);
+    });
+  } catch { return null; }
+}
+async function cacheSet(id: string, value: string): Promise<void> {
+  try {
+    const db = await openDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction('kv', 'readwrite');
+      const store = tx.objectStore('kv');
+      const req = store.put(value, id);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  } catch {}
+}
+async function cacheGetMany(ids: string[]): Promise<Map<string,string>> {
+  const out = new Map<string,string>();
+  await Promise.all(ids.map(async (id) => { const v = await cacheGet(id); if (typeof v === 'string') out.set(id, v); }));
+  return out;
+}
+
+async function applyCacheForPending() {
+  const pendingIds = [...txMap.entries()].filter(([_, v]) => !v.done).map(([id]) => id);
+  if (!pendingIds.length) return;
+  const hit = await cacheGetMany(pendingIds);
+  if (!hit.size) return;
+  for (const [id, text] of hit.entries()) {
+    const entry = txMap.get(id);
+    if (!entry) continue;
+    entry.done = true;
+    for (const node of entry.nodes) applyWrapperResult(node, text, entry.text);
+    completed++;
+  }
+  updateProgressUi();
+}
+
+// ============ 一致性校验（占位符与数字） ============
+function collectPlaceholders(s: string): string[] {
+  const arr: string[] = [];
+  // __VAR_1__ 风格
+  (s.match(/__VAR_\d+__/g) || []).forEach(x => arr.push(x));
+  // {name} 风格（排除 JSON 花括号的可能，近似处理）
+  (s.match(/\{[a-zA-Z_][a-zA-Z0-9_]*\}/g) || []).forEach(x => arr.push(x));
+  // printf 风格
+  (s.match(/%[sdif]/g) || []).forEach(x => arr.push(x));
+  return arr;
+}
+function collectNumbers(s: string): string[] {
+  return (s.match(/\d+[\d,\.\u066B\u066C]*/g) || []);
+}
+function validateConsistency(src: string, dst: string): boolean {
+  try {
+    const sp = collectPlaceholders(src); const dp = collectPlaceholders(dst);
+    for (const p of sp) if (!dp.includes(p)) return false;
+    const sn = collectNumbers(src);
+    for (const n of sn) if (!dst.includes(n)) return false;
+    const su = (src.match(/https?:\/\/[\w\-\.\/~%?#=&+]+/gi) || []);
+    for (const u of su) if (!dst.includes(u)) return false;
+    return true;
+  } catch { return true; }
+}
+
+// ============ DOM 变更复播（MutationObserver） ============
+let mo: MutationObserver | null = null;
+function ensureObserver() {
+  if (mo) return;
+  mo = new MutationObserver((records) => {
+    let added = 0;
+    for (const r of records) {
+      if (r.type === 'childList') {
+        r.addedNodes.forEach((n) => {
+          if (n.nodeType === Node.TEXT_NODE) {
+            const t = (n.nodeValue || '').trim(); if (!t) return;
+            const p = (n as any).parentElement as HTMLElement | null;
+            try { if (p && (p.closest && p.closest('font.ifocal-target-wrapper, .ifocal-target-wrapper'))) return; } catch {}
+            // 若文本位于未处理的块级段落内，按块级处理
+            try {
+              const block = p ? p.closest(BLOCK_SELECTOR) as HTMLElement | null : null;
+              if (block && !block.hasAttribute('data-tx-block-id')) {
+                const whole = (block.innerText || '').trim();
+                const normWhole = normalizeText(whole);
+                if (normWhole) {
+                  const id = computeId(normWhole, txTargetLang);
+                  const w = wrapBlockElement(block, id);
+                  const exist = txMap.get(id);
+                  if (exist) exist.nodes.push(w); else {
+                    txMap.set(id, { text: normWhole, nodes: [w] });
+                    const b = bucketOf(normWhole);
+                    if (b === 'short') qShort.push(id); else if (b === 'medium') qMedium.push(id); else qLong.push(id);
+                    added++;
+                  }
+                  return;
+                }
+              }
+            } catch {}
+            // 否则按文本节点处理
+            const norm = normalizeText(t);
+            const id = computeId(norm, txTargetLang);
+            if (!txMap.has(id)) {
+              const span = wrapTextNode(n as Text, id);
+              if (span) {
+                txMap.set(id, { text: norm, nodes: [span] });
+                const b = bucketOf(norm);
+                if (b === 'short') qShort.push(id); else if (b === 'medium') qMedium.push(id); else qLong.push(id);
+                added++;
+              }
+            }
+          } else if (n.nodeType === Node.ELEMENT_NODE) {
+            try { if ((n as Element).closest && (n as Element).closest('font.ifocal-target-wrapper, .ifocal-target-wrapper')) return; } catch {}
+            const ni = collectTranslatableSpans(n as ParentNode);
+            if (ni.length) { enqueue(ni); added += ni.length; }
+          }
+        });
+      } else if (r.type === 'characterData') {
+        const node = r.target as Text;
+        if (!node || isInOurUi(node)) continue;
+        try { const p = node.parentElement as HTMLElement | null; if (p && (p.closest && p.closest('font.ifocal-target-wrapper, .ifocal-target-wrapper'))) continue; } catch {}
+        const t = (node.nodeValue || '').trim(); if (!t) continue;
+        const norm = normalizeText(t);
+        const id = computeId(norm, txTargetLang);
+        if (!txMap.has(id)) {
+          const span = wrapTextNode(node, id);
+          if (span) {
+            txMap.set(id, { text: norm, nodes: [span] });
+            const b = bucketOf(norm);
+            if (b === 'short') qShort.push(id); else if (b === 'medium') qMedium.push(id); else qLong.push(id);
+            added++;
+          }
+        }
+      }
+    }
+    if (added) {
+      total += added;
+      updateProgressUi();
+      applyCacheForPending().then(() => { if (!txCacheOnly) scheduleLoop(); });
+    }
+  });
+  try { mo.observe(document.body || document.documentElement, { subtree: true, childList: true, characterData: true }); } catch {}
+}

@@ -4,6 +4,12 @@
     <header class="flex items-center justify-between gap-3 border-b px-4 py-3">
       <div class="text-sm font-medium">iFocal</div>
       <div class="flex items-center gap-2">
+        <Button variant="outline" size="icon" class="flex items-center gap-1" @click="startFullTranslateOnActiveTab" :disabled="sending" title="全文翻译">
+          <Icon :icon="iconOfFeature('translate')" width="16" />
+        </Button>
+        <Button variant="outline" size="icon" class="flex items-center gap-1" @click="refreshMetrics" :disabled="sending" title="刷新指标">
+          <Icon icon="material-symbols:refresh" width="16" />
+        </Button>
         <Button variant="outline" size="icon" class="flex items-center gap-1" @click="startNewSession" :disabled="sending" title="新会话">
           <Icon icon="material-symbols:add-circle-outline-rounded" width="16" />
         </Button>
@@ -12,6 +18,12 @@
         </Button>
       </div>
     </header>
+
+    <div class="px-4 py-2 text-xs text-muted-foreground flex items-center gap-4 border-b bg-white/70">
+      <div>短: {{ txMetrics.calls.short }} 中: {{ txMetrics.calls.medium }} 长: {{ txMetrics.calls.long }} 重试: S {{ txMetrics.calls.strictShort }} / M {{ txMetrics.calls.strictMedium }} / L {{ txMetrics.calls.strictLong }}</div>
+      <div>进度: {{ txMetrics.completed }}/{{ txMetrics.total }} inFlight: {{ txMetrics.inFlight }}</div>
+      <div>限流: QPS {{ rateStatus.qps }} QPM {{ rateStatus.qpm }} 并发 {{ rateStatus.maxConcurrent }} <span v-if="rateStatus.degraded" class="text-red-600">(降速)</span></div>
+    </div>
 
     <main ref="messagesRef" class="flex-1 overflow-y-auto px-4 py-3 space-y-3">
       <template v-if="messages.length">
@@ -164,12 +176,37 @@ interface ChatMessage {
   model?: string;
 }
 
-const messages = reactive<ChatMessage[]>([]);
+  const messages = reactive<ChatMessage[]>([]);
 const messagesRef = ref<HTMLDivElement | null>(null);
 const loading = ref(false);
 const sending = ref(false);
 const selectedId = ref<string | null>(null);
-const toast = useToast();
+  const toast = useToast();
+
+// Metrics（本轮）
+const txMetrics = reactive({ completed: 0, total: 0, inFlight: 0, calls: { short: 0, medium: 0, long: 0, strictShort: 0, strictMedium: 0, strictLong: 0 } });
+const rateStatus = reactive({ qps: 0, qpm: 0, maxConcurrent: 0, degraded: false, degradedUntil: 0 });
+
+async function fetchTxMetrics() {
+  try {
+    const [tab] = await new Promise<chrome.tabs.Tab[]>((resolve) => chrome.tabs.query({ active: true, currentWindow: true }, resolve));
+    if (!tab?.id) return;
+    const resp = await new Promise<any>((resolve) => chrome.tabs.sendMessage(tab.id!, { type: 'get-tx-metrics' }, (r) => resolve(r)));
+    if (resp && resp.ok) {
+      txMetrics.completed = resp.completed || 0; txMetrics.total = resp.total || 0; txMetrics.inFlight = resp.inFlight || 0;
+      Object.assign(txMetrics.calls, resp.calls || {});
+    }
+  } catch {}
+}
+async function fetchRateStatus() {
+  try {
+    const resp:any = await new Promise((resolve) => chrome.runtime.sendMessage({ action: 'getRateStatus' }, resolve));
+    if (resp && resp.ok) {
+      rateStatus.qps = resp.qps; rateStatus.qpm = resp.qpm; rateStatus.maxConcurrent = resp.maxConcurrent; rateStatus.degraded = !!resp.degraded; rateStatus.degradedUntil = resp.degradedUntil || 0;
+    }
+  } catch {}
+}
+async function refreshMetrics() { await Promise.all([fetchTxMetrics(), fetchRateStatus()]); }
 
 const models = ref<string[]>(['gpt-4o-mini', 'gpt-4o', 'claude-3-haiku']);
 const features = ref([
@@ -230,7 +267,7 @@ function startNewSession() {
   currentSessionId.value = crypto.randomUUID();
   persistSessions();
 }
-function toggleHistory() { showHistory.value = !showHistory.value; }
+  function toggleHistory() { showHistory.value = !showHistory.value; }
 function loadSession(s: Session) {
   messages.splice(0, messages.length, ...((s?.messages || []).map(m => ({ ...m }))));
   currentSessionId.value = s.id;
@@ -440,11 +477,24 @@ onMounted(async () => {
   } catch (error) {
     console.warn('[iFocal] failed to bootstrap sidebar state', error);
   }
+  // 初次刷新一次指标
+  refreshMetrics();
 });
+
+async function startFullTranslateOnActiveTab() {
+  try {
+    const [tab] = await new Promise<chrome.tabs.Tab[]>((resolve) => chrome.tabs.query({ active: true, currentWindow: true }, resolve));
+    if (tab && tab.id) {
+      chrome.tabs.sendMessage(tab.id, { type: 'start-full-translate' });
+      toast.success('已触发全文翻译');
+    } else {
+      toast.error('未找到活动标签页');
+    }
+  } catch {
+    toast.error('触发失败');
+  }
+}
 </script>
-
-
-
 
 
 

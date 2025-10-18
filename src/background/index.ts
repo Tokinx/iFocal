@@ -58,6 +58,7 @@ chrome.runtime.onInstalled.addListener(async () => {
   }
   try {
     chrome.contextMenus.create({ id: 'ifocal-selection', title: 'Use iFocal', contexts: ['selection'] });
+    chrome.contextMenus.create({ id: 'ifocal-translate-page', title: 'iFocal：全文翻译', contexts: ['page'] });
   } catch (error) {
     console.warn('[iFocal] failed to create context menu', error);
   }
@@ -77,9 +78,15 @@ chrome.action.onClicked.addListener(async (tab) => {
   }
 });
 
-chrome.contextMenus.onClicked.addListener((info) => {
+chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === 'ifocal-selection') {
     chrome.runtime.sendMessage({ source: 'ifocal', type: 'selection', text: info.selectionText || '' });
+  }
+  if (info.menuItemId === 'ifocal-translate-page') {
+    try {
+      const tabId = tab && typeof tab.id === 'number' ? tab.id : undefined;
+      if (tabId) chrome.tabs.sendMessage(tabId, { type: 'start-full-translate' });
+    } catch { }
   }
 });
 
@@ -129,6 +136,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.action === 'testChannel') {
     handleTestChannel(message).then(sendResponse).catch((error) => sendResponse({ ok: false, error: String(error) }));
+    return true;
+  }
+
+  // 批量翻译接口：输入 items 数组，返回严格 JSON 数组结果
+  if (message.action === 'translateBatch') {
+    handleTranslateBatch(message).then(sendResponse).catch((error) => sendResponse({ ok: false, error: String(error) }));
+    return true;
+  }
+
+  if (message.action === 'getRateStatus') {
+    const now = Date.now();
+    const degraded = degradedUntil > now;
+    const qps = degraded ? Math.max(1, Math.floor(baseRate.qps / 2)) : baseRate.qps;
+    const qpm = baseRate.qpm;
+    const maxConcurrent = degraded ? 1 : baseRate.maxConcurrent;
+    sendResponse({ ok: true, qps, qpm, maxConcurrent, degraded, degradedUntil });
     return true;
   }
 });
@@ -241,6 +264,218 @@ async function handleTestChannel(request: any) {
   const prompt = makePrompt('summarize', 'Connection test. Respond with OK.', cfg.translateTargetLang || 'zh-CN', cfg.promptTemplates || {});
   const sample = await invokeModel(channel, model, prompt);
   return { ok: true, sample };
+}
+
+// 解析供应商响应中的 JSON 数组（容错处理：去除代码块、截取首尾方括号）
+function extractJsonArray(raw: string): any[] {
+  try {
+    // 常见模型会包裹 ```json ... ```
+    const fenced = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '');
+    const first = fenced.indexOf('[');
+    const last = fenced.lastIndexOf(']');
+    const slice = first >= 0 && last >= first ? fenced.slice(first, last + 1) : fenced;
+    const arr = JSON.parse(slice);
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms)); }
+
+// 自适应限流（B3）：命中 429 时下调并发/QPS，30s 后恢复
+let baseRate = { qps: 2, qpm: 120, maxConcurrent: 1 };
+let degradedUntil = 0;
+let restoreTimer: any = null;
+function applyRate(qps: number, qpm: number, maxConcurrent: number) {
+  baseRate = { qps, qpm, maxConcurrent };
+  rateLimiter.set({ qps, qpm, maxConcurrent });
+}
+async function loadBaseRateFromStorage() {
+  try {
+    const cfg = await readConfig(['txQps','txQpm','txMaxConcurrent']);
+    applyRate(Number(cfg.txQps) || 2, Number(cfg.txQpm) || 120, Number(cfg.txMaxConcurrent) || 1);
+  } catch {}
+}
+function degradeRate() {
+  const now = Date.now();
+  // 将 QPS 减半，并发降为 1，设置 30s 窗口
+  const dqps = Math.max(1, Math.floor(baseRate.qps / 2));
+  rateLimiter.set({ qps: dqps, maxConcurrent: 1 });
+  degradedUntil = now + 30000;
+  if (restoreTimer) clearTimeout(restoreTimer);
+  restoreTimer = setTimeout(() => {
+    // 若期间用户修改了配置，以存储为准再恢复
+    loadBaseRateFromStorage().then(() => { degradedUntil = 0; }).catch(() => { degradedUntil = 0; });
+  }, 30000);
+}
+
+// 429/5xx/超时退避策略：429→15s；5xx/超时→2s；最多1次重试
+async function withBackoff<T>(fn: () => Promise<T>, opts?: { timeoutMs?: number }): Promise<T> {
+  const timeoutMs = opts?.timeoutMs && opts.timeoutMs > 0 ? opts.timeoutMs : undefined;
+  const attempt = async (): Promise<T> => {
+    if (!timeoutMs) return fn();
+    return Promise.race([
+      fn(),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Timeout')), timeoutMs))
+    ]);
+  };
+  try {
+    return await attempt();
+  } catch (err: any) {
+    const msg = String(err?.message || err || '');
+    if (msg.includes('429')) {
+      degradeRate();
+      await sleep(15000);
+      return attempt();
+    }
+    if (msg.includes('5') || msg.toLowerCase().includes('timeout')) {
+      await sleep(2000);
+      return attempt();
+    }
+    throw err;
+  }
+}
+
+function buildBatchPrompt(items: any[], targetLang: string, policy?: any, glossary?: any): string {
+  const rules: string[] = [];
+  rules.push('只输出 JSON 数组，不要输出任何解释、前后缀或额外文本。');
+  rules.push('数组元素格式严格为 {"id": string, "text": string}，顺序与输入一致。');
+  if (policy?.preservePlaceholders) rules.push('必须原样保留占位符（如 __VAR_1__、{name}、%s 等）。');
+  if (policy?.preserveNumbers) rules.push('必须保留数字与其格式。');
+  if (policy?.strict) {
+    rules.push('不要使用代码块围栏（例如 ```json ），也不要输出空行或额外字符。');
+    rules.push('如无法翻译某项，请原样返回该项的 text。');
+  }
+  const lines = [
+    '你是一个严格遵守输出格式的机器翻译引擎。',
+    `请将 items 中每条 text 翻译为 ${targetLang}。`,
+    `输出要求：${rules.join(' ')}`
+  ];
+  if (glossary && (Array.isArray(glossary.notTranslate) || glossary.terms)) {
+    lines.push('术语与不译词：');
+    if (Array.isArray(glossary.notTranslate) && glossary.notTranslate.length) lines.push(`不译词: ${glossary.notTranslate.join(', ')}`);
+    if (glossary.terms && Object.keys(glossary.terms).length) lines.push(`术语映射: ${JSON.stringify(glossary.terms)}`);
+  }
+  const head = lines.join('\n');
+  // 仅传必要字段，控制 tokens
+  const compactItems = items.map(it => ({ id: it.id, text: it.text }));
+  return `${head}\n\nitems:\n${JSON.stringify(compactItems, null, 2)}`;
+}
+
+async function handleTranslateBatch(request: any) {
+  const cfg = await readConfig(['channels', 'defaultModel', 'translateModel', 'activeModel', 'translateTargetLang', 'promptTemplates', 'glossaryNotTranslate', 'glossaryTerms', 'txStrictJson', 'txQps', 'txQpm', 'txMaxConcurrent']);
+  const pair = pickModelFromConfig('translate', request.channel && request.model ? { channel: request.channel, model: request.model } : null, cfg);
+  if (!pair) throw new Error('No available model');
+  const channel = ensureChannel(cfg.channels, pair.channel);
+  const targetLang = request.targetLang || cfg.translateTargetLang || 'zh-CN';
+  const items = Array.isArray(request.items) ? request.items : [];
+  const policyReq = request.policy || { jsonOnly: true, preservePlaceholders: true, preserveNumbers: true, glossaryMode: 'prefer' };
+  const policy = { ...policyReq, strict: typeof policyReq.strict === 'boolean' ? policyReq.strict : !!cfg.txStrictJson };
+  const glossary = request.glossary || { notTranslate: Array.isArray(cfg.glossaryNotTranslate) ? cfg.glossaryNotTranslate : [], terms: (cfg.glossaryTerms && typeof cfg.glossaryTerms === 'object') ? cfg.glossaryTerms : {} };
+  const timeoutMs = (request.constraints && request.constraints.timeoutMs) || 20000;
+
+  const prompt = buildBatchPrompt(items, targetLang, policy, glossary);
+  const invoke = async () => {
+    if (channel.type === 'openai' || channel.type === 'openai-compatible') {
+      return callOpenAI(channel.apiUrl, channel.apiKey, pair.model, prompt);
+    }
+    if (channel.type === 'gemini') {
+      return callGemini(channel.apiUrl, channel.apiKey, pair.model, prompt);
+    }
+    return invokeModel(channel, pair.model, prompt);
+  };
+
+  const raw = await withBackoff(invoke, { timeoutMs });
+  const arr = extractJsonArray(String(raw));
+  if (!arr.length) throw new Error('Batch translation: empty or invalid JSON response');
+  return { ok: true, translations: arr, channel: pair.channel, model: pair.model };
+}
+
+// ================== B) 并发与令牌桶限流（后台统一出口） ==================
+type RateConfig = { qps: number; qpm: number; maxConcurrent: number };
+class SimpleRateLimiter {
+  private qps = 2;
+  private qpm = 120;
+  private maxConcurrent = 1;
+  private inflight = 0;
+  private waiters: Array<() => void> = [];
+  private lastSec: number[] = [];
+  private lastMin: number[] = [];
+  private timer: any = null;
+  set(cfg: Partial<RateConfig>) {
+    if (typeof cfg.qps === 'number' && cfg.qps > 0) this.qps = cfg.qps;
+    if (typeof cfg.qpm === 'number' && cfg.qpm > 0) this.qpm = cfg.qpm;
+    if (typeof cfg.maxConcurrent === 'number' && cfg.maxConcurrent > 0) this.maxConcurrent = cfg.maxConcurrent;
+    this.tick();
+  }
+  private cleanup(now: number) {
+    const secAgo = now - 1000;
+    while (this.lastSec.length && this.lastSec[0]! < secAgo) this.lastSec.shift();
+    const minAgo = now - 60000;
+    while (this.lastMin.length && this.lastMin[0]! < minAgo) this.lastMin.shift();
+  }
+  private nextDelay(now: number): number {
+    this.cleanup(now);
+    let delay = 0;
+    if (this.lastSec.length >= this.qps) delay = Math.max(delay, (this.lastSec[0]! + 1000) - now);
+    if (this.lastMin.length >= this.qpm) delay = Math.max(delay, (this.lastMin[0]! + 60000) - now);
+    if (this.inflight >= this.maxConcurrent) delay = Math.max(delay, 50);
+    return Math.max(0, delay);
+  }
+  private schedule(next: number) {
+    if (this.timer) clearTimeout(this.timer);
+    // 始终异步调度，避免递归触发栈溢出
+    const delay = Math.max(0, next);
+    this.timer = setTimeout(() => this.tick(), delay + 1);
+  }
+  private tick() {
+    this.timer = null;
+    const now = Date.now();
+    let progressed = false;
+    this.cleanup(now);
+    while (this.waiters.length && this.lastSec.length < this.qps && this.lastMin.length < this.qpm && this.inflight < this.maxConcurrent) {
+      const w = this.waiters.shift()!;
+      this.lastSec.push(now);
+      this.lastMin.push(now);
+      this.inflight++;
+      progressed = true;
+      try { w(); } catch {}
+    }
+    // 若没有等待者则无需继续调度，避免空转递归
+    if (!this.waiters.length) return;
+    const delay = this.nextDelay(Date.now());
+    this.schedule(delay);
+  }
+  acquire(): Promise<void> {
+    return new Promise((resolve) => {
+      this.waiters.push(resolve);
+      this.tick();
+    });
+  }
+  release() {
+    if (this.inflight > 0) this.inflight--;
+    this.tick();
+  }
+}
+
+const rateLimiter = new SimpleRateLimiter();
+// 从存储加载限流配置（如未设置使用默认）
+(async () => { await loadBaseRateFromStorage(); })();
+try {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'sync') return;
+    const has = (k: string) => changes[k] && typeof changes[k].newValue !== 'undefined';
+    if (has('txQps') || has('txQpm') || has('txMaxConcurrent')) {
+      rateLimiter.set({ qps: Number(changes.txQps?.newValue) || undefined as any, qpm: Number(changes.txQpm?.newValue) || undefined as any, maxConcurrent: Number(changes.txMaxConcurrent?.newValue) || undefined as any });
+    }
+  });
+} catch {}
+
+async function rateLimited<T>(fn: () => Promise<T>): Promise<T> {
+  await rateLimiter.acquire();
+  try { return await fn(); }
+  finally { rateLimiter.release(); }
 }
 
 function mapFeatureToTask(feature: string): string {
@@ -358,49 +593,55 @@ async function invokeModel(channel: any, model: string, prompt: string) {
 async function callOpenAI(baseUrl: string, apiKey: string, model: string, prompt: string) {
   const url = joinBasePath(baseUrl || 'https://api.openai.com/v1', '/chat/completions');
   const body = { model, messages: makeMessage(model, prompt), temperature: 0.2 };
-  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: JSON.stringify(body) });
-  if (!res.ok) throw new Error(`OpenAI HTTP ${res.status}`);
-  const json = await res.json();
-  const content = json?.choices?.[0]?.message?.content;
-  if (!content) throw new Error('OpenAI returned empty response');
-  return content;
+  return rateLimited(async () => {
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: JSON.stringify(body) });
+    if (!res.ok) throw new Error(`OpenAI HTTP ${res.status}`);
+    const json = await res.json();
+    const content = json?.choices?.[0]?.message?.content;
+    if (!content) throw new Error('OpenAI returned empty response');
+    return content;
+  });
 }
 
 async function callGemini(baseUrl: string, apiKey: string, model: string, prompt: string) {
   const base = baseUrl || 'https://generativelanguage.googleapis.com/v1beta';
   const url = joinBasePath(base, `/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`);
   const body = { contents: [{ parts: [{ text: prompt }] }] };
-  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
-  const json = await res.json();
-  const parts = json?.candidates?.[0]?.content?.parts;
-  const out = Array.isArray(parts) ? parts.map((p: any) => p?.text || '').join('\n') : '';
-  if (!out) throw new Error('Gemini returned empty response');
-  return out;
+  return rateLimited(async () => {
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
+    const json = await res.json();
+    const parts = json?.candidates?.[0]?.content?.parts;
+    const out = Array.isArray(parts) ? parts.map((p: any) => p?.text || '').join('\n') : '';
+    if (!out) throw new Error('Gemini returned empty response');
+    return out;
+  });
 }
 
 async function streamOpenAI(baseUrl: string, apiKey: string, model: string, prompt: string, onDelta: (token: string | null, done?: boolean) => void) {
   const url = joinBasePath(baseUrl || 'https://api.openai.com/v1', '/chat/completions');
   const body = { model, stream: true, messages: makeMessage(model, prompt), temperature: 0.2 };
-  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: JSON.stringify(body) });
-  if (!res.ok) throw new Error(`OpenAI HTTP ${res.status}`);
-  const reader = res.body?.getReader();
-  if (!reader) throw new Error('OpenAI stream reader unavailable');
-  await sseLoopFromReader(reader, (line) => {
-    const trimmed = line.trim();
-    if (!trimmed || !trimmed.startsWith('data:')) return;
-    const data = trimmed.slice(5).trim();
-    if (data === '[DONE]') {
-      onDelta(null, true);
-      return;
-    }
-    try {
-      const json = JSON.parse(data);
-      const token = json?.choices?.[0]?.delta?.content || '';
-      if (token) onDelta(token, false);
-    } catch (error) {
-      console.warn('[iFocal] OpenAI chunk parse failed', error);
-    }
+  await rateLimited(async () => {
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: JSON.stringify(body) });
+    if (!res.ok) throw new Error(`OpenAI HTTP ${res.status}`);
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error('OpenAI stream reader unavailable');
+    await sseLoopFromReader(reader, (line) => {
+      const trimmed = line.trim();
+      if (!trimmed || !trimmed.startsWith('data:')) return;
+      const data = trimmed.slice(5).trim();
+      if (data === '[DONE]') {
+        onDelta(null, true);
+        return;
+      }
+      try {
+        const json = JSON.parse(data);
+        const token = json?.choices?.[0]?.delta?.content || '';
+        if (token) onDelta(token, false);
+      } catch (error) {
+        console.warn('[iFocal] OpenAI chunk parse failed', error);
+      }
+    });
   });
 }
 
@@ -408,26 +649,28 @@ async function streamGemini(baseUrl: string, apiKey: string, model: string, prom
   const base = baseUrl || 'https://generativelanguage.googleapis.com/v1beta';
   const url = joinBasePath(base, `/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`);
   const body = { contents: [{ parts: [{ text: prompt }] }] };
-  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
-  const reader = res.body?.getReader();
-  if (!reader) throw new Error('Gemini stream reader unavailable');
-  await sseLoopFromReader(reader, (line) => {
-    const trimmed = line.trim();
-    if (!trimmed || !trimmed.startsWith('data:')) return;
-    const data = trimmed.slice(5).trim();
-    if (data === '[DONE]') {
-      onDelta(null, true);
-      return;
-    }
-    try {
-      const json = JSON.parse(data);
-      const parts = json?.candidates?.[0]?.content?.parts;
-      const out = Array.isArray(parts) ? parts.map((p: any) => p?.text || '').join('') : '';
-      if (out) onDelta(out, false);
-    } catch (error) {
-      console.warn('[iFocal] Gemini chunk parse failed', error);
-    }
+  await rateLimited(async () => {
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error('Gemini stream reader unavailable');
+    await sseLoopFromReader(reader, (line) => {
+      const trimmed = line.trim();
+      if (!trimmed || !trimmed.startsWith('data:')) return;
+      const data = trimmed.slice(5).trim();
+      if (data === '[DONE]') {
+        onDelta(null, true);
+        return;
+      }
+      try {
+        const json = JSON.parse(data);
+        const parts = json?.candidates?.[0]?.content?.parts;
+        const out = Array.isArray(parts) ? parts.map((p: any) => p?.text || '').join('') : '';
+        if (out) onDelta(out, false);
+      } catch (error) {
+        console.warn('[iFocal] Gemini chunk parse failed', error);
+      }
+    });
   });
 }
 
