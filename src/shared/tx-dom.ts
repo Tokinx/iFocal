@@ -73,6 +73,13 @@ export function applyWrapperResult(wrapper: HTMLElement, text: string, targetLan
     if (sourceText) {
       const block = wrapper.closest('p,div,section,article,li,td,a,h1,h2,h3,h4,h5,h6') as HTMLElement | null;
       if (block) updateBreakForTranslated(block, sourceText);
+      // C) aria-busy 优化：若该块下不存在未完成的 wrapper，则移除 busy
+      try {
+        if (block) {
+          const pending = block.querySelector('font.ifocal-target-wrapper[data-tx-done="0"]');
+          block.setAttribute('aria-busy', pending ? 'true' : 'false');
+        }
+      } catch {}
     }
   } catch {}
 }

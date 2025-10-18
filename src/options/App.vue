@@ -83,12 +83,12 @@ async function saveBasics() {
       displayMode: config.value.displayMode,
       wrapperStyle: config.value.wrapperStyle,
       enableSelectionTranslation: config.value.enableSelectionTranslation,
-      txCacheOnly: !!config.value.txCacheOnly,
       txOnlyShort: !!config.value.txOnlyShort,
       txStrictJson: !!config.value.txStrictJson,
       txQps: Number(config.value.txQps) || 2,
       txQpm: Number(config.value.txQpm) || 120,
-      txMaxConcurrent: Number(config.value.txMaxConcurrent) || 1
+      txMaxConcurrent: Number(config.value.txMaxConcurrent) || 1,
+      txDisableCache: !!config.value.txDisableCache
     });
     
     toast.success('基础设置已保存');
@@ -516,16 +516,19 @@ onMounted(loadGlossary);
         <div class="rounded-xl border bg-white p-4 space-y-4 text-sm">
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div class="flex items-center gap-2">
-              <input id="cfg-cache-only" type="checkbox" v-model="config.txCacheOnly" @change="saveBasics" />
-              <label for="cfg-cache-only">仅使用缓存（不请求网络）</label>
-            </div>
-            <div class="flex items-center gap-2">
               <input id="cfg-only-short" type="checkbox" v-model="config.txOnlyShort" @change="saveBasics" />
               <label for="cfg-only-short">仅短句优先</label>
             </div>
             <div class="flex items-center gap-2">
               <input id="cfg-json-strict" type="checkbox" v-model="config.txStrictJson" @change="saveBasics" />
               <label for="cfg-json-strict">严格 JSON 输出（更稳，但可能略慢）</label>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="flex items-center gap-2">
+              <input id="cfg-disable-cache" type="checkbox" v-model="(config as any).txDisableCache" @change="saveBasics" />
+              <label for="cfg-disable-cache">禁用缓存（不读取、不写入）</label>
             </div>
           </div>
 

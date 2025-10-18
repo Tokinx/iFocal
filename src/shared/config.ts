@@ -33,8 +33,6 @@ export const DEFAULT_CONFIG = {
   enableSelectionTranslation: true,
 
   // 全文翻译（编排器）高级设置
-  // 仅使用缓存（不触发网络批量请求）
-  txCacheOnly: false,
   // 仅短句优先（只处理短句；用于快速首屏验证）
   txOnlyShort: false,
   // 严格 JSON 模式（提示词将更严格要求返回 JSON 数组）
@@ -43,6 +41,11 @@ export const DEFAULT_CONFIG = {
   txQps: 2,
   txQpm: 120,
   txMaxConcurrent: 1,
+  // 网关配置
+  txUseGateway: false,
+  txGatewayUrl: '',
+  // 缓存策略
+  txDisableCache: false,
   
   // 快捷键设置
   actionKey: 'Alt',
@@ -63,10 +66,11 @@ export const CONFIG_KEYS = [
   'autoPasteGlobalAssistant',
   'sidebarHistoryLimit',
   'wrapperStyle',
-  'txCacheOnly',
   'txOnlyShort',
   'txStrictJson'
   ,'txQps','txQpm','txMaxConcurrent'
+  ,'txUseGateway','txGatewayUrl'
+  ,'txDisableCache'
 ];
 
 // 从 Chrome 存储中加载配置

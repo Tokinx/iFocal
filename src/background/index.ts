@@ -364,7 +364,7 @@ function buildBatchPrompt(items: any[], targetLang: string, policy?: any, glossa
 }
 
 async function handleTranslateBatch(request: any) {
-  const cfg = await readConfig(['channels', 'defaultModel', 'translateModel', 'activeModel', 'translateTargetLang', 'promptTemplates', 'glossaryNotTranslate', 'glossaryTerms', 'txStrictJson', 'txQps', 'txQpm', 'txMaxConcurrent']);
+  const cfg = await readConfig(['channels', 'defaultModel', 'translateModel', 'activeModel', 'translateTargetLang', 'promptTemplates', 'glossaryNotTranslate', 'glossaryTerms', 'txStrictJson', 'txQps', 'txQpm', 'txMaxConcurrent', 'txUseGateway', 'txGatewayUrl']);
   const pair = pickModelFromConfig('translate', request.channel && request.model ? { channel: request.channel, model: request.model } : null, cfg);
   if (!pair) throw new Error('No available model');
   const channel = ensureChannel(cfg.channels, pair.channel);
@@ -374,6 +374,17 @@ async function handleTranslateBatch(request: any) {
   const policy = { ...policyReq, strict: typeof policyReq.strict === 'boolean' ? policyReq.strict : !!cfg.txStrictJson };
   const glossary = request.glossary || { notTranslate: Array.isArray(cfg.glossaryNotTranslate) ? cfg.glossaryNotTranslate : [], terms: (cfg.glossaryTerms && typeof cfg.glossaryTerms === 'object') ? cfg.glossaryTerms : {} };
   const timeoutMs = (request.constraints && request.constraints.timeoutMs) || 20000;
+
+  // D) 网关化：若配置开启且网关可用，优先走网关；失败则回退直连供应商
+  const useGateway = !!cfg.txUseGateway && typeof cfg.txGatewayUrl === 'string' && cfg.txGatewayUrl.trim().length > 0;
+  if (useGateway) {
+    try {
+      const gw = await withBackoff(() => callGatewayTranslateBatch(cfg.txGatewayUrl, { targetLang, items, policy, glossary }), { timeoutMs });
+      if (gw && Array.isArray(gw.translations)) return { ok: true, translations: gw.translations, channel: 'gateway', model: 'gateway' };
+    } catch (e) {
+      // fallthrough to direct vendor
+    }
+  }
 
   const prompt = buildBatchPrompt(items, targetLang, policy, glossary);
   const invoke = async () => {
@@ -390,6 +401,15 @@ async function handleTranslateBatch(request: any) {
   const arr = extractJsonArray(String(raw));
   if (!arr.length) throw new Error('Batch translation: empty or invalid JSON response');
   return { ok: true, translations: arr, channel: pair.channel, model: pair.model };
+}
+
+async function callGatewayTranslateBatch(baseUrl: string, payload: any): Promise<{ translations: Array<{id:string;text:string}> }> {
+  const url = (baseUrl || '').replace(/\/$/, '') + '/translate:batch';
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  if (!res.ok) throw new Error(`Gateway HTTP ${res.status}`);
+  const json = await res.json();
+  if (!json || !Array.isArray(json.translations)) throw new Error('Gateway invalid response');
+  return { translations: json.translations };
 }
 
 // ================== B) 并发与令牌桶限流（后台统一出口） ==================

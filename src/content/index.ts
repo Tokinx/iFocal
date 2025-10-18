@@ -762,8 +762,8 @@ type TxMap = Map<string, { text: string; nodes: HTMLElement[]; done?: boolean }>
 
 let txTargetLang = 'zh-CN';
 let txWrapperStyle = '';
-let txCacheOnly = false;
 let txOnlyShort = false;
+let txDisableCache = false;
 let txMap: TxMap = new Map();
 let qShort: string[] = []; // id 列表
 let qMedium: string[] = [];
@@ -779,6 +779,10 @@ let loopRunning = false;
 // 调用计数（本轮）：
 let callsShort = 0, callsMedium = 0, callsLong = 0;
 let strictShort = 0, strictMedium = 0, strictLong = 0;
+// B) 指标：命中缓存与时延
+let cacheHits = 0;
+let startTs = 0;
+let firstReturnTs = 0;
 
 function djb2Hash(str: string): string {
   let h = 5381;
@@ -832,6 +836,7 @@ function wrapBlockElement(blockEl: HTMLElement, id: string): HTMLElement {
   ensureDocLoadingStyle();
   const wrapper = sharedCreateWrapper(id, txTargetLang, txWrapperStyle);
   try { blockEl.setAttribute('data-tx-block-id', id); } catch {}
+  try { blockEl.setAttribute('aria-busy', 'true'); } catch {}
   try { blockEl.appendChild(wrapper); } catch {}
   return wrapper;
 }
@@ -997,9 +1002,10 @@ async function sendBatch(bucket: 'short'|'medium'|'long', ids: string[]) {
         const entry = txMap.get(String(t.id));
         const text = String(t.text || '');
         if (!entry) continue;
+        if (!firstReturnTs) firstReturnTs = Date.now();
         if (validateConsistency(entry.text, text)) {
           entry.done = true;
-          cacheSet(String(t.id), text).catch(()=>{});
+          if (!txDisableCache) cacheSet(String(t.id), text).catch(()=>{});
           for (const node of entry.nodes) {
             applyWrapperResult(node, text, entry.text);
           }
@@ -1041,26 +1047,21 @@ async function scheduleLoop() {
   if (!progressEl) ensureProgressUi();
   if (loopRunning) return;
   loopRunning = true;
-  // 目标：一次触发内仅对短/中/长各发起一次 API 调用
-  const drain = (ids: string[]) => {
-    const picked = ids.splice(0, ids.length);
-    return picked;
+  // A) 分桶安全切片与上限保护：按 items/字符上限拆分为最少批次
+  const LIMIT = { short: { items: 80, chars: 4000 }, medium: { items: 40, chars: 3500 }, long: { items: 15, chars: 3000 } } as const;
+  const runBucket = async (b: 'short'|'medium'|'long', q: string[]) => {
+    while (completed < total && q.length) {
+      const picked = takeBatch(q, LIMIT[b].items, LIMIT[b].chars);
+      if (!picked.length) break;
+      await sendBatch(b, picked);
+      // 若有退避/限流，后台会节制；这里顺序等待可降低并发
+    }
   };
   try {
-    if (completed < total && qShort.length) {
-      const picked = drain(qShort);
-      if (picked.length) await sendBatch('short', picked);
-    }
-    if (completed < total && qMedium.length) {
-      const picked = drain(qMedium);
-      if (picked.length) await sendBatch('medium', picked);
-    }
-    if (completed < total && qLong.length) {
-      const picked = drain(qLong);
-      if (picked.length) await sendBatch('long', picked);
-    }
+    if (qShort.length) await runBucket('short', qShort);
+    if (qMedium.length) await runBucket('medium', qMedium);
+    if (qLong.length) await runBucket('long', qLong);
   } finally {
-    // 不再持续轮询；严格重试与 DOM 复播将自行调度后续调用
     loopRunning = false;
   }
 }
@@ -1083,9 +1084,10 @@ async function sendBatchStrict(bucket: 'short'|'medium'|'long', ids: string[]) {
         const entry = txMap.get(String(t.id));
         const text = String(t.text || '');
         if (!entry) continue;
+        if (!firstReturnTs) firstReturnTs = Date.now();
         if (validateConsistency(entry.text, text)) {
           entry.done = true;
-          cacheSet(String(t.id), text).catch(()=>{});
+          if (!txDisableCache) cacheSet(String(t.id), text).catch(()=>{});
           for (const node of entry.nodes) {
             applyWrapperResult(node, text, entry.text);
           }
@@ -1095,7 +1097,7 @@ async function sendBatchStrict(bucket: 'short'|'medium'|'long', ids: string[]) {
           // A2：占位符兜底修复（在严格模式仍失败时）
           const fixed = fixPlaceholders(entry.text, text);
           entry.done = true;
-          cacheSet(String(t.id), fixed).catch(()=>{});
+          if (!txDisableCache) cacheSet(String(t.id), fixed).catch(()=>{});
           for (const node of entry.nodes) {
             applyWrapperResult(node, fixed, entry.text);
           }
@@ -1160,15 +1162,16 @@ function fixPlaceholders(src: string, dst: string): string {
 async function startFullTranslate() {
   // 读取目标语言
   try {
-    const cfg: any = await new Promise(resolve => chrome.storage.sync.get(['translateTargetLang','txCacheOnly','txOnlyShort','wrapperStyle'], resolve));
+    const cfg: any = await new Promise(resolve => chrome.storage.sync.get(['translateTargetLang','txOnlyShort','txDisableCache','wrapperStyle'], resolve));
     txTargetLang = cfg?.translateTargetLang || 'zh-CN';
-    txCacheOnly = !!cfg?.txCacheOnly;
     txOnlyShort = !!cfg?.txOnlyShort;
+    txDisableCache = !!cfg?.txDisableCache;
     txWrapperStyle = (cfg?.wrapperStyle || '').trim();
   } catch {}
   // 清理旧状态
   txMap = new Map(); qShort = []; qMedium = []; qLong = []; inFlight = 0; completed = 0; total = 0;
   callsShort = callsMedium = callsLong = 0; strictShort = strictMedium = strictLong = 0;
+  cacheHits = 0; startTs = Date.now(); firstReturnTs = 0;
   // 采集
   const items = collectTranslatableSpans(document.body || document.documentElement);
   enqueue(txOnlyShort ? items.filter(i => i.bucket === 'short') : items);
@@ -1179,7 +1182,7 @@ async function startFullTranslate() {
   await applyCacheForPending();
   if (completed >= total) { removeProgressUiSoon(); return; }
   ensureObserver();
-  if (!txCacheOnly) scheduleLoop();
+  scheduleLoop();
 }
 
 // 消息触发
@@ -1193,7 +1196,10 @@ chrome.runtime.onMessage.addListener((message) => {
     const resp = {
       ok: true,
       completed, total, inFlight,
-      calls: { short: callsShort, medium: callsMedium, long: callsLong, strictShort, strictMedium, strictLong }
+      calls: { short: callsShort, medium: callsMedium, long: callsLong, strictShort, strictMedium, strictLong },
+      cacheHits,
+      ttfbMs: firstReturnTs ? (firstReturnTs - startTs) : 0,
+      totalMs: startTs ? (Date.now() - startTs) : 0
     };
     try { (window as any).chrome?.runtime?.sendMessage && chrome.runtime.sendMessage({ source: 'ifocal-content', type: 'tx-metrics', data: resp }); } catch {}
     return resp as any;
@@ -1251,6 +1257,7 @@ async function cacheGetMany(ids: string[]): Promise<Map<string,string>> {
 }
 
 async function applyCacheForPending() {
+  if (txDisableCache) return;
   const pendingIds = [...txMap.entries()].filter(([_, v]) => !v.done).map(([id]) => id);
   if (!pendingIds.length) return;
   const hit = await cacheGetMany(pendingIds);
@@ -1261,6 +1268,7 @@ async function applyCacheForPending() {
     entry.done = true;
     for (const node of entry.nodes) applyWrapperResult(node, text, entry.text);
     completed++;
+    cacheHits++;
   }
   updateProgressUi();
 }
@@ -1277,7 +1285,17 @@ function collectPlaceholders(s: string): string[] {
   return arr;
 }
 function collectNumbers(s: string): string[] {
-  return (s.match(/\d+[\d,\.\u066B\u066C]*/g) || []);
+  // 仅收集“纯数字/分隔符”的片段，忽略紧随字母的形式（如 20k, 1st, 2nd, 3rd），避免误判
+  const out: string[] = [];
+  const re = /(\d[\d,\.\u066B\u066C]*)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(s)) !== null) {
+    const token = m[1];
+    const next = s.charAt(m.index + token.length) || '';
+    if (/[A-Za-z]/.test(next)) continue; // 忽略 20k/1st 等
+    out.push(token);
+  }
+  return out;
 }
 function validateConsistency(src: string, dst: string): boolean {
   try {
@@ -1363,7 +1381,7 @@ function ensureObserver() {
     if (added) {
       total += added;
       updateProgressUi();
-      applyCacheForPending().then(() => { if (!txCacheOnly) scheduleLoop(); });
+      applyCacheForPending().then(() => { scheduleLoop(); });
     }
   });
   try { mo.observe(document.body || document.documentElement, { subtree: true, childList: true, characterData: true }); } catch {}
