@@ -52,6 +52,102 @@ function ensureDocLoadingStyle() {
   } catch {}
 }
 
+// 将预设样式注入到文档（供 ifocal-target-style-* 使用）
+// 注意：为避免内容脚本出现 ESM import 报错，这里内置一份默认预设作为回退；
+// 若存储里有自定义预设，将按名称覆盖默认项。
+const DEFAULT_TARGET_STYLE_PRESETS = [
+  {
+    name: 'ifocal-target-style-dotted',
+    description: '点状下划线',
+    css: `.ifocal-target-inline-wrapper.ifocal-target-style-dotted{margin:8px 0;}
+.ifocal-target-inline-wrapper.ifocal-target-style-dotted .ifocal-target-inner{
+  background-image: linear-gradient(to right, rgba(71, 71, 71, 0.5) 30%, rgba(255, 255, 255, 0) 0%);
+  background-position: bottom;
+  background-size: 5px 1px;
+  background-repeat: repeat-x;
+  padding-bottom: 3px;
+  font-family: inherit;
+}`
+  },
+  {
+    name: 'ifocal-target-style-highlight',
+    description: '高亮背景',
+    css: `.ifocal-target-inline-wrapper.ifocal-target-style-highlight{margin:8px 0;}
+.ifocal-target-inline-wrapper.ifocal-target-style-highlight .ifocal-target-inner{
+  background-color: yellow;
+  font-family: inherit;
+}`
+  },
+  {
+    name: 'ifocal-target-style-chip',
+    description: '圆角标签',
+    css: `.ifocal-target-inline-wrapper.ifocal-target-style-chip{margin:8px 0;}
+.ifocal-target-inline-wrapper.ifocal-target-style-chip .ifocal-target-inner{
+  display:inline-block;
+  background-color:#f1f5f9;
+  color:#0f172a;
+  border:1px solid #e2e8f0;
+  border-radius:999px;
+  padding:2px 8px;
+  font-size:0.95em;
+}`
+  },
+  {
+    name: 'ifocal-target-style-fadein',
+    description: '淡入动画',
+    css: `@keyframes ifocal-fadein{from{opacity:0;transform:translateY(2px)}to{opacity:1;transform:none}}
+.ifocal-target-inline-wrapper.ifocal-target-style-fadein{margin:8px 0;}
+.ifocal-target-inline-wrapper.ifocal-target-style-fadein .ifocal-target-inner{
+  animation: ifocal-fadein .35s ease;
+}`
+  },
+  {
+    name: 'ifocal-target-style-bubble',
+    description: '气泡卡片',
+    css: `.ifocal-target-inline-wrapper.ifocal-target-style-bubble{margin:8px 0;}
+.ifocal-target-inline-wrapper.ifocal-target-style-bubble .ifocal-target-inner{
+  display:inline-block;
+  background:rgba(255,255,255,0.9);
+  border:1px solid rgba(15,23,42,0.12);
+  box-shadow:0 2px 10px rgba(15,23,42,0.08);
+  border-radius:10px;
+  padding:6px 8px;
+}`
+  },
+  {
+    name: 'ifocal-target-style-underline-solid',
+    description: '实体下划线',
+    css: `.ifocal-target-inline-wrapper.ifocal-target-style-underline-solid{margin:8px 0;}
+.ifocal-target-inline-wrapper.ifocal-target-style-underline-solid .ifocal-target-inner{
+  border-bottom:2px solid rgba(71,85,105,0.6);
+  padding-bottom:2px;
+}`
+  }
+];
+function ensureTargetStylePresets(presets: Array<{ name: string; css: string }> | undefined | null) {
+  try {
+    const id = 'ifocal-target-style-presets';
+    let el = document.getElementById(id) as HTMLStyleElement | null;
+    // 合并默认预设与存储预设：存储同名覆盖默认
+    const defaults = DEFAULT_TARGET_STYLE_PRESETS as any[];
+    const incoming = (presets && Array.isArray(presets)) ? presets : [];
+    const byName = new Map<string, any>();
+    defaults.forEach((p: any) => { if (p?.name) byName.set(String(p.name), p); });
+    incoming.forEach((p: any) => { if (p?.name) byName.set(String(p.name), p); });
+    const merged = Array.from(byName.values());
+    const css = (merged || []).map((p: any) => String(p?.css || '')).join('\n');
+    if (!css) return;
+    if (!el) {
+      el = document.createElement('style');
+      el.id = id;
+      el.textContent = css;
+      (document.head || document.documentElement || document.body)?.appendChild(el);
+    } else if (el.textContent !== css) {
+      el.textContent = css;
+    }
+  } catch {}
+}
+
 function ensureUiRoot(): ShadowRoot {
   if (uiShadow) return uiShadow;
   try {
@@ -98,7 +194,6 @@ type StorageConfig = {
   translateModel?: ChannelPair;
   activeModel?: ChannelPair;
   translateTargetLang?: string;
-  wrapperStyle?: string;
 };
 
 let hoveredElement: HTMLElement | null = null;
@@ -167,6 +262,39 @@ function readHotkeys() {
 }
 
 readHotkeys();
+
+// 页面加载时注入译文样式预设（与 DOC_STYLE 一并）
+try {
+  chrome.storage.sync.get(['targetStylePresets'], (items: any) => {
+    try { void chrome.runtime.lastError; } catch {}
+    const presets = Array.isArray(items?.targetStylePresets) ? items.targetStylePresets : null;
+    ensureTargetStylePresets(presets as any);
+  });
+} catch {}
+
+// 当设置页更改样式预设或当前样式名时，实时注入并更新页面已有译文
+try {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'sync') return;
+    if (changes.targetStylePresets) {
+      const next = changes.targetStylePresets.newValue as any[] | undefined | null;
+      ensureTargetStylePresets(next || null);
+    }
+    if (changes.wrapperStyleName) {
+      const nextName = String(changes.wrapperStyleName.newValue || '').trim() || 'ifocal-target-style-dotted';
+      txWrapperStyleName = nextName;
+      // 更新已存在的包裹结构
+      try {
+        const wrappers = document.querySelectorAll('font.ifocal-target-wrapper[data-tx-style]');
+        wrappers.forEach((w) => {
+          try { (w as HTMLElement).setAttribute('data-tx-style', nextName); } catch {}
+          const inline = (w as HTMLElement).querySelector('font.ifocal-target-inline-wrapper') as HTMLElement | null;
+          if (inline) inline.className = `notranslate ifocal-target-inline-wrapper ${nextName}`;
+        });
+      } catch {}
+    }
+  });
+} catch {}
 
 function findTextBlockElement(target: EventTarget | null): HTMLElement | null {
   const element = target instanceof HTMLElement ? target : null;
@@ -463,33 +591,22 @@ function toggleHoverTranslate(blockEl: HTMLElement) {
       return;
     }
 
-    chrome.storage.sync.get(['translateTargetLang', 'wrapperStyle'], (cfg: StorageConfig) => {
+    chrome.storage.sync.get(['translateTargetLang', 'wrapperStyleName', 'targetStylePresets'], (cfg: StorageConfig & any) => {
       const langCode = (cfg.translateTargetLang || 'zh-CN').trim();
-      const styleText = (cfg.wrapperStyle || '').trim();
-      const wrapper = document.createElement('font');
-      wrapper.className = 'notranslate ifocal-target-wrapper';
-      wrapper.setAttribute('lang', langCode);
-      const spin = document.createElement('div');
-      // 确保在页面文档中也有加载动画样式（插入模式不在 Shadow 内）
+      const styleName = (cfg.wrapperStyleName || 'ifocal-target-style-dotted').trim();
       ensureDocLoadingStyle();
-      spin.className = 'ifocal-loading';
-      wrapper.appendChild(spin);
+      ensureTargetStylePresets(cfg.targetStylePresets as any[]);
+      // 统一创建 wrapper，并标注样式名供 applyWrapperResult 使用
+      const wrapper = sharedCreateWrapper(`inline_${Date.now()}`, langCode);
+      try { wrapper.setAttribute('data-tx-style', styleName); } catch {}
       blockEl.appendChild(wrapper);
 
       const sourceText = (blockEl.innerText || '').trim();
       chrome.runtime.sendMessage({ action: 'performAiAction', task: 'translate', text: sourceText }, (response: { ok?: boolean; result?: string; error?: string } | undefined) => {
-        // 读取 lastError 抑制“Unchecked runtime.lastError”告警
-        // 即便忽略，也要先触达该属性以避免控制台噪音
         try { void chrome.runtime.lastError; } catch { }
         blockEl.dataset.fcTranslated = '1';
         const msg = response && response.ok ? response.result : response?.error || '';
-        wrapper.innerHTML = '';
-        if (styleText) wrapper.setAttribute('style', styleText);
-        const inner = document.createElement('font');
-        inner.textContent = msg || '';
-        wrapper.appendChild(inner);
-        // 根据原文空格数决定是否插入换行（加载时不插入）
-        updateBreakForTranslated(blockEl, sourceText || '');
+        sharedApplyWrapperResult(wrapper, msg || '', langCode, undefined, sourceText);
       });
     });
   } catch (error) {
@@ -761,7 +878,8 @@ type TxItem = { id: string; text: string; bucket: 'short' | 'medium' | 'long' };
 type TxMap = Map<string, { text: string; nodes: HTMLElement[]; done?: boolean }>;
 
 let txTargetLang = 'zh-CN';
-let txWrapperStyle = '';
+// 已移除 wrapperStyle（外层内联样式）支持
+let txWrapperStyleName = 'ifocal-target-style-dotted';
 let txOnlyShort = false;
 let txDisableCache = false;
 let txMap: TxMap = new Map();
@@ -834,7 +952,8 @@ function processedBlockAncestor(node: Node): HTMLElement | null {
 
 function wrapBlockElement(blockEl: HTMLElement, id: string): HTMLElement {
   ensureDocLoadingStyle();
-  const wrapper = sharedCreateWrapper(id, txTargetLang, txWrapperStyle);
+  const wrapper = sharedCreateWrapper(id, txTargetLang);
+  try { wrapper.setAttribute('data-tx-style', txWrapperStyleName); } catch {}
   try { blockEl.setAttribute('data-tx-block-id', id); } catch {}
   try { blockEl.setAttribute('aria-busy', 'true'); } catch {}
   try { blockEl.appendChild(wrapper); } catch {}
@@ -849,7 +968,8 @@ function wrapTextNode(node: Text, id: string): HTMLElement | null {
   const text = node.nodeValue || '';
   // 使用共享模块创建一致的包裹样式
   ensureDocLoadingStyle();
-  const wrapper = sharedCreateWrapper(id, txTargetLang, txWrapperStyle);
+  const wrapper = sharedCreateWrapper(id, txTargetLang);
+  try { wrapper.setAttribute('data-tx-style', txWrapperStyleName); } catch {}
   // 不替换原文本节点，保持原文可见；将 wrapper 插入到其后，待翻译完成后通过换行策略分隔原文/译文
   try { parent.insertBefore(wrapper, node.nextSibling); } catch { parent.appendChild(wrapper); }
   return wrapper as unknown as HTMLElement;
@@ -981,7 +1101,7 @@ function takeBatch(ids: string[], maxItems: number, maxChars: number): string[] 
 }
 
 function applyWrapperResult(node: HTMLElement, text: string, sourceText?: string) {
-  sharedApplyWrapperResult(node, text, txTargetLang, txWrapperStyle, sourceText);
+  sharedApplyWrapperResult(node, text, txTargetLang, undefined, sourceText);
 }
 
 async function sendBatch(bucket: 'short'|'medium'|'long', ids: string[]) {
@@ -1162,11 +1282,12 @@ function fixPlaceholders(src: string, dst: string): string {
 async function startFullTranslate() {
   // 读取目标语言
   try {
-    const cfg: any = await new Promise(resolve => chrome.storage.sync.get(['translateTargetLang','txOnlyShort','txDisableCache','wrapperStyle'], resolve));
+    const cfg: any = await new Promise(resolve => chrome.storage.sync.get(['translateTargetLang','txOnlyShort','txDisableCache','wrapperStyleName','targetStylePresets'], resolve));
     txTargetLang = cfg?.translateTargetLang || 'zh-CN';
     txOnlyShort = !!cfg?.txOnlyShort;
     txDisableCache = !!cfg?.txDisableCache;
-    txWrapperStyle = (cfg?.wrapperStyle || '').trim();
+    txWrapperStyleName = (cfg?.wrapperStyleName || 'ifocal-target-style-dotted').trim();
+    ensureTargetStylePresets(cfg?.targetStylePresets || []);
   } catch {}
   // 清理旧状态
   txMap = new Map(); qShort = []; qMedium = []; qLong = []; inFlight = 0; completed = 0; total = 0;

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue';
+import { onMounted, ref, watch, computed } from 'vue';
 import { Icon } from '@iconify/vue';
 import { iconOfNav, iconOfChannelType, iconOfAction } from '@/shared/icons';
 import { useChannels } from '@/options/composables/useChannels';
@@ -19,6 +19,47 @@ const translateModel = ref<ModelPair>(null);
 const activeModel = ref<ModelPair>(null);
 // 使用全局配置
 const config = ref({ ...DEFAULT_CONFIG });
+// 样式选择/编辑
+const styleSelection = ref<string>('ifocal-target-style-dotted');
+const customCss = ref<string>('');
+const activeStyleName = computed(() => styleSelection.value === '__custom__' ? (parseStyleNameFromCss(customCss.value) || 'ifocal-target-style-custom') : styleSelection.value);
+const activePreviewCss = computed(() => {
+  if (styleSelection.value === '__custom__') return (customCss.value || '').trim();
+  const list = (config.value as any).targetStylePresets || [];
+  const found = list.find((p: any) => p && p.name === styleSelection.value);
+  return (found?.css || '').trim();
+});
+function parseStyleNameFromCss(css: string): string | '' {
+  try {
+    const m = css.match(/\.ifocal\-target\-style\-([a-zA-Z0-9_\-]+)/);
+    return m ? `ifocal-target-style-${m[1]}` : '';
+  } catch { return ''; }
+}
+function ensurePreviewStyle(cssText: string) {
+  try {
+    const id = 'ifocal-style-preview';
+    let el = document.getElementById(id) as HTMLStyleElement | null;
+    if (!el) { el = document.createElement('style'); el.id = id; document.head.appendChild(el); }
+    el.textContent = cssText || '';
+  } catch {}
+}
+watch(activePreviewCss, (css) => ensurePreviewStyle(css), { immediate: true });
+
+function ensureOptionPresetStyles(list?: Array<{ name: string; css: string }>) {
+  try {
+    const id = 'ifocal-option-style-presets';
+    let el = document.getElementById(id) as HTMLStyleElement | null;
+    const defaults = (DEFAULT_CONFIG.targetStylePresets as any[]) || [];
+    const incoming = Array.isArray(list) ? list : [];
+    const byName = new Map<string, any>();
+    defaults.forEach((p: any) => { if (p?.name) byName.set(String(p.name), p); });
+    incoming.forEach((p: any) => { if (p?.name) byName.set(String(p.name), p); });
+    const merged = Array.from(byName.values());
+    const css = (merged || []).map((p: any) => String(p?.css || '')).join('\n');
+    if (!el) { el = document.createElement('style'); el.id = id; document.head.appendChild(el); }
+    el.textContent = css;
+  } catch {}
+}
 
 const defaultModelValue = ref('');
 const translateModelValue = ref('');
@@ -37,6 +78,16 @@ async function loadAll() {
     // 加载全局配置
     const globalConfig = await loadConfig();
     config.value = { ...globalConfig };
+    styleSelection.value = (config.value as any).wrapperStyleName || 'ifocal-target-style-dotted';
+    ensureOptionPresetStyles((config.value as any).targetStylePresets);
+    // 若当前选择在预设中，预填其 CSS；否则给出自定义模板
+    try {
+      const list = (config.value as any).targetStylePresets || [];
+      const found = list.find((p: any) => p && p.name === styleSelection.value);
+      if (found?.css) customCss.value = String(found.css);
+      else customCss.value = `.ifocal-target-inline-wrapper.${styleSelection.value}{margin:8px 0;}
+.ifocal-target-inline-wrapper.${styleSelection.value} .ifocal-target-inner{ /* 自定义样式 */ }`;
+    } catch {}
     
     // 加载其他设置
     await new Promise<void>((resolve) => {
@@ -71,17 +122,33 @@ async function saveBasics() {
     config.value.actionKey = k;
     config.value.translateTargetLang = lang;
     config.value.displayMode = config.value.displayMode || 'insert';
-    config.value.wrapperStyle = (config.value.wrapperStyle || '').trim();
     if (typeof config.value.enableSelectionTranslation !== 'boolean') config.value.enableSelectionTranslation = true;
     
     // 保存配置
+    // 样式保存：选择预设或自定义
+    let wrapperStyleNameToSave = activeStyleName.value;
+    let presetsToSave = (config.value as any).targetStylePresets || [];
+    if (styleSelection.value === '__custom__') {
+      const name = parseStyleNameFromCss(customCss.value);
+      if (!name) { toast.error('自定义 CSS 必须包含 ifocal-target-style-* 类名'); return; }
+      wrapperStyleNameToSave = name;
+      const next = { name, description: '自定义', css: (customCss.value || '').trim() };
+      const idx = presetsToSave.findIndex((p: any) => p && p.name === name);
+      if (idx >= 0) presetsToSave.splice(idx, 1, next); else presetsToSave = [...presetsToSave, next];
+      (config.value as any).targetStylePresets = presetsToSave;
+      (config.value as any).wrapperStyleName = wrapperStyleNameToSave;
+    } else {
+      (config.value as any).wrapperStyleName = wrapperStyleNameToSave;
+    }
+
     await saveConfig({
       actionKey: k,
       hoverKey: k,
       selectKey: k,
       translateTargetLang: lang,
       displayMode: config.value.displayMode,
-      wrapperStyle: config.value.wrapperStyle,
+      wrapperStyleName: wrapperStyleNameToSave,
+      targetStylePresets: presetsToSave,
       enableSelectionTranslation: config.value.enableSelectionTranslation,
       txOnlyShort: !!config.value.txOnlyShort,
       txStrictJson: !!config.value.txStrictJson,
@@ -95,6 +162,26 @@ async function saveBasics() {
   } catch {
     toast.error('保存失败');
   }
+}
+
+async function saveStyleOnly() {
+  try {
+    let wrapperStyleNameToSave = activeStyleName.value;
+    let presetsToSave = (config.value as any).targetStylePresets || [];
+    if (styleSelection.value === '__custom__') {
+      const name = parseStyleNameFromCss(customCss.value);
+      if (!name) { toast.error('自定义 CSS 必须包含 ifocal-target-style-* 类名'); return; }
+      wrapperStyleNameToSave = name;
+      const next = { name, description: '自定义', css: (customCss.value || '').trim() };
+      const idx = presetsToSave.findIndex((p: any) => p && p.name === name);
+      if (idx >= 0) presetsToSave.splice(idx, 1, next); else presetsToSave = [...presetsToSave, next];
+    }
+    await saveConfig({ wrapperStyleName: wrapperStyleNameToSave, targetStylePresets: presetsToSave });
+    (config.value as any).wrapperStyleName = wrapperStyleNameToSave;
+    (config.value as any).targetStylePresets = presetsToSave;
+    ensureOptionPresetStyles(presetsToSave);
+    toast.success('样式设置已保存');
+  } catch { toast.error('保存失败'); }
 }
 
 // 删除渠道：二次确认 + 撤回
@@ -149,7 +236,7 @@ watch(() => config.value.autoPasteGlobalAssistant, async (val) => {
 
 // 导入导出
 const importerRef = ref<HTMLInputElement|null>(null);
-const STORAGE_KEYS = ['channels','defaultModel','translateModel','activeModel','actionKey','hoverKey','selectKey','translateTargetLang','displayMode','wrapperStyle','promptTemplates','autoPasteGlobalAssistant'];
+const STORAGE_KEYS = ['channels','defaultModel','translateModel','activeModel','actionKey','hoverKey','selectKey','translateTargetLang','displayMode','promptTemplates','autoPasteGlobalAssistant'];
 function onExport() { try { chrome.storage.sync.get(STORAGE_KEYS, (items:any) => { try { const payload = JSON.stringify(items, null, 2); const blob = new Blob([payload], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'ifocal-settings.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); toast.success('已导出设置'); } catch {} }); } catch {} }
 function triggerImport() { importerRef.value?.click(); }
 function onImportChange(e: Event) { const input = e.target as HTMLInputElement; const file = input && input.files && input.files[0]; if (!file) return; try { const reader = new FileReader(); reader.onload = () => { try { const data = JSON.parse(String(reader.result || '{}')); const toSet:any = {}; STORAGE_KEYS.forEach(k => { if (k in (data || {})) toSet[k] = (data as any)[k]; }); chrome.storage.sync.set(toSet, () => { toast.success('导入成功，正在刷新'); window.location.reload(); }); } catch { toast.error('导入失败：JSON 解析错误'); } }; reader.readAsText(file); } catch {} }
@@ -353,8 +440,8 @@ onMounted(loadGlossary);
       <!-- 设置（包含：默认/翻译模型、Prompt 模板、通用设置、历史会话上限） -->
       <section :id="'opt-settings'" class="space-y-4">
         <header class="text-base font-semibold">设置</header>
-        <div class="rounded-xl border bg-white p-4 space-y-4">
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="rounded-xl border bg-white p-4 space-y-5">
+          <div class="space-y-4">
             <div>
               <Label class="mb-1 block">默认模型</Label>
               <Select v-model="defaultModelValue">
@@ -386,10 +473,6 @@ onMounted(loadGlossary);
               </Select>
             </div>
             <div>
-              <Label class="mb-1 block">侧边栏历史会话保存数量</Label>
-              <Input type="number" v-model.number="config.sidebarHistoryLimit" min="1" max="100" placeholder="10" />
-            </div>
-            <div>
               <Label class="mb-1 block">默认目标语言</Label>
               <Select v-model="config.translateTargetLang">
                 <SelectTrigger><SelectValue placeholder="语言" /></SelectTrigger>
@@ -418,8 +501,37 @@ onMounted(loadGlossary);
           </div>
           </div>
           <div>
-            <Label class="mb-1 block">包裹样式（ifocal-target-wrapper）</Label>
-            <Textarea v-model="config.wrapperStyle" class="min-h-28" placeholder="background-image: linear-gradient(to right, rgba(71,71,71,.5) 30%, rgba(255,255,255,0) 0%);&#10;background-position: bottom;&#10;display: inline;" />
+            <Label class="mb-1 block">译文样式</Label>
+            <div class="space-y-2">
+              <Select v-model="styleSelection">
+                <SelectTrigger><SelectValue placeholder="选择样式" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="p in (config as any).targetStylePresets || []" :key="p.name" :value="p.name">
+                    <span class="inline-flex items-center gap-2">{{ p.description || p.name }}</span>
+                  </SelectItem>
+                  <SelectItem value="__custom__">自定义（编辑 CSS）</SelectItem>
+                </SelectContent>
+              </Select>
+              <div v-if="styleSelection==='__custom__'" class="space-y-2">
+                <Textarea v-model="customCss" class="min-h-36" placeholder=".ifocal-target-inline-wrapper.ifocal-target-style-custom{margin:8px 0;}&#10;.ifocal-target-inline-wrapper.ifocal-target-style-custom .ifocal-target-inner{ /* your styles */ }" />
+                <div class="flex items-center gap-2">
+                  <Button class="bg-primary text-primary-foreground flex items-center gap-1" @click="saveStyleOnly">保存样式</Button>
+                </div>
+              </div>
+              <div class="rounded-lg border p-3">
+                <div class="text-base">
+                  <font class="notranslate ifocal-target-wrapper">
+                    <font :class="`notranslate ifocal-target-inline-wrapper ${activeStyleName}`">
+                      <font class="notranslate ifocal-target-inner">翻译结果</font>
+                    </font>
+                  </font>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <Label class="mb-1 block">侧边栏历史会话保存数量</Label>
+            <Input type="number" v-model.number="config.sidebarHistoryLimit" min="1" max="100" placeholder="10" />
           </div>
           <div>
             <Label class="mb-1 block">全局助手</Label>
@@ -439,7 +551,7 @@ onMounted(loadGlossary);
         <header class="text-base font-semibold">Prompt 模板</header>
         <div class="rounded-xl border bg-white p-4 space-y-4">
           <p class="text-xs text-muted-foreground">可使用占位符 <code v-pre>{{targetLang}}</code> 与 <code v-pre>{{text}}</code>。</p>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="space-y-4">
             <div>
               <Label class="mb-1 block">翻译模板</Label>
               <Textarea v-model="promptTemplates.translate" class="min-h-28" :placeholder="defaultTemplates.translate" />
@@ -510,11 +622,11 @@ onMounted(loadGlossary);
           <div class="rounded-md border bg-secondary/40 p-3 text-sm whitespace-pre-wrap min-h-12">{{ assistantResult }}</div>
         </div>
       </section>
-      <!-- 设置：全文翻译 -->
-      <section :id="'opt-settings'" class="space-y-4">
+      <!-- 设置：全文翻译（拆分锚点避免重复） -->
+      <section :id="'opt-translate'" class="space-y-4">
         <header class="text-base font-semibold">全文翻译</header>
         <div class="rounded-xl border bg-white p-4 space-y-4 text-sm">
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="space-y-2">
             <div class="flex items-center gap-2">
               <input id="cfg-only-short" type="checkbox" v-model="config.txOnlyShort" @change="saveBasics" />
               <label for="cfg-only-short">仅短句优先</label>
@@ -523,16 +635,13 @@ onMounted(loadGlossary);
               <input id="cfg-json-strict" type="checkbox" v-model="config.txStrictJson" @change="saveBasics" />
               <label for="cfg-json-strict">严格 JSON 输出（更稳，但可能略慢）</label>
             </div>
-          </div>
-
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div class="flex items-center gap-2">
               <input id="cfg-disable-cache" type="checkbox" v-model="(config as any).txDisableCache" @change="saveBasics" />
               <label for="cfg-disable-cache">禁用缓存（不读取、不写入）</label>
             </div>
           </div>
 
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="space-y-3">
             <div>
               <Label class="mb-1 block">QPS（每秒请求数上限）</Label>
               <Input type="number" min="1" v-model="(config as any).txQps" @change="saveBasics" />
@@ -547,7 +656,7 @@ onMounted(loadGlossary);
             </div>
           </div>
 
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="space-y-3">
             <div>
               <Label class="mb-1 block">不译词（每行一个）</Label>
               <Textarea v-model="notTranslateText" class="min-h-28" placeholder="例如：\nGPU\niPhone" />
@@ -569,11 +678,9 @@ onMounted(loadGlossary);
       <section :id="'opt-keys'" class="space-y-4">
         <header class="text-base font-semibold">页面快捷键</header>
         <div class="rounded-xl border bg-white p-4 space-y-4">
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label class="mb-1 block">触发键（如 Alt）</Label>
-              <Input v-model="config.actionKey" placeholder="如 Alt" />
-            </div>
+          <div>
+            <Label class="mb-1 block">触发键（如 Alt）</Label>
+            <Input v-model="config.actionKey" placeholder="如 Alt" />
           </div>
           <div>
             <Button class="bg-primary text-primary-foreground flex items-center gap-1" @click="saveBasics">
@@ -604,7 +711,7 @@ onMounted(loadGlossary);
     <DialogScrollContent class="max-h-[80vh] max-w-[800px]">
       <div class="space-y-4">
         <div class="text-base font-semibold">添加渠道</div>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="space-y-3">
           <div>
             <Label class="mb-1 block">类型</Label>
             <Select v-model="addForm.type">
