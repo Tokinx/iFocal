@@ -53,15 +53,15 @@ export const DEFAULT_CONFIG = {
   // 其他设置
   autoPasteGlobalAssistant: false,
   sidebarHistoryLimit: 10,
-  // 新增：译文样式名称（应用到 ifocal-target-inline-wrapper），默认点状下划线
+  // 新增：译文样式名称（应用到译文包裹元素），默认点状下划线
   wrapperStyleName: 'ifocal-target-style-dotted',
   // 新增：样式预设列表（可在设置页选择与编辑）
   targetStylePresets: [
     {
       name: 'ifocal-target-style-dotted',
       description: '点状下划线',
-      css: `.ifocal-target-inline-wrapper.ifocal-target-style-dotted{margin:8px 0;display: inline-block;}
-.ifocal-target-inline-wrapper.ifocal-target-style-dotted .ifocal-target-inner{
+      css: `.ifocal-target-inline-wrapper.ifocal-target-style-dotted .ifocal-target-inner,
+.ifocal-target-block-wrapper.ifocal-target-style-dotted .ifocal-target-inner{
   background-image: linear-gradient(to right, rgba(71, 71, 71, 0.5) 30%, rgba(255, 255, 255, 0) 0%);
   background-position: bottom;
   background-size: 5px 1px;
@@ -73,8 +73,8 @@ export const DEFAULT_CONFIG = {
     {
       name: 'ifocal-target-style-highlight',
       description: '高亮背景',
-      css: `.ifocal-target-inline-wrapper.ifocal-target-style-highlight{margin:8px 0;display: inline-block;}
-.ifocal-target-inline-wrapper.ifocal-target-style-highlight .ifocal-target-inner{
+      css: `.ifocal-target-inline-wrapper.ifocal-target-style-highlight .ifocal-target-inner,
+.ifocal-target-block-wrapper.ifocal-target-style-highlight .ifocal-target-inner{
   background-color: yellow;
   font-family: inherit;
 }`

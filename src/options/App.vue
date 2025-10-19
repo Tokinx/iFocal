@@ -85,8 +85,8 @@ async function loadAll() {
       const list = (config.value as any).targetStylePresets || [];
       const found = list.find((p: any) => p && p.name === styleSelection.value);
       if (found?.css) customCss.value = String(found.css);
-      else customCss.value = `.ifocal-target-inline-wrapper.${styleSelection.value}{margin:8px 0;}
-.ifocal-target-inline-wrapper.${styleSelection.value} .ifocal-target-inner{ /* 自定义样式 */ }`;
+      else customCss.value = `.ifocal-target-inline-wrapper.${styleSelection.value} .ifocal-target-inner,
+.ifocal-target-block-wrapper.${styleSelection.value} .ifocal-target-inner{ /* 自定义样式 */ }`;
     } catch {}
     
     // 加载其他设置
@@ -513,7 +513,7 @@ onMounted(loadGlossary);
                 </SelectContent>
               </Select>
               <div v-if="styleSelection==='__custom__'" class="space-y-2">
-                <Textarea v-model="customCss" class="min-h-36" placeholder=".ifocal-target-inline-wrapper.ifocal-target-style-custom{margin:8px 0;}&#10;.ifocal-target-inline-wrapper.ifocal-target-style-custom .ifocal-target-inner{ /* your styles */ }" />
+                <Textarea v-model="customCss" class="min-h-36" placeholder=".ifocal-target-inline-wrapper.ifocal-target-style-custom .ifocal-target-inner,&#10;.ifocal-target-block-wrapper.ifocal-target-style-custom .ifocal-target-inner{ /* 自定义样式 */ }" />
                 <div class="flex items-center gap-2">
                   <Button class="bg-primary text-primary-foreground flex items-center gap-1" @click="saveStyleOnly">保存样式</Button>
                 </div>

@@ -1,12 +1,106 @@
 // 注意：为避免打包为 ESM 并在内容脚本环境报错，这里不再使用 import 语句。
 // 页面（非 Shadow DOM）内插入模式所需的全局加载样式，避免仅注入到 Shadow 导致动画丢失
-import { createWrapper as sharedCreateWrapper, applyWrapperResult as sharedApplyWrapperResult, updateBreakForTranslated } from '@/shared/tx-dom';
 const DOC_STYLE = `
-.ifocal-target-wrapper{display:inline-flex;vertical-align:middle}
+.ifocal-target-wrapper{word-break: break-word;user-select: text;}
+.ifocal-target-block-wrapper{display: inline-block;margin: 8px 0;}
+.ifocal-target-inline-wrapper{}
 .ifocal-tx{display:inline;overflow-wrap:anywhere;word-break:break-word;hyphens:auto}
 @keyframes ifocal-spin{to{transform:rotate(360deg)}}
 .ifocal-loading{width:16px;height:16px;border:2px solid rgba(15,23,42,0.18);margin-left:5px;border-top-color:#0f172a;border-radius:50%;animation:ifocal-spin 1s linear infinite;display:inline-block;vertical-align:middle;line-height:1}
 `;
+
+// 复制共享 DOM 工具到内容脚本（避免 import 引发 ESM 报错）
+function needsLineBreak(tag: string) {
+  return ['p', 'div', 'section', 'article', 'li', 'td', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag);
+}
+function shouldInsertBreakFromSource(text: string): boolean {
+  const spaces = (text.match(/ /g) || []).length;
+  return spaces > 3;
+}
+function updateBreakForTranslated(blockEl: HTMLElement, source: string) {
+  const tag = (blockEl.tagName || 'div').toLowerCase();
+  const exists = blockEl.querySelector('br.ifocal-target-break');
+  const wrapper = blockEl.querySelector('font.ifocal-target-wrapper.notranslate');
+  if (!needsLineBreak(tag)) {
+    if (exists) exists.remove();
+    return;
+  }
+  const needBr = shouldInsertBreakFromSource(source || '');
+  if (needBr) {
+    if (exists) {
+      if (wrapper) {
+        if (exists.parentElement !== wrapper || (wrapper as any).firstChild !== exists) {
+          try { (wrapper as any).insertBefore(exists, (wrapper as any).firstChild || null); } catch {}
+        }
+      } else {
+        if (exists.parentElement !== blockEl) {
+          try { blockEl.appendChild(exists); } catch {}
+        }
+      }
+      return;
+    }
+    const br = document.createElement('br');
+    br.className = 'ifocal-target-break';
+    if (wrapper) {
+      try { (wrapper as any).insertBefore(br, (wrapper as any).firstChild || null); } catch { blockEl.appendChild(br); }
+    } else if (blockEl.firstChild) {
+      blockEl.insertBefore(br, blockEl.firstChild);
+    } else {
+      blockEl.appendChild(br);
+    }
+  } else if (exists) {
+    exists.remove();
+  }
+}
+function sharedCreateWrapper(id: string, targetLang: string): HTMLElement {
+  const wrapper = document.createElement('font');
+  wrapper.className = 'notranslate ifocal-target-wrapper';
+  wrapper.setAttribute('data-tx-id', id);
+  try { wrapper.setAttribute('data-tx-done', '0'); } catch {}
+  if (targetLang) wrapper.setAttribute('lang', targetLang);
+  const spin = document.createElement('div');
+  spin.className = 'ifocal-loading';
+  wrapper.appendChild(spin);
+  return wrapper as unknown as HTMLElement;
+}
+function sharedApplyWrapperResult(wrapper: HTMLElement, text: string, targetLang?: string, _wrapperStyle?: string, sourceText?: string) {
+  try {
+    if (targetLang) wrapper.setAttribute('lang', targetLang);
+    const rtl = targetLang && /^(ar|he|fa|ur|yi)(-|$)/i.test(targetLang);
+    if (rtl) wrapper.setAttribute('dir', 'rtl'); else wrapper.removeAttribute('dir');
+    wrapper.innerHTML = '';
+    const block = wrapper.closest('p,div,section,article,li,td,a,h1,h2,h3,h4,h5,h6') as HTMLElement | null;
+    let needBr = false;
+    if (block && sourceText) {
+      const tag = (block.tagName || 'div').toLowerCase();
+      needBr = needsLineBreak(tag) && shouldInsertBreakFromSource(sourceText);
+    }
+    if (needBr) {
+      updateBreakForTranslated(block!, sourceText!);
+    } else {
+      const spacer = document.createElement('font');
+      spacer.className = 'notranslate';
+      spacer.innerHTML = '&nbsp;&nbsp;';
+      wrapper.appendChild(spacer);
+    }
+    const styleName = (wrapper.getAttribute('data-tx-style') || '').trim() || 'ifocal-target-style-dotted';
+    const typeClass = needBr ? 'ifocal-target-block-wrapper' : 'ifocal-target-inline-wrapper';
+    const resultWrapper = document.createElement('font');
+    resultWrapper.className = `notranslate ${typeClass} ${styleName}`.trim();
+    const inner = document.createElement('font');
+    inner.className = 'notranslate ifocal-target-inner';
+    inner.textContent = text;
+    resultWrapper.appendChild(inner);
+    wrapper.appendChild(resultWrapper);
+    try { wrapper.setAttribute('data-tx-done', '1'); } catch {}
+    if (block && sourceText) {
+      try {
+        const pending = block.querySelector('font.ifocal-target-wrapper[data-tx-done="0"]');
+        block.setAttribute('aria-busy', pending ? 'true' : 'false');
+      } catch {}
+    }
+  } catch {}
+}
 
 // 样式通过 Shadow DOM 注入；语言列表通过后台消息读取。
 let uiHost: HTMLElement | null = null;
@@ -53,14 +147,13 @@ function ensureDocLoadingStyle() {
 }
 
 // 将预设样式注入到文档（供 ifocal-target-style-* 使用）
-// 注意：为避免内容脚本出现 ESM import 报错，这里内置一份默认预设作为回退；
-// 若存储里有自定义预设，将按名称覆盖默认项。
+// 本地最小默认预设（与 DEFAULT_CONFIG 保持一致的两项）
 const DEFAULT_TARGET_STYLE_PRESETS = [
   {
     name: 'ifocal-target-style-dotted',
     description: '点状下划线',
-    css: `.ifocal-target-inline-wrapper.ifocal-target-style-dotted{margin:8px 0;}
-.ifocal-target-inline-wrapper.ifocal-target-style-dotted .ifocal-target-inner{
+    css: `.ifocal-target-inline-wrapper.ifocal-target-style-dotted .ifocal-target-inner,
+.ifocal-target-block-wrapper.ifocal-target-style-dotted .ifocal-target-inner{
   background-image: linear-gradient(to right, rgba(71, 71, 71, 0.5) 30%, rgba(255, 255, 255, 0) 0%);
   background-position: bottom;
   background-size: 5px 1px;
@@ -72,55 +165,10 @@ const DEFAULT_TARGET_STYLE_PRESETS = [
   {
     name: 'ifocal-target-style-highlight',
     description: '高亮背景',
-    css: `.ifocal-target-inline-wrapper.ifocal-target-style-highlight{margin:8px 0;}
-.ifocal-target-inline-wrapper.ifocal-target-style-highlight .ifocal-target-inner{
+    css: `.ifocal-target-inline-wrapper.ifocal-target-style-highlight .ifocal-target-inner,
+.ifocal-target-block-wrapper.ifocal-target-style-highlight .ifocal-target-inner{
   background-color: yellow;
   font-family: inherit;
-}`
-  },
-  {
-    name: 'ifocal-target-style-chip',
-    description: '圆角标签',
-    css: `.ifocal-target-inline-wrapper.ifocal-target-style-chip{margin:8px 0;}
-.ifocal-target-inline-wrapper.ifocal-target-style-chip .ifocal-target-inner{
-  display:inline-block;
-  background-color:#f1f5f9;
-  color:#0f172a;
-  border:1px solid #e2e8f0;
-  border-radius:999px;
-  padding:2px 8px;
-  font-size:0.95em;
-}`
-  },
-  {
-    name: 'ifocal-target-style-fadein',
-    description: '淡入动画',
-    css: `@keyframes ifocal-fadein{from{opacity:0;transform:translateY(2px)}to{opacity:1;transform:none}}
-.ifocal-target-inline-wrapper.ifocal-target-style-fadein{margin:8px 0;}
-.ifocal-target-inline-wrapper.ifocal-target-style-fadein .ifocal-target-inner{
-  animation: ifocal-fadein .35s ease;
-}`
-  },
-  {
-    name: 'ifocal-target-style-bubble',
-    description: '气泡卡片',
-    css: `.ifocal-target-inline-wrapper.ifocal-target-style-bubble{margin:8px 0;}
-.ifocal-target-inline-wrapper.ifocal-target-style-bubble .ifocal-target-inner{
-  display:inline-block;
-  background:rgba(255,255,255,0.9);
-  border:1px solid rgba(15,23,42,0.12);
-  box-shadow:0 2px 10px rgba(15,23,42,0.08);
-  border-radius:10px;
-  padding:6px 8px;
-}`
-  },
-  {
-    name: 'ifocal-target-style-underline-solid',
-    description: '实体下划线',
-    css: `.ifocal-target-inline-wrapper.ifocal-target-style-underline-solid{margin:8px 0;}
-.ifocal-target-inline-wrapper.ifocal-target-style-underline-solid .ifocal-target-inner{
-  border-bottom:2px solid rgba(71,85,105,0.6);
-  padding-bottom:2px;
 }`
   }
 ];
@@ -288,8 +336,11 @@ try {
         const wrappers = document.querySelectorAll('font.ifocal-target-wrapper[data-tx-style]');
         wrappers.forEach((w) => {
           try { (w as HTMLElement).setAttribute('data-tx-style', nextName); } catch {}
-          const inline = (w as HTMLElement).querySelector('font.ifocal-target-inline-wrapper') as HTMLElement | null;
-          if (inline) inline.className = `notranslate ifocal-target-inline-wrapper ${nextName}`;
+          const found = (w as HTMLElement).querySelector('font.ifocal-target-inline-wrapper, font.ifocal-target-block-wrapper') as HTMLElement | null;
+          if (found) {
+            const typeClass = found.classList.contains('ifocal-target-block-wrapper') ? 'ifocal-target-block-wrapper' : 'ifocal-target-inline-wrapper';
+            found.className = `notranslate ${typeClass} ${nextName}`;
+          }
         });
       } catch {}
     }
@@ -936,7 +987,11 @@ function isVisibleElement(el: HTMLElement): boolean {
   return true;
 }
 
-const SKIP_TAGS = new Set(['SCRIPT','STYLE','NOSCRIPT','TEXTAREA','INPUT','SELECT','OPTION','CODE','PRE','CANVAS','SVG']);
+const SKIP_TAGS = new Set([
+  'SCRIPT','STYLE','NOSCRIPT','TEXTAREA','INPUT','SELECT','OPTION',
+  'CODE','PRE','KBD','SAMP','VAR','TT',
+  'CANVAS','SVG','MATH'
+]);
 // 块级段落选择器：将其内部 strong/em/i/b/span 等行内文本视为一个整体翻译单元
 const BLOCK_SELECTOR = 'p,li,h1,h2,h3,h4,h5,h6,dt,dd,figcaption,caption';
 
