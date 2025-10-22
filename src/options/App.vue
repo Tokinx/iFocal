@@ -234,11 +234,12 @@ function handleSaveChannelInline(idx: number) {
   }
 }
 
-// 助手（流式输出）
+// 助手（非流式输出）
 const assistantDraft = ref('');
 const assistantModelValue = ref('');
 const assistantTask = ref<'translate' | 'summarize' | 'rewrite' | 'polish'>('translate');
 const assistantResult = ref('');
+const assistantLoading = ref(false);
 let assistantPort: chrome.runtime.Port | null = null;
 watch(channels, () => { const prefer = joinPair(activeModel.value) || joinPair(defaultModel.value) || modelPairs.value[0]?.value || ''; if (prefer) assistantModelValue.value = prefer; }, { immediate: true, deep: true });
 // 保存侧边栏历史会话保存数量
@@ -248,7 +249,34 @@ watch(() => config.value.sidebarHistoryLimit, async (v) => {
     await saveConfig({ sidebarHistoryLimit: config.value.sidebarHistoryLimit });
   } catch { }
 });
-function startAssistantStream() { const text = assistantDraft.value.trim(); if (!text) return; if (assistantPort) { try { assistantPort.disconnect(); } catch { } assistantPort = null; } assistantResult.value = ''; const pair = parsePair(assistantModelValue.value); const msg: any = { type: 'start', task: assistantTask.value, text }; if (pair) { msg.channel = pair.channel; msg.model = pair.model; } try { const port = chrome.runtime.connect({ name: 'ai-stream' }); assistantPort = port; port.onMessage.addListener((m: any) => { if (m?.type === 'delta') assistantResult.value += String(m.text || ''); else if (m?.type === 'error') assistantResult.value += `\n[错误] ${m.error}`; }); try { port.onDisconnect.addListener(() => { try { const err = chrome.runtime.lastError; if (err) assistantResult.value += `\n[错误] ${err.message}`; } catch { } }); } catch { } port.postMessage(msg); } catch { } }
+function startAssistantStream() {
+  const text = assistantDraft.value.trim();
+  if (!text) return;
+  // 非流式：一次性返回完整结果
+  if (assistantPort) { try { assistantPort.disconnect(); } catch { } assistantPort = null; }
+  assistantResult.value = '';
+  assistantLoading.value = true;
+  const pair = parsePair(assistantModelValue.value);
+  const payload: any = { action: 'performAiAction', task: assistantTask.value, text };
+  if (pair) { payload.channel = pair.channel; payload.model = pair.model; }
+  // 目标语言统一取当前设置
+  try { payload.targetLang = (config.value as any).translateTargetLang || 'zh-CN'; } catch { }
+  try {
+    chrome.runtime.sendMessage(payload, (resp: any) => {
+      try { void chrome.runtime.lastError; } catch { }
+      assistantLoading.value = false;
+      if (!resp) {
+        assistantResult.value = '[错误] 无响应';
+        return;
+      }
+      if (resp.ok) assistantResult.value = String(resp.result || '');
+      else assistantResult.value = `【错误】${resp.error || '未知错误'}`;
+    });
+  } catch (e: any) {
+    assistantLoading.value = false;
+    assistantResult.value = `【错误】${String(e?.message || e || '调用失败')}`;
+  }
+}
 async function onLangChange() {
   try {
     await saveConfig({ translateTargetLang: config.value.translateTargetLang });
@@ -743,15 +771,18 @@ onMounted(loadGlossary);
             </div>
           </div>
           <div class="flex space-x-4">
-
             <Textarea v-model="assistantDraft" class="min-h-28 w-[50%]" placeholder="在此粘贴需要处理的文本..." />
-            <div class="w-[50%] rounded-md border bg-secondary/40 p-3 text-sm whitespace-pre-wrap min-h-12">
+            <div class="w-[50%] rounded-md border bg-secondary/40 p-3 text-sm whitespace-pre-wrap min-h-12 relative">
+              <div v-if="assistantLoading" class="absolute inset-0 flex items-center justify-center bg-white/60">
+                <Icon icon="line-md:loading-twotone-loop" width="20" class="animate-spin" />
+              </div>
               {{ assistantResult }}
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <Button class="bg-primary text-primary-foreground flex items-center gap-1" @click="startAssistantStream">
-              <Icon icon="proicons:bolt" width="16" />
+            <Button class="bg-primary text-primary-foreground flex items-center gap-1" :disabled="assistantLoading" @click="startAssistantStream">
+              <Icon v-if="!assistantLoading" icon="proicons:bolt" width="16" />
+              <Icon v-else icon="line-md:loading-twotone-loop" width="16" class="animate-spin" />
               执行
             </Button>
           </div>

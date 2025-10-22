@@ -228,7 +228,7 @@ const sessions = reactive<Session[]>([]);
 const showHistory = ref(false);
 const historyLimit = ref<number>(10);
 const currentSessionId = ref<string>('');
-let streamPort: chrome.runtime.Port | null = null;
+let streamPort: chrome.runtime.Port | null = null; // 已弃用（保留变量避免大范围改动）
 
 function pushMessage(payload: Omit<ChatMessage, 'id' | 'createdAt'>) {
   messages.push({ id: crypto.randomUUID(), createdAt: Date.now(), ...payload });
@@ -321,36 +321,25 @@ async function sendMessage(textOverride?: string, uptoMessageId?: string) {
   messages.push(aiMsg);
   nextTick(() => { if (messagesRef.value) messagesRef.value.scrollTop = messagesRef.value.scrollHeight; });
   try {
-    if (streamPort) { try { streamPort.disconnect(); } catch {} streamPort = null; }
     const pair = parseSelectedPair(state.selectedModel);
-    const msg: any = { type: 'start', task: state.selectedFeature, text, targetLang: state.targetLang };
+    const msg: any = { action: 'performAiAction', task: state.selectedFeature, text, targetLang: state.targetLang };
     if ((pair as any).channel && (pair as any).model) { msg.channel = (pair as any).channel; msg.model = (pair as any).model; }
-    const port = chrome.runtime.connect({ name: 'ai-stream' });
-    streamPort = port;
-    port.onMessage.addListener((m: any) => {
-      if (m?.type === 'delta') {
-        aiMsg.content += String(m.text || '');
-        nextTick(() => { if (messagesRef.value) messagesRef.value.scrollTop = messagesRef.value.scrollHeight; });
-      
-      } else if (m?.type === 'meta') {
-        aiMsg.model = String(m?.model || aiMsg.model || '');
-} else if (m?.type === 'done') {
-        sending.value = false;
+    chrome.runtime.sendMessage(msg, (resp: any) => {
+      try { void chrome.runtime.lastError; } catch {}
+      sending.value = false;
+      if (!resp) { aiMsg.content += '\n[错误] 无响应'; return; }
+      if (resp.ok) {
+        aiMsg.content = String(resp.result || '');
         persistSessions();
-      } else if (m?.type === 'error') {
-        sending.value = false;
-        aiMsg.content += `\n[错误] ${m.error}`;
+        nextTick(() => { if (messagesRef.value) messagesRef.value.scrollTop = messagesRef.value.scrollHeight; });
+      } else {
+        aiMsg.content += `\n[错误] ${resp.error || '未知错误'}`;
       }
     });
-    try {
-      port.onDisconnect.addListener(() => {
-        try { const err = chrome.runtime.lastError; if (err) { aiMsg.content += `\n[错误] ${err.message}`; sending.value = false; } } catch {}
-      });
-    } catch {}
-    port.postMessage(msg);
   } catch (error) {
-    console.error('[iFocal] stream start failed', error);
+    console.error('[iFocal] request failed', error);
     sending.value = false;
+    aiMsg.content += `\n[错误] ${String((error as any)?.message || error || '调用失败')}`;
   }
 }
 
@@ -495,7 +484,6 @@ async function startFullTranslateOnActiveTab() {
   }
 }
 </script>
-
 
 
 

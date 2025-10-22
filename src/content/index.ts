@@ -697,51 +697,23 @@ function triggerSelectionTranslate() {
 }
 
 function startStreamForOverlay(overlay: OverlayHandle, task: string, text: string, pair: ChannelPair, lang: string) {
-  if (!chrome?.runtime?.connect) return;
-  if (overlay._port) {
-    try {
-      overlay._port.disconnect();
-    } catch (error) {
-      console.warn(`${LOG_PREFIX} failed to disconnect port`, error);
-    }
-    overlay._port = null;
-  }
   overlay.setText('');
   overlay.setLoading(true);
-  const port = chrome.runtime.connect({ name: 'ai-stream' });
-  overlay._port = port;
-  let first = true;
-  port.onMessage.addListener((message) => {
-    if (message.type === 'delta') {
-      if (first) {
-        overlay.setLoading(false);
-        first = false;
-      }
-      overlay.append(message.text as string);
-    } else if (message.type === 'error') {
-      overlay.setLoading(false);
-      overlay.append(`\n[Error] ${message.error}`);
-    }
-  });
-  // 连接失败或后台未就绪时，读取 lastError 以抑制控制台“Receiving end does not exist”
-  try {
-    port.onDisconnect.addListener(() => {
-      try {
-        const err = chrome.runtime.lastError;
-        if (err) {
-          overlay.setLoading(false);
-          overlay.append(`\n[Error] ${err.message}`);
-        }
-      } catch { }
-    });
-  } catch { }
-  const payload: Record<string, unknown> = { type: 'start', task, text };
-  if (pair?.channel && pair.model) {
-    payload.channel = pair.channel;
-    payload.model = pair.model;
-  }
+  const payload: any = { action: 'performAiAction', task, text };
+  if (pair?.channel && pair.model) { payload.channel = pair.channel; payload.model = pair.model; }
   if (lang) payload.targetLang = lang;
-  port.postMessage(payload);
+  try {
+    chrome.runtime.sendMessage(payload, (resp: any) => {
+      try { void chrome.runtime.lastError; } catch { }
+      overlay.setLoading(false);
+      if (!resp) { overlay.setText('[错误] 无响应'); return; }
+      if (resp.ok) overlay.setText(String(resp.result || ''));
+      else overlay.setText(`【错误】${resp.error || '未知错误'}`);
+    });
+  } catch (e: any) {
+    overlay.setLoading(false);
+    overlay.setText(`【错误】${String(e?.message || e || '调用失败')}`);
+  }
 }
 
 function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair: ChannelPair, lang: string, text: string) {

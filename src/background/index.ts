@@ -6,8 +6,6 @@ let selectionBuffer = '';
 let isOpeningGlobalWindow = false; // 打开全局窗口的重入保护
 // 全局助手窗口单例 ID 存储键
 const GLOBAL_WIN_KEY = 'globalAssistantWindowId';
-// 不支持system role的模型
-const NOT_SUPPORT_SYS_ROLE_MODELS = ["translate", "translate-*", "gemma-*", "qwen-mt-*"];
 
 // 监听窗口关闭，若为全局助手，则清理存储的 ID
 try {
@@ -109,10 +107,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       collectPagePreview(sender.tab?.id).then(sendResponse).catch((error) => sendResponse({ error: String(error) }));
       return true;
     }
-    if (handler === 'stream-message') {
-      handleStreamRequest(message, sender.tab?.id).then(sendResponse).catch((error) => sendResponse({ error: String(error) }));
-      return true;
-    }
+    // 非流式：已移除 'stream-message' 支持
     if (handler === 'selection') {
       selectionBuffer = message.text || '';
       return;
@@ -217,30 +212,7 @@ async function requestPageContentFromContentScript(tabId: number): Promise<{ tit
   });
 }
 
-async function handleStreamRequest(payload: any, tabId?: number | null) {
-  const cfg = await readConfig(['channels', 'defaultModel', 'translateModel', 'activeModel', 'translateTargetLang', 'promptTemplates']);
-  const task = mapFeatureToTask(payload.feature);
-  const baseText = String(payload.text || '').trim();
-  let finalText = baseText;
-  if (payload.feature === 'analyze-page') {
-    const page = await collectPagePreview(tabId);
-    finalText = `${page.preview}\n\nUser note: ${baseText || '(empty)'}`;
-  } else if (!finalText && selectionBuffer) {
-    finalText = selectionBuffer;
-  }
-
-  if (!finalText) {
-    return { response: 'No input provided. Please select text on the page or enter a prompt.' };
-  }
-
-  const targetLang = payload.targetLang || cfg.translateTargetLang || 'zh-CN';
-  const pair = pickModelFromConfig(task, parsePair(payload.model), cfg);
-  if (!pair) throw new Error('No available model');
-  const channel = ensureChannel(cfg.channels, pair.channel);
-  const prompt = makePrompt(task, finalText, targetLang, cfg.promptTemplates || {});
-  const response = await runWithStreaming(channel, pair.model, task, prompt);
-  return { response };
-}
+// 非流式：已移除 handleStreamRequest
 
 async function handleLegacyAction(request: any) {
   const cfg = await readConfig(['channels', 'defaultModel', 'translateModel', 'translateTargetLang', 'promptTemplates']);
@@ -293,9 +265,9 @@ function applyRate(qps: number, qpm: number, maxConcurrent: number) {
 }
 async function loadBaseRateFromStorage() {
   try {
-    const cfg = await readConfig(['txQps','txQpm','txMaxConcurrent']);
+    const cfg = await readConfig(['txQps', 'txQpm', 'txMaxConcurrent']);
     applyRate(Number(cfg.txQps) || 2, Number(cfg.txQpm) || 120, Number(cfg.txMaxConcurrent) || 1);
-  } catch {}
+  } catch { }
 }
 function degradeRate() {
   const now = Date.now();
@@ -403,7 +375,7 @@ async function handleTranslateBatch(request: any) {
   return { ok: true, translations: arr, channel: pair.channel, model: pair.model };
 }
 
-async function callGatewayTranslateBatch(baseUrl: string, payload: any): Promise<{ translations: Array<{id:string;text:string}> }> {
+async function callGatewayTranslateBatch(baseUrl: string, payload: any): Promise<{ translations: Array<{ id: string; text: string }> }> {
   const url = (baseUrl || '').replace(/\/$/, '') + '/translate:batch';
   const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
   if (!res.ok) throw new Error(`Gateway HTTP ${res.status}`);
@@ -460,7 +432,7 @@ class SimpleRateLimiter {
       this.lastMin.push(now);
       this.inflight++;
       progressed = true;
-      try { w(); } catch {}
+      try { w(); } catch { }
     }
     // 若没有等待者则无需继续调度，避免空转递归
     if (!this.waiters.length) return;
@@ -490,7 +462,7 @@ try {
       rateLimiter.set({ qps: Number(changes.txQps?.newValue) || undefined as any, qpm: Number(changes.txQpm?.newValue) || undefined as any, maxConcurrent: Number(changes.txMaxConcurrent?.newValue) || undefined as any });
     }
   });
-} catch {}
+} catch { }
 
 async function rateLimited<T>(fn: () => Promise<T>): Promise<T> {
   await rateLimiter.acquire();
@@ -563,41 +535,14 @@ function makePrompt(task: string, text: string, lang: string, templates: any) {
 }
 
 function makeMessage(model: string, prompt: string, systemText = 'You are a helpful assistant.') {
-  const toRegex = (p: string) =>
-    new RegExp('^' + p.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
-  const noSystem = NOT_SUPPORT_SYS_ROLE_MODELS.some(p => toRegex(p).test(model));
-  if (noSystem) {
-    // 忽略 system 消息
-    // return [{ role: 'user', content: prompt }];
-    // 合并为 1 条 user 消息
-    return [{ role: 'user', content: `${systemText}\n\n${prompt}` }];
-    // 分 2 条 user 消息
-    // return [{ role: 'user', content: systemText }, { role: 'user', content: prompt }];
-  }
-  return [{ role: 'system', content: systemText }, { role: 'user', content: prompt }];
+  // 合并 system 和 user 内容，提升兼容性
+  return [{ role: 'user', content: `${systemText}\n\n${prompt}` }];
+  // const toRegex = (p: string) =>
+  //   new RegExp('^' + p.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
+  // return [{ role: 'system', content: systemText }, { role: 'user', content: prompt }];
 }
 
-async function runWithStreaming(channel: any, model: string, task: string, prompt: string) {
-  const chunks: string[] = [];
-  const onChunk = (text: string | null) => {
-    if (text) chunks.push(text);
-  };
-  if (channel.type === 'openai' || channel.type === 'openai-compatible') {
-    await streamOpenAI(channel.apiUrl, channel.apiKey, model, prompt, onChunk);
-    return chunks.join('');
-  }
-  if (channel.type === 'gemini') {
-    try {
-      await streamGemini(channel.apiUrl, channel.apiKey, model, prompt, onChunk);
-      return chunks.join('');
-    } catch (error) {
-      const fallback = await invokeModel(channel, model, prompt);
-      return String(fallback);
-    }
-  }
-  const fallback = await invokeModel(channel, model, prompt);
-  return String(fallback);
-}
+// 非流式：移除 runWithStreaming 与流式供应商实现
 
 async function invokeModel(channel: any, model: string, prompt: string) {
   if (!channel?.apiKey) throw new Error('Channel is missing API key');
@@ -635,81 +580,6 @@ async function callGemini(baseUrl: string, apiKey: string, model: string, prompt
     const out = Array.isArray(parts) ? parts.map((p: any) => p?.text || '').join('\n') : '';
     if (!out) throw new Error('Gemini returned empty response');
     return out;
-  });
-}
-
-async function streamOpenAI(baseUrl: string, apiKey: string, model: string, prompt: string, onDelta: (token: string | null, done?: boolean) => void) {
-  const url = joinBasePath(baseUrl || 'https://api.openai.com/v1', '/chat/completions');
-  const body = { model, stream: true, messages: makeMessage(model, prompt), temperature: 0.2 };
-  await rateLimited(async () => {
-    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: JSON.stringify(body) });
-    if (!res.ok) throw new Error(`OpenAI HTTP ${res.status}`);
-    const reader = res.body?.getReader();
-    if (!reader) throw new Error('OpenAI stream reader unavailable');
-    await sseLoopFromReader(reader, (line) => {
-      const trimmed = line.trim();
-      if (!trimmed || !trimmed.startsWith('data:')) return;
-      const data = trimmed.slice(5).trim();
-      if (data === '[DONE]') {
-        onDelta(null, true);
-        return;
-      }
-      try {
-        const json = JSON.parse(data);
-        const token = json?.choices?.[0]?.delta?.content || '';
-        if (token) onDelta(token, false);
-      } catch (error) {
-        console.warn('[iFocal] OpenAI chunk parse failed', error);
-      }
-    });
-  });
-}
-
-async function streamGemini(baseUrl: string, apiKey: string, model: string, prompt: string, onDelta: (token: string | null, done?: boolean) => void) {
-  const base = baseUrl || 'https://generativelanguage.googleapis.com/v1beta';
-  const url = joinBasePath(base, `/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`);
-  const body = { contents: [{ parts: [{ text: prompt }] }] };
-  await rateLimited(async () => {
-    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
-    const reader = res.body?.getReader();
-    if (!reader) throw new Error('Gemini stream reader unavailable');
-    await sseLoopFromReader(reader, (line) => {
-      const trimmed = line.trim();
-      if (!trimmed || !trimmed.startsWith('data:')) return;
-      const data = trimmed.slice(5).trim();
-      if (data === '[DONE]') {
-        onDelta(null, true);
-        return;
-      }
-      try {
-        const json = JSON.parse(data);
-        const parts = json?.candidates?.[0]?.content?.parts;
-        const out = Array.isArray(parts) ? parts.map((p: any) => p?.text || '').join('') : '';
-        if (out) onDelta(out, false);
-      } catch (error) {
-        console.warn('[iFocal] Gemini chunk parse failed', error);
-      }
-    });
-  });
-}
-
-function sseLoopFromReader(reader: ReadableStreamDefaultReader<Uint8Array>, onLine: (line: string) => void) {
-  const decoder = new TextDecoder();
-  let buffer = '';
-  return reader.read().then(function process({ done, value }): Promise<void> | void {
-    if (done) {
-      if (buffer) {
-        buffer.split(/\r?\n/).forEach(onLine);
-        buffer = '';
-      }
-      return;
-    }
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split(/\r?\n/);
-    buffer = lines.pop() || '';
-    for (const line of lines) onLine(line);
-    return reader.read().then(process);
   });
 }
 
@@ -819,47 +689,4 @@ function openOrFocusSidebarPopup() {
 
 
 
-// 端口：用于内容脚本与选项页的流式输出
-chrome.runtime.onConnect.addListener((port) => {
-  if (port.name !== 'ai-stream') return;
-  let disconnected = false;
-  try { port.onDisconnect.addListener(() => { disconnected = true; }); } catch { }
-  port.onMessage.addListener(async (msg) => {
-    if (!msg || msg.type !== 'start') return;
-    try {
-      const { task, text, channel, model, targetLang } = msg as any;
-      const cfg = await readConfig(['channels', 'defaultModel', 'translateModel', 'activeModel', 'translateTargetLang', 'promptTemplates']);
-      const pair = pickModelFromConfig(task, (channel && model) ? { channel, model } : null, cfg);
-      if (!pair) throw new Error('No available model');
-      const ch = ensureChannel(cfg.channels, pair.channel);
-      const tLang = targetLang || cfg.translateTargetLang || 'zh-CN';
-      const prompt = makePrompt(task, String(text || ''), tLang, cfg.promptTemplates || {});
-      const safePost = (payload: any) => { if (disconnected) return; try { port.postMessage(payload); } catch { } };
-      // 提前告知前端本次实际使用的模型标识
-      safePost({ type: 'meta', channel: pair.channel, model: pair.model });
-
-      const onDelta = (delta: string | null, done?: boolean) => {
-        if (disconnected) return;
-        if (done) safePost({ type: 'done' });
-        else if (delta) safePost({ type: 'delta', text: delta });
-      };
-      if (ch.type === 'openai' || ch.type === 'openai-compatible') {
-        await streamOpenAI(ch.apiUrl, ch.apiKey, pair.model, prompt, onDelta);
-      } else if (ch.type === 'gemini') {
-        try {
-          await streamGemini(ch.apiUrl, ch.apiKey, pair.model, prompt, onDelta);
-        } catch {
-          const full = await invokeModel(ch, pair.model, prompt);
-          safePost({ type: 'delta', text: String(full) });
-          safePost({ type: 'done' });
-        }
-      } else {
-        const full = await invokeModel(ch, pair.model, prompt);
-        safePost({ type: 'delta', text: String(full) });
-        safePost({ type: 'done' });
-      }
-    } catch (error) {
-      if (!disconnected) { try { port.postMessage({ type: 'error', error: String(error) }); } catch { } }
-    }
-  });
-});
+// 流式端口已移除：统一使用非流式 performAiAction

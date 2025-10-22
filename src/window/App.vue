@@ -69,7 +69,6 @@ const selectedPairKey = ref<string>('');
 const sending = ref(false);
 const result = ref('');
 const errorText = ref('');
-let port: chrome.runtime.Port | null = null;
 const rootEl = ref<HTMLElement | null>(null);
 
 const state = reactive({
@@ -115,13 +114,6 @@ async function loadModels() {
   if (!selectedPairKey.value && pairs.length) selectedPairKey.value = pairs[0].key;
 }
 
-function disconnectPort() {
-  if (port) {
-    try { port.disconnect(); } catch {}
-  }
-  port = null;
-}
-
 function run() {
   const text = state.text.trim();
   if (!text || sending.value) return;
@@ -129,18 +121,20 @@ function run() {
   result.value = '';
   errorText.value = '';
   sending.value = true;
-  disconnectPort();
-  const p = chrome.runtime.connect({ name: 'ai-stream' });
-  port = p;
-  p.onMessage.addListener((m: any) => {
-    if (m?.type === 'delta') result.value += String(m.text || '');
-    else if (m?.type === 'done') sending.value = false;
-    else if (m?.type === 'error') { sending.value = false; errorText.value = `错误：${m.error}`; }
-  });
-  try { p.onDisconnect.addListener(() => { try { const err = chrome.runtime.lastError; if (err) { sending.value = false; result.value += `\n[错误] ${err.message}`; } } catch {} }); } catch {}
-  const msg: any = { type: 'start', task: state.task, text, targetLang: state.targetLang };
+  const msg: any = { action: 'performAiAction', task: state.task, text, targetLang: state.targetLang };
   if (pair) { msg.channel = pair.channel; msg.model = pair.model; }
-  p.postMessage(msg);
+  try {
+    chrome.runtime.sendMessage(msg, (resp: any) => {
+      try { void chrome.runtime.lastError; } catch {}
+      sending.value = false;
+      if (!resp) { errorText.value = '错误：无响应'; return; }
+      if (resp.ok) result.value = String(resp.result || '');
+      else errorText.value = `错误：${resp.error || '未知错误'}`;
+    });
+  } catch (e: any) {
+    sending.value = false;
+    errorText.value = `错误：${String(e?.message || e || '调用失败')}`;
+  }
 }
 
 function onModelChange() {

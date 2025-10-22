@@ -1,4 +1,4 @@
-export type SidebarMessageType = 'bootstrap' | 'capture-page' | 'stream-message';
+export type SidebarMessageType = 'bootstrap' | 'capture-page';
 
 export interface SidebarBootstrapResponse {
   models: string[];
@@ -6,13 +6,7 @@ export interface SidebarBootstrapResponse {
   targetLang: string;
 }
 
-export interface SidebarStreamRequest {
-  type: 'stream-message';
-  feature: string;
-  model: string;
-  targetLang: string;
-  text: string;
-}
+// 非流式：已移除 SidebarStreamRequest
 
 export interface SidebarCaptureResponse {
   preview: string;
