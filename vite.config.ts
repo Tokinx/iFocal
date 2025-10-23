@@ -16,7 +16,6 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        sidebar: path.resolve(__dirname, 'sidebar.html'),
         options: path.resolve(__dirname, 'options.html'),
         window: path.resolve(__dirname, 'window.html'),
         background: path.resolve(__dirname, 'src/background/index.ts'),
@@ -29,12 +28,7 @@ export default defineConfig({
           return 'assets/[name].js';
         },
         chunkFileNames: 'assets/[name].[hash].js',
-        assetFileNames: (assetInfo) => {
-          // 固定内容脚本与侧栏样式文件名，便于在 manifest 中直引
-          if (assetInfo.name === 'content.css') return 'assets/content.css';
-          if (assetInfo.name === 'sidebar.css') return 'assets/sidebar.css';
-          return 'assets/[name].[hash][extname]';
-        }
+        assetFileNames: 'assets/[name].[hash][extname]'
       }
     }
   }

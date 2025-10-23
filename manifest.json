@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "iFocal",
   "version": "0.3.0",
-  "description": "iFocal side panel assistant built with Vue + shadcn-vue. Supports chat, translation and page insight.",
-  "permissions": ["storage","activeTab","scripting","clipboardRead","contextMenus","sidePanel"],
+  "description": "iFocal assistant with selection/overlay translate and a global window, built with Vue + shadcn-vue.",
+  "permissions": ["storage","clipboardRead"],
   "host_permissions": [
     "<all_urls>"
   ],
@@ -12,10 +12,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Open iFocal Side Panel"
-  },
-  "side_panel": {
-    "default_path": "dist/sidebar.html"
+    "default_title": "Open iFocal Assistant"
   },
   "content_scripts": [
     {

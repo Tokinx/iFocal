@@ -159,13 +159,7 @@ async function saveBasics() {
       displayMode: config.value.displayMode,
       wrapperStyleName: wrapperStyleNameToSave,
       targetStylePresets: presetsToSave,
-      enableSelectionTranslation: config.value.enableSelectionTranslation,
-      txOnlyShort: !!config.value.txOnlyShort,
-      txStrictJson: !!config.value.txStrictJson,
-      txQps: Number(config.value.txQps) || 2,
-      txQpm: Number(config.value.txQpm) || 120,
-      txMaxConcurrent: Number(config.value.txMaxConcurrent) || 1,
-      txDisableCache: !!config.value.txDisableCache
+      enableSelectionTranslation: config.value.enableSelectionTranslation
     });
 
     toast.success('基础设置已保存');
@@ -242,13 +236,7 @@ const assistantResult = ref('');
 const assistantLoading = ref(false);
 let assistantPort: chrome.runtime.Port | null = null;
 watch(channels, () => { const prefer = joinPair(activeModel.value) || joinPair(defaultModel.value) || modelPairs.value[0]?.value || ''; if (prefer) assistantModelValue.value = prefer; }, { immediate: true, deep: true });
-// 保存侧边栏历史会话保存数量
-watch(() => config.value.sidebarHistoryLimit, async (v) => {
-  try {
-    config.value.sidebarHistoryLimit = Number(v || 10) || 10;
-    await saveConfig({ sidebarHistoryLimit: config.value.sidebarHistoryLimit });
-  } catch { }
-});
+// 已移除侧边栏相关设置
 function startAssistantStream() {
   const text = assistantDraft.value.trim();
   if (!text) return;
@@ -707,15 +695,7 @@ onMounted(loadGlossary);
             </div>
           </div>
           <div class="space-y-4">
-            <div class="flex items-center justify-between gap-4">
-              <div>
-                <label class="text-sm font-medium leading-none block mb-1">历史会话保存数量</label>
-                <p class="text-xs text-muted-foreground">侧边栏保留的历史会话条数</p>
-              </div>
-              <div class="w-36">
-                <Input type="number" v-model.number="config.sidebarHistoryLimit" min="1" max="100" placeholder="10" />
-              </div>
-            </div>
+            
           </div>
           <div>
             <Button class="bg-primary text-primary-foreground flex items-center gap-1"
@@ -788,79 +768,7 @@ onMounted(loadGlossary);
           </div>
         </div>
       </section>
-      <!-- 设置：全文翻译（调优项） -->
-      <section v-if="nav === 'debug'" :id="'opt-translate'" class="space-y-4">
-        <header class="flex items-center h-10 text-base font-semibold">全文翻译</header>
-        <div class="space-y-3 text-sm">
-          <div class="space-y-4">
-            <div class="flex items-center justify-between gap-4">
-              <div>
-                <label class="text-sm font-medium leading-none block mb-1" for="cfg-only-short">仅短句优先</label>
-                <p class="text-xs text-muted-foreground">短小文本优先处理，降低长文本成本</p>
-              </div>
-              <div>
-                <Switch id="cfg-only-short" v-model="config.txOnlyShort" @update:modelValue="saveBasics" />
-              </div>
-            </div>
-            <div class="flex items-center justify-between gap-4">
-              <div>
-                <label class="text-sm font-medium leading-none block mb-1" for="cfg-json-strict">严格 JSON 输出</label>
-                <p class="text-xs text-muted-foreground">更稳，但可能略慢</p>
-              </div>
-              <div>
-                <Switch id="cfg-json-strict" v-model="config.txStrictJson" @update:modelValue="saveBasics" />
-              </div>
-            </div>
-            <div class="flex items-center justify-between gap-4">
-              <div>
-                <label class="text-sm font-medium leading-none block mb-1" for="cfg-disable-cache">禁用缓存</label>
-                <p class="text-xs text-muted-foreground">不读取、不写入缓存</p>
-              </div>
-              <div>
-                <Switch id="cfg-disable-cache" v-model="(config as any).txDisableCache"
-                  @update:modelValue="saveBasics" />
-              </div>
-            </div>
-          </div>
-
-          <div class="space-y-4">
-            <div class="flex items-center justify-between gap-4">
-              <div>
-                <label class="text-sm font-medium leading-none block mb-1">QPS</label>
-                <p class="text-xs text-muted-foreground">每秒请求限制</p>
-              </div>
-              <div class="w-36">
-                <Input type="number" min="1" v-model.number="(config as any).txQps" @change="saveBasics" />
-              </div>
-            </div>
-            <div class="flex items-center justify-between gap-4">
-              <div>
-                <label class="text-sm font-medium leading-none block mb-1">QPM</label>
-                <p class="text-xs text-muted-foreground">每分钟请求限制</p>
-              </div>
-              <div class="w-36">
-                <Input type="number" min="10" v-model.number="(config as any).txQpm" @change="saveBasics" />
-              </div>
-            </div>
-            <div class="flex items-center justify-between gap-4">
-              <div>
-                <label class="text-sm font-medium leading-none block mb-1">并发上限</label>
-                <p class="text-xs text-muted-foreground">同时进行的最大任务数</p>
-              </div>
-              <div class="w-36">
-                <Input type="number" min="1" v-model.number="(config as any).txMaxConcurrent" @change="saveBasics" />
-              </div>
-            </div>
-          </div>
-
-          <!-- 术语库已独立为单独分节 -->
-          <div>
-            <Button class="bg-primary text-primary-foreground flex items-center gap-1" @click="saveGlossary">
-              <Icon :icon="iconOfAction('save')" width="16" /> 保存词汇表
-            </Button>
-          </div>
-        </div>
-      </section>
+      <!-- 已移除：全文翻译（调优项） -->
 
       <!-- 术语库（与 Prompt 模板同级） -->
       <section v-if="nav==='debug'" :id="'opt-glossary'" class="space-y-4">

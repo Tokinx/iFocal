@@ -32,27 +32,12 @@ export const DEFAULT_CONFIG = {
   // 划词：是否启用划词翻译（显示小圆点）
   enableSelectionTranslation: true,
 
-  // 全文翻译（编排器）高级设置
-  // 仅短句优先（只处理短句；用于快速首屏验证）
-  txOnlyShort: false,
-  // 严格 JSON 模式（提示词将更严格要求返回 JSON 数组）
-  txStrictJson: true,
-  // 限流参数（后台）
-  txQps: 2,
-  txQpm: 120,
-  txMaxConcurrent: 1,
-  // 网关配置
-  txUseGateway: false,
-  txGatewayUrl: '',
-  // 缓存策略
-  txDisableCache: false,
   
   // 快捷键设置
   actionKey: 'Alt',
   
   // 其他设置
   autoPasteGlobalAssistant: false,
-  sidebarHistoryLimit: 10,
   // 新增：译文样式名称（应用到译文包裹元素），默认点状下划线
   wrapperStyleName: 'ifocal-target-style-dotted',
   // 新增：样式预设列表（可在设置页选择与编辑）
@@ -90,14 +75,9 @@ export const CONFIG_KEYS = [
   'enableSelectionTranslation',
   'actionKey',
   'autoPasteGlobalAssistant',
-  'sidebarHistoryLimit',
   'wrapperStyleName',
   'targetStylePresets',
-  'txOnlyShort',
-  'txStrictJson'
-  ,'txQps','txQpm','txMaxConcurrent'
-  ,'txUseGateway','txGatewayUrl'
-  ,'txDisableCache'
+  // 已移除全文翻译相关设置
 ];
 
 // 从 Chrome 存储中加载配置

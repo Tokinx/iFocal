@@ -1,8 +1,4 @@
 export { };
-import { SUPPORTED_LANGUAGES } from '../shared/config';
-
-const SIDEBAR_PATH = 'dist/sidebar.html';
-let selectionBuffer = '';
 let isOpeningGlobalWindow = false; // 打开全局窗口的重入保护
 // 全局助手窗口单例 ID 存储键
 const GLOBAL_WIN_KEY = 'globalAssistantWindowId';
@@ -45,48 +41,14 @@ async function setStoredGlobalWindowId(id: number | null): Promise<void> {
 }
 
 chrome.runtime.onInstalled.addListener(async () => {
-  try {
-    if ((chrome as any).sidePanel?.setOptions) {
-      await (chrome as any).sidePanel.setOptions({ enabled: true, path: SIDEBAR_PATH });
-    } else {
-      console.info('[iFocal] sidePanel API not available, using popup fallback');
-    }
-  } catch (error) {
-    console.warn('[iFocal] sidePanel.setOptions failed, using popup fallback', error);
-  }
-  try {
-    chrome.contextMenus.create({ id: 'ifocal-selection', title: 'Use iFocal', contexts: ['selection'] });
-    chrome.contextMenus.create({ id: 'ifocal-translate-page', title: 'iFocal：全文翻译', contexts: ['page'] });
-  } catch (error) {
-    console.warn('[iFocal] failed to create context menu', error);
-  }
+  // 无侧边栏与全文翻译：无需创建上下文菜单
 });
 
-chrome.action.onClicked.addListener(async (tab) => {
-  if (!tab?.id) return;
-  try {
-    if ((chrome as any).sidePanel?.open) {
-      await (chrome as any).sidePanel.open({ tabId: tab.id });
-      return;
-    }
-    openOrFocusSidebarPopup();
-  } catch (error) {
-    console.warn('[iFocal] sidePanel open failed, using popup fallback', error);
-    openOrFocusSidebarPopup();
-  }
+chrome.action.onClicked.addListener(async () => {
+  openOrFocusGlobalWindow();
 });
 
-chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (info.menuItemId === 'ifocal-selection') {
-    chrome.runtime.sendMessage({ source: 'ifocal', type: 'selection', text: info.selectionText || '' });
-  }
-  if (info.menuItemId === 'ifocal-translate-page') {
-    try {
-      const tabId = tab && typeof tab.id === 'number' ? tab.id : undefined;
-      if (tabId) chrome.tabs.sendMessage(tabId, { type: 'start-full-translate' });
-    } catch { }
-  }
-});
+// 已移除：上下文菜单点击处理
 
 chrome.commands.onCommand.addListener((command) => {
   if (command === 'open-global-window') {
@@ -97,32 +59,9 @@ chrome.commands.onCommand.addListener((command) => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message) return;
 
-  if (message.source === 'ifocal') {
-    const handler = message.type as string;
-    if (handler === 'bootstrap') {
-      bootstrap().then(sendResponse).catch((error) => sendResponse({ error: String(error) }));
-      return true;
-    }
-    if (handler === 'capture-page') {
-      collectPagePreview(sender.tab?.id).then(sendResponse).catch((error) => sendResponse({ error: String(error) }));
-      return true;
-    }
-    // 非流式：已移除 'stream-message' 支持
-    if (handler === 'selection') {
-      selectionBuffer = message.text || '';
-      return;
-    }
-  }
+  // 移除侧边栏相关消息处理（bootstrap/capture-page/selection）
 
-  // 提供语言列表（供内容脚本读取，避免内容脚本直接 import 模块导致 ESM 报错）
-  if (message.action === 'getSupportedLanguages') {
-    try {
-      sendResponse({ ok: true, data: SUPPORTED_LANGUAGES });
-    } catch (error) {
-      sendResponse({ ok: false, error: String(error) });
-    }
-    return true;
-  }
+  // 移除 getSupportedLanguages：前端直接使用共享常量
 
   if (message.action === 'performAiAction') {
     handleLegacyAction(message).then(sendResponse).catch((error) => sendResponse({ ok: false, error: String(error) }));
@@ -134,83 +73,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  // 批量翻译接口：输入 items 数组，返回严格 JSON 数组结果
-  if (message.action === 'translateBatch') {
-    handleTranslateBatch(message).then(sendResponse).catch((error) => sendResponse({ ok: false, error: String(error) }));
-    return true;
-  }
-
-  if (message.action === 'getRateStatus') {
-    const now = Date.now();
-    const degraded = degradedUntil > now;
-    const qps = degraded ? Math.max(1, Math.floor(baseRate.qps / 2)) : baseRate.qps;
-    const qpm = baseRate.qpm;
-    const maxConcurrent = degraded ? 1 : baseRate.maxConcurrent;
-    sendResponse({ ok: true, qps, qpm, maxConcurrent, degraded, degradedUntil });
-    return true;
-  }
+  // translateBatch/getRateStatus 已移除（删除全文翻译与侧边栏指标）
 });
 
-async function bootstrap() {
-  const cfg = await readConfig(['channels', 'defaultModel', 'translateModel', 'translateTargetLang', 'preferredFeature']);
-  const models = Array.isArray(cfg.channels)
-    ? cfg.channels.flatMap((ch: any) => (ch.models || []).map((model: string) => `${ch.name}:${model}`))
-    : [];
-  return {
-    models: models.length ? models : ['gpt-4o-mini'],
-    defaultFeature: cfg.preferredFeature || 'chat',
-    targetLang: cfg.translateTargetLang || 'zh-CN'
-  };
-}
-
-async function collectPagePreview(tabId?: number | null) {
-  if (!tabId) {
-    return { preview: selectionBuffer ? `Selection:\n${selectionBuffer}` : 'No active tab.' };
-  }
-
-  const fallback = selectionBuffer ? `Selection:\n${selectionBuffer}` : 'Unable to extract page content.';
-
-  const messageResult = await requestPageContentFromContentScript(tabId);
-  if (messageResult?.excerpt) {
-    return { preview: `Page: ${messageResult.title}\n${messageResult.excerpt}` };
-  }
-
-  try {
-    const [result] = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: () => {
-        const title = document.title || 'Current page';
-        const article = document.querySelector('article');
-        const main = document.querySelector('main');
-        const text = article?.textContent || main?.textContent || document.body?.innerText || '';
-        return { title, excerpt: text.slice(0, 2000) };
-      }
-    });
-    if (!result?.result) return { preview: fallback };
-    const { title, excerpt } = result.result as { title: string; excerpt: string };
-    return { preview: `Page: ${title}\n${excerpt}` };
-  } catch (error) {
-    console.warn('[iFocal] collectPagePreview failed', error);
-    return { preview: fallback };
-  }
-}
-
-async function requestPageContentFromContentScript(tabId: number): Promise<{ title: string; excerpt: string } | null> {
-  return new Promise((resolve) => {
-    chrome.tabs.sendMessage(tabId, { type: 'get-page-content' }, (response) => {
-      const err = chrome.runtime.lastError;
-      if (err) {
-        resolve(null);
-        return;
-      }
-      if (response && typeof response.title === 'string') {
-        resolve({ title: response.title, excerpt: String(response.excerpt || '') });
-      } else {
-        resolve(null);
-      }
-    });
-  });
-}
+// 已移除：bootstrap / 页面内容采集相关函数
 
 // 非流式：已移除 handleStreamRequest
 
@@ -256,7 +122,8 @@ function extractJsonArray(raw: string): any[] {
 function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms)); }
 
 // 自适应限流（B3）：命中 429 时下调并发/QPS，30s 后恢复
-let baseRate = { qps: 2, qpm: 120, maxConcurrent: 1 };
+import { DEFAULT_RATE } from '@/shared/app-config';
+let baseRate = { ...DEFAULT_RATE };
 let degradedUntil = 0;
 let restoreTimer: any = null;
 function applyRate(qps: number, qpm: number, maxConcurrent: number) {
@@ -309,80 +176,7 @@ async function withBackoff<T>(fn: () => Promise<T>, opts?: { timeoutMs?: number 
   }
 }
 
-function buildBatchPrompt(items: any[], targetLang: string, policy?: any, glossary?: any): string {
-  const rules: string[] = [];
-  rules.push('只输出 JSON 数组，不要输出任何解释、前后缀或额外文本。');
-  rules.push('数组元素格式严格为 {"id": string, "text": string}，顺序与输入一致。');
-  if (policy?.preservePlaceholders) rules.push('必须原样保留占位符（如 __VAR_1__、{name}、%s 等）。');
-  if (policy?.preserveNumbers) rules.push('必须保留数字与其格式。');
-  if (policy?.strict) {
-    rules.push('不要使用代码块围栏（例如 ```json ），也不要输出空行或额外字符。');
-    rules.push('如无法翻译某项，请原样返回该项的 text。');
-  }
-  const lines = [
-    '你是一个严格遵守输出格式的机器翻译引擎。',
-    `请将 items 中每条 text 翻译为 ${targetLang}。`,
-    `输出要求：${rules.join(' ')}`
-  ];
-  if (glossary && (Array.isArray(glossary.notTranslate) || glossary.terms)) {
-    lines.push('术语与不译词：');
-    if (Array.isArray(glossary.notTranslate) && glossary.notTranslate.length) lines.push(`不译词: ${glossary.notTranslate.join(', ')}`);
-    if (glossary.terms && Object.keys(glossary.terms).length) lines.push(`术语映射: ${JSON.stringify(glossary.terms)}`);
-  }
-  const head = lines.join('\n');
-  // 仅传必要字段，控制 tokens
-  const compactItems = items.map(it => ({ id: it.id, text: it.text }));
-  return `${head}\n\nitems:\n${JSON.stringify(compactItems, null, 2)}`;
-}
-
-async function handleTranslateBatch(request: any) {
-  const cfg = await readConfig(['channels', 'defaultModel', 'translateModel', 'activeModel', 'translateTargetLang', 'promptTemplates', 'glossaryNotTranslate', 'glossaryTerms', 'txStrictJson', 'txQps', 'txQpm', 'txMaxConcurrent', 'txUseGateway', 'txGatewayUrl']);
-  const pair = pickModelFromConfig('translate', request.channel && request.model ? { channel: request.channel, model: request.model } : null, cfg);
-  if (!pair) throw new Error('No available model');
-  const channel = ensureChannel(cfg.channels, pair.channel);
-  const targetLang = request.targetLang || cfg.translateTargetLang || 'zh-CN';
-  const items = Array.isArray(request.items) ? request.items : [];
-  const policyReq = request.policy || { jsonOnly: true, preservePlaceholders: true, preserveNumbers: true, glossaryMode: 'prefer' };
-  const policy = { ...policyReq, strict: typeof policyReq.strict === 'boolean' ? policyReq.strict : !!cfg.txStrictJson };
-  const glossary = request.glossary || { notTranslate: Array.isArray(cfg.glossaryNotTranslate) ? cfg.glossaryNotTranslate : [], terms: (cfg.glossaryTerms && typeof cfg.glossaryTerms === 'object') ? cfg.glossaryTerms : {} };
-  const timeoutMs = (request.constraints && request.constraints.timeoutMs) || 20000;
-
-  // D) 网关化：若配置开启且网关可用，优先走网关；失败则回退直连供应商
-  const useGateway = !!cfg.txUseGateway && typeof cfg.txGatewayUrl === 'string' && cfg.txGatewayUrl.trim().length > 0;
-  if (useGateway) {
-    try {
-      const gw = await withBackoff(() => callGatewayTranslateBatch(cfg.txGatewayUrl, { targetLang, items, policy, glossary }), { timeoutMs });
-      if (gw && Array.isArray(gw.translations)) return { ok: true, translations: gw.translations, channel: 'gateway', model: 'gateway' };
-    } catch (e) {
-      // fallthrough to direct vendor
-    }
-  }
-
-  const prompt = buildBatchPrompt(items, targetLang, policy, glossary);
-  const invoke = async () => {
-    if (channel.type === 'openai' || channel.type === 'openai-compatible') {
-      return callOpenAI(channel.apiUrl, channel.apiKey, pair.model, prompt);
-    }
-    if (channel.type === 'gemini') {
-      return callGemini(channel.apiUrl, channel.apiKey, pair.model, prompt);
-    }
-    return invokeModel(channel, pair.model, prompt);
-  };
-
-  const raw = await withBackoff(invoke, { timeoutMs });
-  const arr = extractJsonArray(String(raw));
-  if (!arr.length) throw new Error('Batch translation: empty or invalid JSON response');
-  return { ok: true, translations: arr, channel: pair.channel, model: pair.model };
-}
-
-async function callGatewayTranslateBatch(baseUrl: string, payload: any): Promise<{ translations: Array<{ id: string; text: string }> }> {
-  const url = (baseUrl || '').replace(/\/$/, '') + '/translate:batch';
-  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-  if (!res.ok) throw new Error(`Gateway HTTP ${res.status}`);
-  const json = await res.json();
-  if (!json || !Array.isArray(json.translations)) throw new Error('Gateway invalid response');
-  return { translations: json.translations };
-}
+// 已移除：全文翻译批量调用相关函数
 
 // ================== B) 并发与令牌桶限流（后台统一出口） ==================
 type RateConfig = { qps: number; qpm: number; maxConcurrent: number };
@@ -521,26 +315,7 @@ function pickModelFromConfig(task: string, requestPair: any, cfg: any) {
   return null;
 }
 
-function makePrompt(task: string, text: string, lang: string, templates: any) {
-  const t = templates && typeof templates === 'object' ? templates : {};
-  const target = (lang || 'zh-CN').trim();
-  const vars: Record<string, string> = { '{{targetLang}}': target, '{{text}}': (text || '').trim() };
-  let tpl = '';
-  if (task === 'translate') tpl = t.translate || 'Translate the following content to {{targetLang}}. Return the translation only.\n\n{{text}}';
-  else if (task === 'summarize') tpl = t.summarize || 'Summarize the following content in {{targetLang}} with concise bullet points.\n\n{{text}}';
-  else if (task === 'rewrite') tpl = t.rewrite || 'Rewrite the following content in {{targetLang}}, keeping the original meaning.\n\n{{text}}';
-  else if (task === 'polish') tpl = t.polish || 'Polish the following content in {{targetLang}} to improve fluency.\n\n{{text}}';
-  else tpl = 'Provide a helpful answer for the following content:\n\n{{text}}';
-  return Object.keys(vars).reduce((acc, key) => acc.split(key).join(vars[key]), tpl);
-}
-
-function makeMessage(model: string, prompt: string, systemText = 'You are a helpful assistant.') {
-  // 合并 system 和 user 内容，提升兼容性
-  return [{ role: 'user', content: `${systemText}\n\n${prompt}` }];
-  // const toRegex = (p: string) =>
-  //   new RegExp('^' + p.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
-  // return [{ role: 'system', content: systemText }, { role: 'user', content: prompt }];
-}
+import { makePrompt, makeMessage } from '@/shared/ai';
 
 // 非流式：移除 runWithStreaming 与流式供应商实现
 
@@ -670,20 +445,7 @@ async function pickExistingExtensionUrl(paths: string[]): Promise<string> {
   return chrome.runtime.getURL(paths[0]!);
 }
 
-function openOrFocusSidebarPopup() {
-  const url = chrome.runtime.getURL(SIDEBAR_PATH);
-  chrome.windows.getAll({ populate: true }, (wins) => {
-    const tabMatch = (t: chrome.tabs.Tab) => t.url === url;
-    const found = wins.find(w => (w.tabs || []).some(tabMatch));
-    if (found && found.id) {
-      chrome.windows.update(found.id, { focused: true });
-      const t = found.tabs?.find(tabMatch);
-      if (t?.id) chrome.tabs.update(t.id, { active: true });
-    } else {
-      chrome.windows.create({ url, type: 'popup', width: 420, height: 640, focused: true });
-    }
-  });
-}
+// 已移除：侧边栏弹窗入口
 
 
 

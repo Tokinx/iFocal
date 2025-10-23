@@ -126,13 +126,6 @@ const SHADOW_STYLE = `
 .ifocal-overlay:hover .copy-btn{opacity:1}
 .ifocal-dot{position:absolute;width:10px;height:10px;border-radius:50%;background:#0f172a;opacity:.9;cursor:pointer;box-shadow:0 0 0 2px rgba(255,255,255,.9);z-index:2147483647;pointer-events:auto}
 .hidden{display:none}
-
-/* 全文翻译进度气泡（固定右上角） */
-.ifocal-tx-progress{position:fixed;right:12px;top:12px;z-index:2147483647;background:rgba(15,23,42,0.88);color:#fff;font-size:12px;padding:8px 10px;border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,.25);display:flex;align-items:center;gap:8px}
-.ifocal-tx-progress .bar{position:relative;width:120px;height:6px;background:rgba(255,255,255,.2);border-radius:4px;overflow:hidden}
-.ifocal-tx-progress .bar .inner{position:absolute;left:0;top:0;bottom:0;background:#22c55e;width:0%}
-.ifocal-tx-progress .meta{opacity:.85}
-
 ${DOC_STYLE}
 `;
 
@@ -264,7 +257,46 @@ let currentScrollHandler: ((ev?: Event) => void) | null = null;
 // overlay 是否跟随选区移动（点圆点创建的 overlay 默认跟随；用户拖拽后取消跟随）
 let overlayAutoFollow = false;
 
-// 语言列表：默认回退 + 后台拉取覆盖
+function createOverlayAt(left: number, top: number) {
+  const shadow = ensureUiRoot();
+  const root = document.createElement('div');
+  root.className = 'ifocal-overlay';
+  root.style.left = `${Math.max(0, Math.round(left))}px`;
+  root.style.top = `${Math.max(0, Math.round(top))}px`;
+
+  const body = document.createElement('div');
+  body.className = 'ifocal-overlay-body';
+  (shadow as unknown as HTMLElement).appendChild(root);
+  root.appendChild(body);
+
+  let spinner: HTMLElement | null = null;
+  const overlay: OverlayHandle = {
+    root,
+    setText(text) {
+      body.textContent = text;
+    },
+    append(text) {
+      body.textContent = `${body.textContent || ''}${text}`;
+    },
+    setLoading(flag) {
+      if (flag) {
+        if (!spinner) {
+          spinner = document.createElement('div');
+          spinner.className = 'ifocal-loading';
+          body.innerHTML = '';
+          body.appendChild(spinner);
+        }
+      } else if (spinner?.parentNode) {
+        spinner.parentNode.removeChild(spinner);
+        spinner = null;
+      }
+    }
+  };
+  lastOverlay = overlay;
+  return overlay;
+}
+
+// 语言列表：默认回退（不再从后台获取）
 type Lang = { value: string; label: string };
 let SUPPORTED_LANGUAGES: Lang[] = [
   { value: 'zh-CN', label: '中文' },
@@ -275,13 +307,6 @@ let SUPPORTED_LANGUAGES: Lang[] = [
   { value: 'es', label: 'Español' },
   { value: 'de', label: 'Deutsch' }
 ];
-
-try {
-  chrome.runtime.sendMessage({ action: 'getSupportedLanguages' }, (resp: { ok?: boolean; data?: Lang[] } | undefined) => {
-    try { void chrome.runtime.lastError; } catch {}
-    if (resp && resp.ok && Array.isArray(resp.data)) SUPPORTED_LANGUAGES = resp.data as Lang[];
-  });
-} catch {}
 
 // 重载 
 function readHotkeys() {
@@ -330,7 +355,6 @@ try {
     }
     if (changes.wrapperStyleName) {
       const nextName = String(changes.wrapperStyleName.newValue || '').trim() || 'ifocal-target-style-dotted';
-      txWrapperStyleName = nextName;
       // 更新已存在的包裹结构
       try {
         const wrappers = document.querySelectorAll('font.ifocal-target-wrapper[data-tx-style]');
@@ -356,7 +380,7 @@ function findTextBlockElement(target: EventTarget | null): HTMLElement | null {
   while (current && current !== document.body) {
     if (INVALID_TAGS.has(current.tagName)) return null;
     const text = (current.innerText || '').trim();
-    if (BLOCK_TAGS.has(current.tagName) && text.length >= 6) return current;
+    if (text && BLOCK_TAGS.has(current.tagName)) return current;
     current = current.parentElement;
   }
   return element;
@@ -369,14 +393,6 @@ document.addEventListener('mouseover', (event) => {
 document.addEventListener('mouseout', () => {
   hoveredElement = null;
 });
-
-function scheduleSelectionSync(text: string) {
-  if (!chrome?.runtime?.sendMessage) return;
-  window.clearTimeout(selectionSyncTimer);
-  selectionSyncTimer = window.setTimeout(() => {
-    chrome.runtime.sendMessage({ source: 'ifocal', type: 'selection', text });
-  }, SELECTION_SYNC_DELAY);
-}
 
 document.addEventListener('mouseup', () => {
   const selection = window.getSelection();
@@ -392,7 +408,6 @@ document.addEventListener('mouseup', () => {
     hideSelectionDot();
     maybeDetachScrollListener();
   }
-  scheduleSelectionSync(selectedText);
 });
 
 document.addEventListener('selectionchange', () => {
@@ -407,7 +422,6 @@ document.addEventListener('selectionchange', () => {
       updateSelectionDotPosition();
     }, SELECTION_DOT_UPDATE_DELAY);
   }
-  scheduleSelectionSync(text);
 });
 
 // 触控端：在触摸结束时也做一次最终刷新
@@ -426,7 +440,6 @@ document.addEventListener('touchend', () => {
       hideSelectionDot();
       maybeDetachScrollListener();
     }
-    scheduleSelectionSync(selectedText);
   } catch {}
 }, true);
 
@@ -458,100 +471,37 @@ function getSelectionAnchorNode(): Node | null {
   try {
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0) return null;
-    return sel.getRangeAt(0).startContainer as Node;
-  } catch { return null; }
-}
-
-function isScrollable(el: HTMLElement): boolean {
-  const cs = getComputedStyle(el);
-  const overflowY = cs.overflowY;
-  const overflowX = cs.overflowX;
-  const canY = (overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') && el.scrollHeight > el.clientHeight;
-  const canX = (overflowX === 'auto' || overflowX === 'scroll' || overflowX === 'overlay') && el.scrollWidth > el.clientWidth;
-  return canY || canX;
-}
-
-function nearestScrollableAncestor(node: Node | null): HTMLElement | null {
-  let el: HTMLElement | null = (node as HTMLElement) && (node as HTMLElement).nodeType === 1 ? (node as HTMLElement) : (node as any)?.parentElement || null;
-  while (el) {
-    if (isScrollable(el)) return el;
-    el = el.parentElement;
+    const range = sel.getRangeAt(0);
+    return range.commonAncestorContainer || null;
+  } catch {
+    return null;
   }
-  return null;
-}
-
-function detachScrollListener() {
-  try { if (currentScrollContainer && currentScrollHandler) currentScrollContainer.removeEventListener('scroll', currentScrollHandler, true); } catch {}
-  currentScrollContainer = null;
-  currentScrollHandler = null;
-}
-
-function maybeDetachScrollListener() {
-  if (!selectionDot && !overlayAutoFollow) detachScrollListener();
 }
 
 function attachScrollListenerForSelection() {
-  const anchor = getSelectionAnchorNode();
-  const container = nearestScrollableAncestor(anchor);
-  if (container === currentScrollContainer) return;
-  detachScrollListener();
-  if (container) {
-    currentScrollContainer = container;
-    currentScrollHandler = () => updateSelectionDotPosition();
-    container.addEventListener('scroll', currentScrollHandler, { passive: true, capture: true } as any);
-  }
-}
-
-function createOverlayAt(x: number, y: number): OverlayHandle {
-  const shadow = ensureUiRoot();
-  if (lastOverlay?.root?.remove) lastOverlay.root.remove();
-  const root = document.createElement('div');
-  root.className = 'ifocal-overlay';
-  root.style.left = `${Math.max(8, Math.floor(x))}px`;
-  root.style.top = `${Math.max(8, Math.floor(y))}px`;
-
-  const body = document.createElement('div');
-  body.className = 'ifocal-overlay-body';
-  root.appendChild(body);
-
-  // Copy button: show only on overlay hover
-  const copyBtn = document.createElement('button');
-  copyBtn.className = 'copy-btn';
-  copyBtn.title = 'Copy';
-  copyBtn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
-  copyBtn.addEventListener('click', () => {
-    try { navigator.clipboard.writeText(body.textContent || ''); } catch {}
-  });
-  body.appendChild(copyBtn);
-
-  (shadow as unknown as HTMLElement).appendChild(root);
-
-  let spinner: HTMLElement | null = null;
-  const overlay: OverlayHandle = {
-    root,
-    setText(text) {
-      body.textContent = text;
-    },
-    append(text) {
-      body.textContent = `${body.textContent || ''}${text}`;
-    },
-    setLoading(flag) {
-      if (flag) {
-        if (!spinner) {
-          spinner = document.createElement('div');
-          spinner.className = 'ifocal-loading';
-          body.innerHTML = '';
-          body.appendChild(spinner);
-        }
-      } else if (spinner?.parentNode) {
-        spinner.parentNode.removeChild(spinner);
-        spinner = null;
-      }
+  try {
+    const anchor = getSelectionAnchorNode();
+    const el = anchor instanceof HTMLElement ? anchor : (anchor ? (anchor.parentElement as HTMLElement | null) : null);
+    const container = el ? (el.closest('.overflow-auto, .overflow-scroll') as HTMLElement | null) : null;
+    const target = container || document;
+    const listener = () => updateSelectionDotPosition();
+    if (currentScrollContainer && currentScrollHandler) {
+      try { currentScrollContainer.removeEventListener('scroll', currentScrollHandler as any, true); } catch {}
     }
-  };
-
-  lastOverlay = overlay;
-  return overlay;
+    if (container) {
+      container.addEventListener('scroll', listener, true);
+      currentScrollContainer = container; currentScrollHandler = listener;
+    } else {
+      // fallback: 监听 document 元素滚动
+      document.addEventListener('scroll', listener, true);
+      currentScrollContainer = document.documentElement as any; currentScrollHandler = listener as any;
+    }
+  } catch {}
+}
+function maybeDetachScrollListener() {
+  if (!currentScrollContainer || !currentScrollHandler) return;
+  try { currentScrollContainer.removeEventListener('scroll', currentScrollHandler as any, true); } catch {}
+  currentScrollContainer = null; currentScrollHandler = null;
 }
 
 function showSelectionDot(rect: DOMRect) {
@@ -743,7 +693,7 @@ function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair
     item.innerHTML = `<div class="title">${p.model}</div><div class="sub">${p.channel}</div>`;
     item.addEventListener('click', (ev) => {
       ev.stopPropagation(); ev.preventDefault();
-      modelBtn.textContent = p.model;
+      modelBtn.textContent = `${p.model}`;
       startStreamForOverlay(overlay, 'translate', text, p, lang);
       modelMenu.classList.add('hidden');
     });
@@ -891,646 +841,3 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   return undefined;
 });
-
-// ============ 全文翻译编排器（MVP） ============
-// 采集→ID→分桶→限流→批量→调用后台 translateBatch→按 id 回填
-// 说明：为降低对现有页面影响，使用 <span class="ifocal-tx notranslate" data-tx-id> 包裹文本节点，保持 inline 流水布局；
-// 并提供右上角进度气泡。此为 MVP，可后续接入缓存与 MutationObserver 复播。
-
-type TxItem = { id: string; text: string; bucket: 'short' | 'medium' | 'long' };
-type TxMap = Map<string, { text: string; nodes: HTMLElement[]; done?: boolean }>;
-
-let txTargetLang = 'zh-CN';
-// 已移除 wrapperStyle（外层内联样式）支持
-let txWrapperStyleName = 'ifocal-target-style-dotted';
-let txOnlyShort = false;
-let txDisableCache = false;
-let txMap: TxMap = new Map();
-let qShort: string[] = []; // id 列表
-let qMedium: string[] = [];
-let qLong: string[] = [];
-let qStrictShort: string[] = [];
-let qStrictMedium: string[] = [];
-let qStrictLong: string[] = [];
-let inFlight = 0;
-let completed = 0;
-let total = 0;
-let progressEl: HTMLElement | null = null;
-let loopRunning = false;
-// 调用计数（本轮）：
-let callsShort = 0, callsMedium = 0, callsLong = 0;
-let strictShort = 0, strictMedium = 0, strictLong = 0;
-// B) 指标：命中缓存与时延
-let cacheHits = 0;
-let startTs = 0;
-let firstReturnTs = 0;
-
-function djb2Hash(str: string): string {
-  let h = 5381;
-  for (let i = 0; i < str.length; i++) h = ((h << 5) + h) + str.charCodeAt(i);
-  // 转为无符号并以 8 字节十六进制表示
-  return (h >>> 0).toString(16);
-}
-
-function normalizeText(s: string): string {
-  return s.replace(/[\t\n\r ]+/g, ' ').trim();
-}
-
-function computeId(text: string, targetLang: string): string {
-  const norm = normalizeText(text);
-  return `tx_${targetLang}_${djb2Hash(norm)}`;
-}
-
-function isInOurUi(node: Node): boolean {
-  const el = node instanceof HTMLElement ? node : (node.parentElement as HTMLElement | null);
-  if (!el) return false;
-  if (el.closest('#ifocal-host')) return true; // Shadow 宿主
-  // 跳过我们插入的 wrapper 及其任何后代
-  try { if ((el as Element).closest && (el as Element).closest('font.ifocal-target-wrapper, .ifocal-target-wrapper')) return true; } catch {}
-  if (el.classList && (el.classList.contains('ifocal-target-wrapper') || el.classList.contains('ifocal-tx'))) return true;
-  return false;
-}
-
-function isVisibleElement(el: HTMLElement): boolean {
-  const style = window.getComputedStyle(el);
-  if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
-  const rect = el.getBoundingClientRect();
-  if (rect.width < 1 && rect.height < 1) return false;
-  return true;
-}
-
-const SKIP_TAGS = new Set([
-  'SCRIPT','STYLE','NOSCRIPT','TEXTAREA','INPUT','SELECT','OPTION',
-  'CODE','PRE','KBD','SAMP','VAR','TT',
-  'CANVAS','SVG','MATH'
-]);
-// 块级段落选择器：将其内部 strong/em/i/b/span 等行内文本视为一个整体翻译单元
-const BLOCK_SELECTOR = 'p,li,h1,h2,h3,h4,h5,h6,dt,dd,figcaption,caption';
-
-function processedBlockAncestor(node: Node): HTMLElement | null {
-  try {
-    const el = (node as any).parentElement as HTMLElement | null;
-    if (!el) return null;
-    const block = el.closest(BLOCK_SELECTOR) as HTMLElement | null;
-    if (block && block.hasAttribute('data-tx-block-id')) return block;
-    return null;
-  } catch { return null; }
-}
-
-function wrapBlockElement(blockEl: HTMLElement, id: string): HTMLElement {
-  ensureDocLoadingStyle();
-  const wrapper = sharedCreateWrapper(id, txTargetLang);
-  try { wrapper.setAttribute('data-tx-style', txWrapperStyleName); } catch {}
-  try { blockEl.setAttribute('data-tx-block-id', id); } catch {}
-  try { blockEl.setAttribute('aria-busy', 'true'); } catch {}
-  try { blockEl.appendChild(wrapper); } catch {}
-  return wrapper;
-}
-
-function wrapTextNode(node: Text, id: string): HTMLElement | null {
-  const parent = node.parentElement;
-  if (!parent || SKIP_TAGS.has(parent.tagName)) return null;
-  // 跳过隐藏或我们自身 UI
-  if (!isVisibleElement(parent) || isInOurUi(parent)) return null;
-  const text = node.nodeValue || '';
-  // 使用共享模块创建一致的包裹样式
-  ensureDocLoadingStyle();
-  const wrapper = sharedCreateWrapper(id, txTargetLang);
-  try { wrapper.setAttribute('data-tx-style', txWrapperStyleName); } catch {}
-  // 不替换原文本节点，保持原文可见；将 wrapper 插入到其后，待翻译完成后通过换行策略分隔原文/译文
-  try { parent.insertBefore(wrapper, node.nextSibling); } catch { parent.appendChild(wrapper); }
-  return wrapper as unknown as HTMLElement;
-}
-
-function bucketOf(text: string): 'short' | 'medium' | 'long' {
-  const len = normalizeText(text).length;
-  if (len <= 30) return 'short';
-  if (len <= 120) return 'medium';
-  return 'long';
-}
-
-function collectTranslatableSpans(root: ParentNode): TxItem[] {
-  const items: TxItem[] = [];
-  const nodes: Text[] = [];
-  const filter = (node: Node): number => {
-    if (!(node instanceof Text)) return NodeFilter.FILTER_REJECT;
-    const val = (node.nodeValue || '').trim();
-    if (!val) return NodeFilter.FILTER_REJECT;
-    const parent = node.parentElement;
-    if (!parent) return NodeFilter.FILTER_REJECT;
-    if (SKIP_TAGS.has(parent.tagName)) return NodeFilter.FILTER_REJECT;
-    try { if ((parent as Element).closest && (parent as Element).closest('font.ifocal-target-wrapper, .ifocal-target-wrapper')) return NodeFilter.FILTER_REJECT; } catch {}
-    if (isInOurUi(node)) return NodeFilter.FILTER_REJECT;
-    if (!isVisibleElement(parent)) return NodeFilter.FILTER_REJECT;
-    return NodeFilter.FILTER_ACCEPT;
-  };
-  // 第一遍仅收集节点，避免遍历时修改 DOM 导致遗漏
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: filter } as any);
-  let n: Node | null;
-  let count = 0;
-  const MAX_SCAN = 10000;
-  while ((n = walker.nextNode())) {
-    nodes.push(n as Text);
-    if (++count >= MAX_SCAN) break;
-  }
-  // 第二遍逐个包裹与登记
-  for (const textNode of nodes) {
-    // 节点可能在前面操作中已被替换，需校验仍然存在且满足条件
-    if (!(textNode.parentElement)) continue;
-    if (filter(textNode) !== NodeFilter.FILTER_ACCEPT) continue;
-    // 若存在块级祖先，优先对块级元素作为整体创建一个翻译单元
-    try {
-      const block = (textNode.parentElement as HTMLElement).closest(BLOCK_SELECTOR) as HTMLElement | null;
-      if (block && !block.hasAttribute('data-tx-block-id')) {
-        const whole = (block.innerText || '').trim();
-        const normWhole = normalizeText(whole);
-        if (normWhole) {
-          const id = computeId(normWhole, txTargetLang);
-          const w = wrapBlockElement(block, id);
-          const exists = txMap.get(id);
-          if (exists) exists.nodes.push(w); else {
-            txMap.set(id, { text: normWhole, nodes: [w] });
-            const bucket = bucketOf(normWhole);
-            items.push({ id, text: normWhole, bucket });
-          }
-          // 块级已处理，跳过当前文本节点
-          continue;
-        }
-      }
-      // 若块级已处理，则跳过
-      if (block && block.hasAttribute('data-tx-block-id')) continue;
-    } catch {}
-    const t = textNode.nodeValue || '';
-    const norm = normalizeText(t);
-    if (!norm) continue;
-    const id = computeId(norm, txTargetLang);
-    const span = wrapTextNode(textNode, id);
-    if (!span) continue;
-    const exists = txMap.get(id);
-    if (exists) {
-      exists.nodes.push(span);
-    } else {
-      txMap.set(id, { text: norm, nodes: [span] });
-      const bucket = bucketOf(norm);
-      items.push({ id, text: norm, bucket });
-    }
-  }
-  return items;
-}
-
-function ensureProgressUi() {
-  const shadow = ensureUiRoot();
-  if (progressEl && document.contains(progressEl)) return progressEl;
-  const el = document.createElement('div');
-  el.className = 'ifocal-tx-progress';
-  el.setAttribute('role', 'status');
-  el.setAttribute('aria-live', 'polite');
-  el.innerHTML = `<div class="bar"><div class="inner" style="width:0%"></div></div><div class="meta">翻译中…</div>`;
-  (shadow as unknown as HTMLElement).appendChild(el);
-  progressEl = el;
-  return el;
-}
-
-function updateProgressUi() {
-  if (!progressEl) return;
-  const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
-  const inner = progressEl.querySelector('.inner') as HTMLElement | null;
-  const meta = progressEl.querySelector('.meta') as HTMLElement | null;
-  if (inner) inner.style.width = `${pct}%`;
-  if (meta) meta.textContent = `翻译中… ${completed}/${total}`;
-}
-
-function removeProgressUiSoon() {
-  window.setTimeout(() => { try { progressEl?.remove(); } catch {} progressEl = null; }, 1200);
-}
-
-function enqueue(items: TxItem[]) {
-  for (const it of items) {
-    if (it.bucket === 'short') qShort.push(it.id);
-    else if (it.bucket === 'medium') qMedium.push(it.id);
-    else qLong.push(it.id);
-  }
-}
-
-function takeBatch(ids: string[], maxItems: number, maxChars: number): string[] {
-  const picked: string[] = [];
-  let chars = 0;
-  while (ids.length && picked.length < maxItems) {
-    const id = ids[0]!;
-    const ent = txMap.get(id);
-    const len = ent ? ent.text.length : 0;
-    if (chars + len > maxChars && picked.length > 0) break;
-    ids.shift();
-    picked.push(id);
-    chars += len;
-  }
-  return picked;
-}
-
-function applyWrapperResult(node: HTMLElement, text: string, sourceText?: string) {
-  sharedApplyWrapperResult(node, text, txTargetLang, undefined, sourceText);
-}
-
-async function sendBatch(bucket: 'short'|'medium'|'long', ids: string[]) {
-  if (!ids.length) return;
-  inFlight++;
-  if (bucket === 'short') callsShort++; else if (bucket === 'medium') callsMedium++; else callsLong++;
-  updateProgressUi();
-  const items = ids.map(id => ({ id, text: txMap.get(id)!.text }));
-  try {
-    const resp = await new Promise<any>((resolve) => {
-      chrome.runtime.sendMessage({ action: 'translateBatch', targetLang: txTargetLang, items, policy: { jsonOnly: true, preservePlaceholders: true, preserveNumbers: true }, constraints: { timeoutMs: 20000 } }, resolve);
-    });
-    try { void chrome.runtime.lastError; } catch {}
-    if (resp && resp.ok && Array.isArray(resp.translations)) {
-      const gotIds = new Set<string>(resp.translations.map((t: any) => String(t.id)));
-      const missing = ids.filter(id => !gotIds.has(id));
-      for (const t of resp.translations) {
-        const entry = txMap.get(String(t.id));
-        const text = String(t.text || '');
-        if (!entry) continue;
-        if (!firstReturnTs) firstReturnTs = Date.now();
-        if (validateConsistency(entry.text, text)) {
-          entry.done = true;
-          if (!txDisableCache) cacheSet(String(t.id), text).catch(()=>{});
-          for (const node of entry.nodes) {
-            applyWrapperResult(node, text, entry.text);
-          }
-          completed++;
-        } else {
-          // 一致性校验失败：进入严格重试队列
-          console.warn(`${LOG_PREFIX} consistency check failed for`, t.id);
-          const b = bucketOf(entry.text);
-          if (b === 'short') qStrictShort.push(String(t.id)); else if (b === 'medium') qStrictMedium.push(String(t.id)); else qStrictLong.push(String(t.id));
-          scheduleStrictLoop();
-        }
-      }
-      // 未返回项进入严格重试队列
-      for (const id of missing) {
-        const e = txMap.get(id);
-        if (!e || e.done) continue;
-        const b = bucketOf(e.text);
-        if (b === 'short') qStrictShort.push(id); else if (b === 'medium') qStrictMedium.push(id); else qStrictLong.push(id);
-      }
-      updateProgressUi();
-      scheduleStrictLoop();
-    }
-  } catch (error) {
-    console.warn(`${LOG_PREFIX} batch failed: ${bucket}`, error);
-    // 整批失败：全部进入严格重试
-    for (const id of ids) {
-      const e = txMap.get(id); if (!e || e.done) continue;
-      const b = bucketOf(e.text);
-      if (b === 'short') qStrictShort.push(id); else if (b === 'medium') qStrictMedium.push(id); else qStrictLong.push(id);
-    }
-    scheduleStrictLoop();
-  } finally {
-    inFlight--;
-    if (completed >= total) removeProgressUiSoon();
-  }
-}
-
-async function scheduleLoop() {
-  if (!progressEl) ensureProgressUi();
-  if (loopRunning) return;
-  loopRunning = true;
-  // A) 分桶安全切片与上限保护：按 items/字符上限拆分为最少批次
-  const LIMIT = { short: { items: 80, chars: 4000 }, medium: { items: 40, chars: 3500 }, long: { items: 15, chars: 3000 } } as const;
-  const runBucket = async (b: 'short'|'medium'|'long', q: string[]) => {
-    while (completed < total && q.length) {
-      const picked = takeBatch(q, LIMIT[b].items, LIMIT[b].chars);
-      if (!picked.length) break;
-      await sendBatch(b, picked);
-      // 若有退避/限流，后台会节制；这里顺序等待可降低并发
-    }
-  };
-  try {
-    if (qShort.length) await runBucket('short', qShort);
-    if (qMedium.length) await runBucket('medium', qMedium);
-    if (qLong.length) await runBucket('long', qLong);
-  } finally {
-    loopRunning = false;
-  }
-}
-
-async function sendBatchStrict(bucket: 'short'|'medium'|'long', ids: string[]) {
-  if (!ids.length) return;
-  inFlight++;
-  if (bucket === 'short') strictShort++; else if (bucket === 'medium') strictMedium++; else strictLong++;
-  updateProgressUi();
-  const items = ids.map(id => ({ id, text: txMap.get(id)!.text }));
-  try {
-    const resp = await new Promise<any>((resolve) => {
-      chrome.runtime.sendMessage({ action: 'translateBatch', targetLang: txTargetLang, items, policy: { jsonOnly: true, preservePlaceholders: true, preserveNumbers: true, strict: true }, constraints: { timeoutMs: 25000 } }, resolve);
-    });
-    try { void chrome.runtime.lastError; } catch {}
-    if (resp && resp.ok && Array.isArray(resp.translations)) {
-      const gotIds = new Set<string>(resp.translations.map((t: any) => String(t.id)));
-      const missing = ids.filter(id => !gotIds.has(id));
-      for (const t of resp.translations) {
-        const entry = txMap.get(String(t.id));
-        const text = String(t.text || '');
-        if (!entry) continue;
-        if (!firstReturnTs) firstReturnTs = Date.now();
-        if (validateConsistency(entry.text, text)) {
-          entry.done = true;
-          if (!txDisableCache) cacheSet(String(t.id), text).catch(()=>{});
-          for (const node of entry.nodes) {
-            applyWrapperResult(node, text, entry.text);
-          }
-          completed++;
-        } else {
-          console.warn(`${LOG_PREFIX} strict consistency still failed for`, t.id);
-          // A2：占位符兜底修复（在严格模式仍失败时）
-          const fixed = fixPlaceholders(entry.text, text);
-          entry.done = true;
-          if (!txDisableCache) cacheSet(String(t.id), fixed).catch(()=>{});
-          for (const node of entry.nodes) {
-            applyWrapperResult(node, fixed, entry.text);
-          }
-          completed++;
-        }
-      }
-      // 严格模式仍缺失：保持为未完成，后续用户可重试
-      if (missing.length) console.warn(`${LOG_PREFIX} strict missing`, missing.length);
-      updateProgressUi();
-    }
-  } catch (error) {
-    console.warn(`${LOG_PREFIX} strict batch failed: ${bucket}`, error);
-  } finally {
-    inFlight--;
-    if (completed >= total) removeProgressUiSoon();
-  }
-}
-
-async function scheduleStrictLoop() {
-  const MAX = { short: { items: 30, chars: 1800 }, medium: { items: 20, chars: 1500 }, long: { items: 8, chars: 1200 } } as const;
-  let running = false;
-  const pickNext = (): 'short'|'medium'|'long' => {
-    if (qStrictShort.length) return 'short';
-    if (qStrictMedium.length) return 'medium';
-    if (qStrictLong.length) return 'long';
-    return 'short';
-  };
-  const tick = async () => {
-    if (completed >= total) { running = false; return; }
-    if (!qStrictShort.length && !qStrictMedium.length && !qStrictLong.length) { running = false; return; }
-    if (inFlight > 0) { window.setTimeout(tick, 250); return; }
-    const b = pickNext();
-    const ids = b === 'short' ? qStrictShort : (b === 'medium' ? qStrictMedium : qStrictLong);
-    const limit = MAX[b];
-    const picked = takeBatch(ids, limit.items, limit.chars);
-    await sendBatchStrict(b, picked);
-    window.setTimeout(tick, 150);
-  };
-  if (!running) { running = true; tick(); }
-}
-
-function fixPlaceholders(src: string, dst: string): string {
-  try {
-    const srcP = collectPlaceholders(src);
-    const dstP = collectPlaceholders(dst);
-    let out = dst;
-    for (const p of srcP) {
-      if (!dstP.includes(p)) {
-        // 简单策略：在末尾补齐缺失占位符，避免语义破坏
-        out = out + (out.endsWith('.') || out.endsWith('。') ? '' : ' ') + p;
-      }
-    }
-    // A3：数字/URL 兜底，避免关键数字和链接缺失
-    const sn = collectNumbers(src);
-    for (const n of sn) { if (!out.includes(n)) out = out + ' ' + n; }
-    const su = (src.match(/https?:\/\/[\w\-\.\/~%?#=&+]+/gi) || []);
-    for (const u of su) { if (!out.includes(u)) out = out + ' ' + u; }
-    return out;
-  } catch { return dst; }
-}
-
-async function startFullTranslate() {
-  // 读取目标语言
-  try {
-    const cfg: any = await new Promise(resolve => chrome.storage.sync.get(['translateTargetLang','txOnlyShort','txDisableCache','wrapperStyleName','targetStylePresets'], resolve));
-    txTargetLang = cfg?.translateTargetLang || 'zh-CN';
-    txOnlyShort = !!cfg?.txOnlyShort;
-    txDisableCache = !!cfg?.txDisableCache;
-    txWrapperStyleName = (cfg?.wrapperStyleName || 'ifocal-target-style-dotted').trim();
-    ensureTargetStylePresets(cfg?.targetStylePresets || []);
-  } catch {}
-  // 清理旧状态
-  txMap = new Map(); qShort = []; qMedium = []; qLong = []; inFlight = 0; completed = 0; total = 0;
-  callsShort = callsMedium = callsLong = 0; strictShort = strictMedium = strictLong = 0;
-  cacheHits = 0; startTs = Date.now(); firstReturnTs = 0;
-  // 采集
-  const items = collectTranslatableSpans(document.body || document.documentElement);
-  enqueue(txOnlyShort ? items.filter(i => i.bucket === 'short') : items);
-  total = items.length;
-  if (!total) return;
-  ensureProgressUi(); updateProgressUi();
-  // 先尝试缓存命中
-  await applyCacheForPending();
-  if (completed >= total) { removeProgressUiSoon(); return; }
-  ensureObserver();
-  scheduleLoop();
-}
-
-// 消息触发
-chrome.runtime.onMessage.addListener((message) => {
-  if (message && message.type === 'start-full-translate') {
-    startFullTranslate();
-    return;
-  }
-  if (message && message.type === 'get-tx-metrics') {
-    try { (message as any); } catch {}
-    const resp = {
-      ok: true,
-      completed, total, inFlight,
-      calls: { short: callsShort, medium: callsMedium, long: callsLong, strictShort, strictMedium, strictLong },
-      cacheHits,
-      ttfbMs: firstReturnTs ? (firstReturnTs - startTs) : 0,
-      totalMs: startTs ? (Date.now() - startTs) : 0
-    };
-    try { (window as any).chrome?.runtime?.sendMessage && chrome.runtime.sendMessage({ source: 'ifocal-content', type: 'tx-metrics', data: resp }); } catch {}
-    return resp as any;
-  }
-});
-
-// 控制台触发（便于调试）
-(window as any).iFocalStartFullTranslate = startFullTranslate;
-
-// ============ IndexedDB 缓存（简单 KV） ============
-let dbPromise: Promise<IDBDatabase> | null = null;
-function openDb(): Promise<IDBDatabase> {
-  if (dbPromise) return dbPromise;
-  dbPromise = new Promise((resolve, reject) => {
-    try {
-      const req = indexedDB.open('ifocal-tx', 1);
-      req.onupgradeneeded = () => {
-        const db = req.result;
-        if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
-      };
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    } catch (e) { reject(e); }
-  });
-  return dbPromise;
-}
-async function cacheGet(id: string): Promise<string | null> {
-  try {
-    const db = await openDb();
-    return await new Promise((resolve, reject) => {
-      const tx = db.transaction('kv', 'readonly');
-      const store = tx.objectStore('kv');
-      const req = store.get(id);
-      req.onsuccess = () => resolve((req.result as any) || null);
-      req.onerror = () => reject(req.error);
-    });
-  } catch { return null; }
-}
-async function cacheSet(id: string, value: string): Promise<void> {
-  try {
-    const db = await openDb();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction('kv', 'readwrite');
-      const store = tx.objectStore('kv');
-      const req = store.put(value, id);
-      req.onsuccess = () => resolve();
-      req.onerror = () => reject(req.error);
-    });
-  } catch {}
-}
-async function cacheGetMany(ids: string[]): Promise<Map<string,string>> {
-  const out = new Map<string,string>();
-  await Promise.all(ids.map(async (id) => { const v = await cacheGet(id); if (typeof v === 'string') out.set(id, v); }));
-  return out;
-}
-
-async function applyCacheForPending() {
-  if (txDisableCache) return;
-  const pendingIds = [...txMap.entries()].filter(([_, v]) => !v.done).map(([id]) => id);
-  if (!pendingIds.length) return;
-  const hit = await cacheGetMany(pendingIds);
-  if (!hit.size) return;
-  for (const [id, text] of hit.entries()) {
-    const entry = txMap.get(id);
-    if (!entry) continue;
-    entry.done = true;
-    for (const node of entry.nodes) applyWrapperResult(node, text, entry.text);
-    completed++;
-    cacheHits++;
-  }
-  updateProgressUi();
-}
-
-// ============ 一致性校验（占位符与数字） ============
-function collectPlaceholders(s: string): string[] {
-  const arr: string[] = [];
-  // __VAR_1__ 风格
-  (s.match(/__VAR_\d+__/g) || []).forEach(x => arr.push(x));
-  // {name} 风格（排除 JSON 花括号的可能，近似处理）
-  (s.match(/\{[a-zA-Z_][a-zA-Z0-9_]*\}/g) || []).forEach(x => arr.push(x));
-  // printf 风格
-  (s.match(/%[sdif]/g) || []).forEach(x => arr.push(x));
-  return arr;
-}
-function collectNumbers(s: string): string[] {
-  // 仅收集“纯数字/分隔符”的片段，忽略紧随字母的形式（如 20k, 1st, 2nd, 3rd），避免误判
-  const out: string[] = [];
-  const re = /(\d[\d,\.\u066B\u066C]*)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(s)) !== null) {
-    const token = m[1];
-    const next = s.charAt(m.index + token.length) || '';
-    if (/[A-Za-z]/.test(next)) continue; // 忽略 20k/1st 等
-    out.push(token);
-  }
-  return out;
-}
-function validateConsistency(src: string, dst: string): boolean {
-  try {
-    const sp = collectPlaceholders(src); const dp = collectPlaceholders(dst);
-    for (const p of sp) if (!dp.includes(p)) return false;
-    const sn = collectNumbers(src);
-    for (const n of sn) if (!dst.includes(n)) return false;
-    const su = (src.match(/https?:\/\/[\w\-\.\/~%?#=&+]+/gi) || []);
-    for (const u of su) if (!dst.includes(u)) return false;
-    return true;
-  } catch { return true; }
-}
-
-// ============ DOM 变更复播（MutationObserver） ============
-let mo: MutationObserver | null = null;
-function ensureObserver() {
-  if (mo) return;
-  mo = new MutationObserver((records) => {
-    let added = 0;
-    for (const r of records) {
-      if (r.type === 'childList') {
-        r.addedNodes.forEach((n) => {
-          if (n.nodeType === Node.TEXT_NODE) {
-            const t = (n.nodeValue || '').trim(); if (!t) return;
-            const p = (n as any).parentElement as HTMLElement | null;
-            try { if (p && (p.closest && p.closest('font.ifocal-target-wrapper, .ifocal-target-wrapper'))) return; } catch {}
-            // 若文本位于未处理的块级段落内，按块级处理
-            try {
-              const block = p ? p.closest(BLOCK_SELECTOR) as HTMLElement | null : null;
-              if (block && !block.hasAttribute('data-tx-block-id')) {
-                const whole = (block.innerText || '').trim();
-                const normWhole = normalizeText(whole);
-                if (normWhole) {
-                  const id = computeId(normWhole, txTargetLang);
-                  const w = wrapBlockElement(block, id);
-                  const exist = txMap.get(id);
-                  if (exist) exist.nodes.push(w); else {
-                    txMap.set(id, { text: normWhole, nodes: [w] });
-                    const b = bucketOf(normWhole);
-                    if (b === 'short') qShort.push(id); else if (b === 'medium') qMedium.push(id); else qLong.push(id);
-                    added++;
-                  }
-                  return;
-                }
-              }
-            } catch {}
-            // 否则按文本节点处理
-            const norm = normalizeText(t);
-            const id = computeId(norm, txTargetLang);
-            if (!txMap.has(id)) {
-              const span = wrapTextNode(n as Text, id);
-              if (span) {
-                txMap.set(id, { text: norm, nodes: [span] });
-                const b = bucketOf(norm);
-                if (b === 'short') qShort.push(id); else if (b === 'medium') qMedium.push(id); else qLong.push(id);
-                added++;
-              }
-            }
-          } else if (n.nodeType === Node.ELEMENT_NODE) {
-            try { if ((n as Element).closest && (n as Element).closest('font.ifocal-target-wrapper, .ifocal-target-wrapper')) return; } catch {}
-            const ni = collectTranslatableSpans(n as ParentNode);
-            if (ni.length) { enqueue(ni); added += ni.length; }
-          }
-        });
-      } else if (r.type === 'characterData') {
-        const node = r.target as Text;
-        if (!node || isInOurUi(node)) continue;
-        try { const p = node.parentElement as HTMLElement | null; if (p && (p.closest && p.closest('font.ifocal-target-wrapper, .ifocal-target-wrapper'))) continue; } catch {}
-        const t = (node.nodeValue || '').trim(); if (!t) continue;
-        const norm = normalizeText(t);
-        const id = computeId(norm, txTargetLang);
-        if (!txMap.has(id)) {
-          const span = wrapTextNode(node, id);
-          if (span) {
-            txMap.set(id, { text: norm, nodes: [span] });
-            const b = bucketOf(norm);
-            if (b === 'short') qShort.push(id); else if (b === 'medium') qMedium.push(id); else qLong.push(id);
-            added++;
-          }
-        }
-      }
-    }
-    if (added) {
-      total += added;
-      updateProgressUi();
-      applyCacheForPending().then(() => { scheduleLoop(); });
-    }
-  });
-  try { mo.observe(document.body || document.documentElement, { subtree: true, childList: true, characterData: true }); } catch {}
-}

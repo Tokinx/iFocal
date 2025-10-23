@@ -1,15 +1,12 @@
 # iFocal
 
-iFocal 是一款面向 Chrome / Edge 的 AI 助手插件，现已重构为 **Vue 3 + shadcn-vue** 架构，采用响应式布局与侧边栏聊天体验。插件可在当前网页内快速执行翻译、总结、改写等任务，并支持读取页面内容做进一步分析。
+ iFocal 是一款面向 Chrome / Edge 的 AI 助手插件，采用 **Vue 3 + shadcn-vue** 架构。插件聚焦三项能力：划词翻译、悬浮翻译与全局助手窗口，支持多通道模型与可配置的 Prompt 模板。
 
 ## 🌟 核心功能
 
-- ⏱️ **侧边栏聊天面板**：点击插件图标立即唤起 Side Panel，消息流布局 + 底部输入框，支持快捷发送。
-- 🎛️ **浮动控制区**：输入框上方提供模型、功能、目标语言快速切换，翻译模式自动显示目标语言选择。
-- 🌐 **网页内容洞察**：后台可采集当前页面/选中文本，在"网页分析"模式中组合用户问题给出摘要或结论。
+- 🖱️ **划词/悬浮翻译**：选中文本后在页面内以悬浮窗快速查看译文，或在原文附近插入译文（可选样式）。
+- 🪟 **全局助手窗口**：点击扩展图标打开独立助手窗口，支持翻译/总结/改写/润色等任务。
 - 🔌 **多渠道模型**：沿用原有渠道管理逻辑，可在设置页维护 OpenAI / Gemini / 自建兼容接口，并支持通道连通性测试。
-- ♻️ **兼容旧功能**：保留选中文本触发、快捷键打开全局窗口等能力，渐进迁移到全新的前端体系。
-- 💬 **会话历史**：支持会话历史记录，可随时切换和恢复之前的对话。
 - 🎨 **现代化UI**：基于 shadcn-vue 组件库，提供一致且美观的用户界面。
 
 ## 📁 项目结构
@@ -20,10 +17,9 @@ iFocal 是一款面向 Chrome / Edge 的 AI 助手插件，现已重构为 **Vue
 ├─ src/
 │  ├─ background/            MV3 Service Worker（TypeScript）
 │  ├─ content/               内容脚本（监听划词、响应页面请求）
-│  ├─ sidebar/               Vue 3 + shadcn-vue 聊天面板
-│  │  ├─ components/ui/      原子级 shadcn 风格组件（Button/Select/Textarea 等）
-│  │  ├─ App.vue             侧边栏根组件（会话流、快捷控制区）
-│  │  └─ plugins/ui.ts       注册通用 UI 组件
+│  ├─ sidebar/               共享 UI 注册与主题样式（供窗口与设置页复用）
+│  │  ├─ plugins/ui.ts       注册通用 UI 组件
+│  │  └─ styles.css          主题与工具类样式
 │  ├─ options/               设置页面（Vue 3 + shadcn-vue）
 │  ├─ window/                全局助手窗口
 │  ├─ shared/                共享配置和类型定义
@@ -56,14 +52,13 @@ iFocal 是一款面向 Chrome / Edge 的 AI 助手插件，现已重构为 **Vue
 4. 加载扩展
    - 打开 `chrome://extensions`（Edge 同理）并开启"开发者模式"。
    - 选择"加载已解压的扩展程序"，指向 `dist/` 目录。
-   - 扩展安装完成后，点击工具栏中的 iFocal 图标即可打开侧边栏。
+   - 扩展安装完成后，点击工具栏中的 iFocal 图标即可打开全局助手窗口。
 
 ### 基本使用
 
-1. **侧边栏聊天**：点击扩展图标打开侧边栏，直接输入问题或选择功能进行交互。
-2. **文本处理**：选中文本后右键选择"Use iFocal"，或使用快捷键 `Ctrl+Shift+O` 打开全局窗口。
-3. **多模型切换**：在设置页面添加不同的 AI 渠道（OpenAI、Gemini 等），并在聊天界面快速切换。
-4. **网页分析**：在侧边栏中输入问题，系统会自动结合当前页面内容提供回答。
+1. **全局助手**：点击扩展图标打开窗口，输入文本执行翻译/总结/改写/润色。
+2. **划词/悬浮翻译**：在网页中划词后点击浮动圆点，或按快捷键触发翻译结果。
+3. **多模型切换**：在设置页面添加不同的 AI 渠道（OpenAI、Gemini 等），并在窗口/设置页切换。
 
 ## ⚙️ 配置说明
 
@@ -117,8 +112,7 @@ iFocal 是一款面向 Chrome / Edge 的 AI 助手插件，现已重构为 **Vue
 
 ### 开发提示
 
-- 如需本地迭代，可运行 `npm run dev`，同时手动刷新扩展（Side Panel 页面支持热更新，但 Service Worker / Content Script 需要重新加载）。
-- 侧边栏依赖 Side Panel API（Chrome 114+），若在不支持的浏览器上使用会自动降级为日志提示。
+- 如需本地迭代，可运行 `npm run dev` 并在扩展管理页重新加载（Service Worker / Content Script 需重新加载）。
 - 使用 `npm run ui:add` 可添加新的 shadcn-vue 组件。
 
 ### 添加新组件
@@ -134,17 +128,10 @@ npm run ui:add:more
 npm run ui:add [组件名]
 ```
 
-## 🔄 迁移说明
-
-- **后台逻辑**：已将原 `background.js` 迁移至 TypeScript，并保留 `performAiAction` / `testChannel` / SSE 流式实现，新的 `stream-message` 协议用于侧边栏聊天。
-- **内容脚本**：新增 `selectionchange` 监听，向后台同步最新选中的文本，网页分析模式优先使用选区数据。
-- **UI 组件**：`src/sidebar/components/ui` 下的组件遵循 shadcn-vue 风格，可按需扩展更多控件（Popover、Command 等）。
-
 ## 📋 待完成功能
 
-1. 将旧 Options 页面迁移到 Vue 架构并整合到侧边栏内的设置视图。
-2. 为聊天消息管道补充流式 UI 展示（当前后台已保留 SSE，前端仍以完整响应呈现）。
-3. 根据实际 API Key 策略增加本地加密或安全提示。
+1. 根据实际 API Key 策略增加本地加密或安全提示。
+2. 增加更多第三方模型适配（按 provider 类型扩展）。
 
 ## 🔧 技术栈
 
@@ -158,7 +145,7 @@ npm run ui:add [组件名]
 ## 🌐 兼容性
 
 - Manifest V3
-- Chrome / Edge 114+（Side Panel API）
+- Chrome / Edge 114+
 - 需在浏览器中允许访问的站点：`<all_urls>`（用于抓取页面文本）
 
 ## 📄 许可证
