@@ -1,55 +1,55 @@
 <template>
   <div ref="rootEl" class="flex h-screen w-full flex-col bg-[#f3f3f3] text-foreground">
-    <!-- 顶部工具栏 -->
-    <header class="flex items-center gap-2 absolute left-0 right-0 p-3 z-10">
-      <Button variant="ghost" size="icon" class="h-8 w-8 shrink-0 rounded-full bg-white/60 backdrop-blur-md"
-        @click="historyOpen = true">
-        <Icon icon="ri:menu-line" class="h-5 w-5" />
-      </Button>
+    <ScrollArea ref="messagesContainer" class="ifocal-scroll-style flex-1 px-4">
+      <!-- 顶部工具栏 -->
+      <header class="flex items-center gap-2 absolute top-0 left-0 right-0 p-3 z-10">
+        <Button variant="ghost" size="icon" class="h-8 w-8 shrink-0 rounded-full bg-white/60 backdrop-blur-md"
+          @click="historyOpen = true">
+          <Icon icon="ri:menu-line" class="h-5 w-5" />
+        </Button>
 
-      <!-- 模型选择 Dropdown -->
-      <DropdownMenu>
-        <DropdownMenuTrigger as-child>
-          <Button variant="ghost" class="rounded-2xl justify-start truncate h-8 px-3 bg-white/60 backdrop-blur-md">
-            <span class="truncate text-sm">{{ currentModelName || 'GPT-5' }}</span>
-            <Icon icon="ri:arrow-down-s-line" class="h-8 w-8 shrink-0" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" class="w-56 rounded-2xl bg-white/60 backdrop-blur-md">
-          <template v-for="(group, channelName, groupIndex) in groupedModels" :key="channelName">
-            <DropdownMenuSeparator v-if="groupIndex" />
-            <DropdownMenuLabel>{{ channelName }}</DropdownMenuLabel>
-            <DropdownMenuItem v-for="model in group" :key="model.key" @click="selectModel(model.key)"
+        <!-- 模型选择 Dropdown -->
+        <DropdownMenu>
+          <DropdownMenuTrigger as-child>
+            <Button variant="ghost" class="rounded-2xl justify-start truncate h-8 px-3 bg-white/60 backdrop-blur-md">
+              <span class="truncate text-sm">{{ currentModelName || 'GPT-5' }}</span>
+              <Icon icon="ri:arrow-down-s-line" class="h-8 w-8 shrink-0" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" class="w-56 rounded-2xl bg-white/60 backdrop-blur-md">
+            <template v-for="(group, channelName, groupIndex) in groupedModels" :key="channelName">
+              <DropdownMenuSeparator v-if="groupIndex" />
+              <DropdownMenuLabel>{{ channelName }}</DropdownMenuLabel>
+              <DropdownMenuItem v-for="model in group" :key="model.key" @click="selectModel(model.key)"
+                class="rounded-xl cursor-pointer">
+                <span class="truncate">{{ model.model }}</span>
+                <Icon v-if="selectedPairKey === model.key" icon="ri:check-line" class="ml-auto h-4 w-4" />
+              </DropdownMenuItem>
+            </template>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <div class="flex-1"></div>
+
+        <!-- 语言选择 Dropdown -->
+        <DropdownMenu>
+          <DropdownMenuTrigger as-child>
+            <Button variant="ghost" class="rounded-2xl h-8 shrink-0 px-3 bg-white/60 backdrop-blur-md">
+              <span class="truncate text-sm">{{ currentLangLabel }}</span>
+              <Icon icon="ri:arrow-down-s-line" class="h-8 w-8 shrink-0" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" class="rounded-2xl bg-white/60 backdrop-blur-md">
+            <DropdownMenuItem v-for="lang in SUPPORTED_LANGUAGES" :key="lang.value" @click="selectLanguage(lang.value)"
               class="rounded-xl cursor-pointer">
-              <span class="truncate">{{ model.model }}</span>
-              <Icon v-if="selectedPairKey === model.key" icon="ri:check-line" class="ml-auto h-4 w-4" />
+              {{ lang.label }}
+              <Icon v-if="state.targetLang === lang.value" icon="ri:check-line" class="ml-auto h-4 w-4" />
             </DropdownMenuItem>
-          </template>
-        </DropdownMenuContent>
-      </DropdownMenu>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </header>
 
-      <div class="flex-1"></div>
-
-      <!-- 语言选择 Dropdown -->
-      <DropdownMenu>
-        <DropdownMenuTrigger as-child>
-          <Button variant="ghost" class="rounded-2xl h-8 shrink-0 px-3 bg-white/60 backdrop-blur-md">
-            <span class="truncate text-sm">{{ currentLangLabel }}</span>
-            <Icon icon="ri:arrow-down-s-line" class="h-8 w-8 shrink-0" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" class="rounded-2xl bg-white/60 backdrop-blur-md">
-          <DropdownMenuItem v-for="lang in SUPPORTED_LANGUAGES" :key="lang.value" @click="selectLanguage(lang.value)"
-            class="rounded-xl cursor-pointer">
-            {{ lang.label }}
-            <Icon v-if="state.targetLang === lang.value" icon="ri:check-line" class="ml-auto h-4 w-4" />
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </header>
-
-    <!-- 对话区域 -->
-    <main ref="messagesContainer" class="flex-1 overflow-y-auto px-4 pt-[60px] pb-[150px]">
+      <!-- 对话区域 -->
       <div class="mx-auto max-w-[50rem] space-y-6 ">
         <!-- 示例问题（仅在无对话时显示） -->
         <div v-if="!currentSession.messages.length && !sending" class="space-y-4 mx-auto w-[80%] pt-[38%]">
@@ -115,52 +115,61 @@
           </div>
         </div>
       </div>
-    </main>
 
-    <!-- 底部操作区 -->
-    <footer class="p-3 absolute left-0 right-0 bottom-0">
-      <div class="mx-auto max-w-3xl space-y-2">
-        <!-- 快捷操作按钮 -->
-        <div class="flex items-center gap-2">
-          <Button variant="ghost" size="sm" class="gap-1"
-            :class="['bg-white/60 backdrop-blur-sm rounded-2xl', { '!bg-slate-800/80 !text-white': state.task === 'translate' }]"
-            @click="changeTask('translate')">
-            <Icon icon="ri:translate" class="h-4 w-4" />
-            翻译
-          </Button>
-          <Button variant="ghost" size="sm" class="gap-1"
-            :class="['bg-white/60 backdrop-blur-sm rounded-2xl', { '!bg-slate-800/80 !text-white': state.task === 'chat' }]"
-            @click="changeTask('chat')">
-            <Icon icon="ri:chat-ai-line" class="h-4 w-4" />
-            聊天
-          </Button>
-          <Button variant="ghost" size="sm" class="gap-1"
-            :class="['bg-white/60 backdrop-blur-sm rounded-2xl', { '!bg-slate-800/80 !text-white': state.task === 'summarize' }]"
-            @click="changeTask('summarize')">
-            <Icon icon="ri:quill-pen-ai-line" class="h-4 w-4" />
-            总结
-          </Button>
+      <!-- 底部操作区 -->
+      <footer class="p-3 absolute left-0 right-0 bottom-0">
+        <div class="mx-auto max-w-3xl space-y-2">
+          <!-- 快捷操作按钮 -->
+          <div class="flex items-center gap-2">
+            <Button variant="ghost" size="sm" class="gap-1"
+              :class="['bg-white/60 backdrop-blur-sm rounded-2xl', { '!bg-slate-800/80 !text-white': state.task === 'translate' }]"
+              @click="changeTask('translate')">
+              <Icon icon="ri:translate" class="h-4 w-4" />
+              翻译
+            </Button>
+            <Button variant="ghost" size="sm" class="gap-1"
+              :class="['bg-white/60 backdrop-blur-sm rounded-2xl', { '!bg-slate-800/80 !text-white': state.task === 'chat' }]"
+              @click="changeTask('chat')">
+              <Icon icon="ri:chat-ai-line" class="h-4 w-4" />
+              聊天
+            </Button>
+            <Button variant="ghost" size="sm" class="gap-1"
+              :class="['bg-white/60 backdrop-blur-sm rounded-2xl', { '!bg-slate-800/80 !text-white': state.task === 'summarize' }]"
+              @click="changeTask('summarize')">
+              <Icon icon="ri:quill-pen-ai-line" class="h-4 w-4" />
+              总结
+            </Button>
 
-          <div class="flex-1"></div>
+            <div class="flex-1"></div>
 
-          <Button variant="ghost" size="icon" class="h-8 w-8 shrink-0 rounded-full bg-white/60 backdrop-blur-md"
-            @click="() => startNewChat(false)">
-            <Icon icon="ri:pencil-ai-2-line" class="h-5 w-5" />
-          </Button>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger as-child>
+                  <Button variant="ghost" size="icon" class="h-8 w-8 shrink-0 rounded-full bg-white/60 backdrop-blur-md"
+                    @click="() => startNewChat(false)">
+                    <Icon icon="ri:pencil-ai-2-line" class="h-5 w-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>新会话</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+
+          <!-- 输入框 -->
+          <div class="relative bg-white/60 backdrop-blur-md rounded-xl">
+            <Textarea v-model="state.text" :rows="3" placeholder="输入你想了解到内容" class="resize-none rounded-xl"
+              @keydown.enter.exact.prevent="handleSend()" />
+            <Button variant="ghost" size="icon"
+              class="absolute bottom-2 right-2 h-7 w-7 bg-slate/60 backdrop-blur-md rounded-xl !bg-slate-800 !text-white"
+              @click="handleSend()" v-show="state.text.trim() && !sending">
+              <Icon icon="ri:send-plane-2-fill" class="h-3 w-3" />
+            </Button>
+          </div>
         </div>
-
-        <!-- 输入框 -->
-        <div class="relative bg-white/60 backdrop-blur-md rounded-xl">
-          <Textarea v-model="state.text" :rows="3" placeholder="输入你想了解到内容" class="resize-none rounded-xl"
-            @keydown.enter.exact.prevent="handleSend()" />
-          <Button variant="ghost" size="icon"
-            class="absolute bottom-2 right-2 h-7 w-7 bg-slate/60 backdrop-blur-md rounded-xl !bg-slate-800 !text-white" @click="handleSend()"
-            v-show="state.text.trim() && !sending">
-            <Icon icon="ri:send-plane-2-fill" class="h-3 w-3" />
-          </Button>
-        </div>
-      </div>
-    </footer>
+      </footer>
+    </ScrollArea>
 
     <!-- 历史会话抽屉 -->
     <Sheet v-model:open="historyOpen">
@@ -225,6 +234,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Textarea } from '@/components/ui/textarea';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { SUPPORTED_LANGUAGES, SUPPORTED_TASKS, loadConfig, saveConfig } from '@/shared/config';
 
 type Pair = { channel: string; model: string };
@@ -246,7 +257,12 @@ interface Session {
 }
 
 const modelPairs = ref<{ key: string; channel: string; model: string }[]>([]);
-const selectedPairKey = ref<string>('');
+// 为每个任务类型独立存储模型选择
+const selectedModelByTask = ref<Record<string, string>>({
+  translate: '',
+  chat: '',
+  summarize: '',
+});
 const sending = ref(false);
 const rootEl = ref<HTMLElement | null>(null);
 const messagesContainer = ref<HTMLElement | null>(null);
@@ -280,6 +296,9 @@ const exampleQuestions = [
   '用更专业的语言改写',
 ];
 
+// 获取当前任务的选中模型
+const selectedPairKey = computed(() => selectedModelByTask.value[state.task] || '');
+
 const currentModelName = computed(() => {
   const cur = modelPairs.value.find(p => p.key === selectedPairKey.value);
   return cur ? cur.model : '';
@@ -306,7 +325,11 @@ const groupedModels = computed(() => {
 function scrollToBottom() {
   nextTick(() => {
     if (messagesContainer.value) {
-      messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
+      // ScrollArea 的滚动元素是其父元素
+      const scrollableEl = messagesContainer.value.parentElement;
+      if (scrollableEl) {
+        scrollableEl.scrollTop = scrollableEl.scrollHeight;
+      }
     }
   });
 }
@@ -496,20 +519,32 @@ async function loadModels() {
   const globalConfig = await loadConfig();
 
   const cfg: any = await new Promise(resolve => chrome.storage.sync.get(['channels', 'defaultModel', 'activeModel'], resolve));
+  const localData: any = await new Promise(resolve => chrome.storage.local.get(['selectedModelByTask'], resolve));
+
   const channels: Channel[] = Array.isArray(cfg.channels) ? cfg.channels : [];
   const pairs = channels.flatMap(ch => (ch.models || []).map(m => ({ key: keyOf({ channel: ch.name, model: m }), channel: ch.name, model: m })));
   modelPairs.value = pairs;
   state.targetLang = globalConfig.translateTargetLang;
 
-  // 不要从配置中读取 defaultTask，保持当前 task
-  // state.task = globalConfig.defaultTask as any;
-
-  const prefer: Pair | null = cfg.activeModel || cfg.defaultModel || null;
-  if (prefer) {
-    const k = keyOf(prefer);
-    if (pairs.some(p => p.key === k)) selectedPairKey.value = k;
+  // 加载每个任务的模型选择
+  if (localData.selectedModelByTask) {
+    selectedModelByTask.value = { ...selectedModelByTask.value, ...localData.selectedModelByTask };
   }
-  if (!selectedPairKey.value && pairs.length) selectedPairKey.value = pairs[0].key;
+
+  // 如果当前任务没有选择模型，使用默认值
+  if (!selectedModelByTask.value[state.task] && pairs.length) {
+    const prefer: Pair | null = cfg.activeModel || cfg.defaultModel || null;
+    if (prefer) {
+      const k = keyOf(prefer);
+      if (pairs.some(p => p.key === k)) {
+        selectedModelByTask.value[state.task] = k;
+      } else {
+        selectedModelByTask.value[state.task] = pairs[0].key;
+      }
+    } else {
+      selectedModelByTask.value[state.task] = pairs[0].key;
+    }
+  }
 }
 
 async function readClipboardAndRun() {
@@ -645,9 +680,13 @@ function changeTask(newTask: 'translate' | 'summarize' | 'rewrite' | 'polish' | 
 }
 
 function selectModel(key: string) {
-  selectedPairKey.value = key;
-  const pair = parseKey(key);
-  chrome.storage.sync.set({ activeModel: pair || null });
+  // 为当前任务保存模型选择
+  selectedModelByTask.value[state.task] = key;
+
+  // 保存到 storage
+  chrome.storage.local.set({
+    selectedModelByTask: selectedModelByTask.value
+  });
 }
 
 function selectLanguage(lang: string) {
@@ -687,6 +726,11 @@ onMounted(async () => {
     }
   });
 
+  // 监听窗口关闭事件，确保保存会话
+  window.addEventListener('beforeunload', () => {
+    saveSessions();
+  });
+
   // 初始加载后滚动到底部
   scrollToBottom();
 });
@@ -703,5 +747,12 @@ onMounted(async () => {
 
 .prose> :last-child {
   margin-bottom: 0;
+}
+</style>
+<style>
+.ifocal-scroll-style>div {
+  /* h-screen w-full rounded-[inherit] pt-[60px] pb-[150px] */
+  padding-top: 60px;
+  padding-bottom: 150px;
 }
 </style>
