@@ -159,7 +159,10 @@ async function saveBasics() {
       displayMode: config.value.displayMode,
       wrapperStyleName: wrapperStyleNameToSave,
       targetStylePresets: presetsToSave,
-      enableSelectionTranslation: config.value.enableSelectionTranslation
+      enableSelectionTranslation: config.value.enableSelectionTranslation,
+      maxSessionsCount: config.value.maxSessionsCount || 50,
+      enableContext: config.value.enableContext || false,
+      contextMessagesCount: config.value.contextMessagesCount || 5
     });
 
     toast.success('基础设置已保存');
@@ -652,6 +655,33 @@ onMounted(loadGlossary);
               </div>
               <div class="w-36">
                 <Input v-model="config.actionKey" placeholder="如 Alt" />
+              </div>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <label class="text-sm font-medium leading-none block mb-1">会话保存数量</label>
+                <p class="text-xs text-muted-foreground">全局助手最多保存的历史会话数量</p>
+              </div>
+              <div class="w-36">
+                <Select v-model="config.maxSessionsCount">
+                  <SelectTrigger>
+                    <SelectValue placeholder="选择数量" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem v-for="n in [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]" :key="n" :value="n">
+                      {{ n }} 个
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <label class="text-sm font-medium leading-none block mb-1">启用上下文</label>
+                <p class="text-xs text-muted-foreground">发送消息时包含最近的对话历史</p>
+              </div>
+              <div>
+                <Switch v-model="config.enableContext" />
               </div>
             </div>
           </div>

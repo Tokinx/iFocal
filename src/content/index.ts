@@ -7,6 +7,9 @@ const DOC_STYLE = `
 .ifocal-tx{display:inline;overflow-wrap:anywhere;word-break:break-word;hyphens:auto}
 @keyframes ifocal-spin{to{transform:rotate(360deg)}}
 .ifocal-loading{width:16px;height:16px;border:2px solid rgba(15,23,42,0.18);margin-left:5px;border-top-color:#0f172a;border-radius:50%;animation:ifocal-spin 1s linear infinite;display:inline-block;vertical-align:middle;line-height:1}
+@keyframes ifocal-shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
+.ifocal-skeleton-line{height:12px;border-radius:6px;margin:10px 0;background:linear-gradient(90deg, rgba(15,23,42,0.08) 25%, rgba(15,23,42,0.14) 37%, rgba(15,23,42,0.08) 63%);background-size:400% 100%;animation:ifocal-shimmer 1.2s ease-in-out infinite}
+.ifocal-skeleton-inline{display:inline-block;height:0.9em;margin:0 6px;vertical-align:middle;width:7em;border-radius:0.3em;background:linear-gradient(90deg, rgba(15,23,42,0.10) 25%, rgba(15,23,42,0.18) 37%, rgba(15,23,42,0.10) 63%);background-size:400% 100%;animation:ifocal-shimmer 1.2s ease-in-out infinite}
 `;
 
 // 复制共享 DOM 工具到内容脚本（避免 import 引发 ESM 报错）
@@ -58,9 +61,10 @@ function sharedCreateWrapper(id: string, targetLang: string): HTMLElement {
   wrapper.setAttribute('data-tx-id', id);
   try { wrapper.setAttribute('data-tx-done', '0'); } catch {}
   if (targetLang) wrapper.setAttribute('lang', targetLang);
-  const spin = document.createElement('div');
-  spin.className = 'ifocal-loading';
-  wrapper.appendChild(spin);
+  // Skeleton for inline waiting state
+  const sk = document.createElement('span');
+  sk.className = 'ifocal-skeleton-inline';
+  wrapper.appendChild(sk);
   return wrapper as unknown as HTMLElement;
 }
 function sharedApplyWrapperResult(wrapper: HTMLElement, text: string, targetLang?: string, _wrapperStyle?: string, sourceText?: string) {
@@ -281,13 +285,21 @@ function createOverlayAt(left: number, top: number) {
     setLoading(flag) {
       if (flag) {
         if (!spinner) {
-          spinner = document.createElement('div');
-          spinner.className = 'ifocal-loading';
           body.innerHTML = '';
-          body.appendChild(spinner);
+          const container = document.createElement('div');
+          // skeleton block: 3 lines with varied widths
+          const widths = ['70%','95%'];
+          widths.forEach(w => {
+            const line = document.createElement('div');
+            line.className = 'ifocal-skeleton-line';
+            line.style.width = w;
+            container.appendChild(line);
+          });
+          body.appendChild(container);
+          spinner = container;
         }
-      } else if (spinner?.parentNode) {
-        spinner.parentNode.removeChild(spinner);
+      } else if (spinner) {
+        body.innerHTML = '';
         spinner = null;
       }
     }
@@ -371,13 +383,39 @@ try {
   });
 } catch {}
 
+function isIfocalElement(target: EventTarget | Node | null): boolean {
+  try {
+    const n = target as any;
+    const el: HTMLElement | null = n instanceof HTMLElement ? n : (n?.parentElement || null);
+    if (!el) return false;
+    // inside our shadow host
+    if (uiHost && (el === uiHost || el.closest('#ifocal-host'))) return true;
+    // overlay/dot or wrappers in light DOM
+    if (el.closest('.ifocal-overlay')) return true;
+    if (el.closest('.ifocal-dot')) return true;
+    if (el.closest('font.ifocal-target-wrapper')) return true;
+    if (el.closest('font.ifocal-target-inline-wrapper')) return true;
+    if (el.closest('font.ifocal-target-block-wrapper')) return true;
+    if (el.closest('font.ifocal-target-inner')) return true;
+    // selection nodes within shadow root of our host
+    const root = (n?.getRootNode?.() || null) as any;
+    if (root && root instanceof ShadowRoot) {
+      const host = (root as ShadowRoot).host as HTMLElement | undefined;
+      if (host && host.id === 'ifocal-host') return true;
+    }
+  } catch {}
+  return false;
+}
+
 function findTextBlockElement(target: EventTarget | null): HTMLElement | null {
   const element = target instanceof HTMLElement ? target : null;
   if (!element) return null;
+  if (isIfocalElement(element)) return null;
   const BLOCK_TAGS = new Set(['P', 'DIV', 'ARTICLE', 'SECTION', 'LI', 'TD', 'A', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6']);
   const INVALID_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT']);
   let current: HTMLElement | null = element;
   while (current && current !== document.body) {
+    if (isIfocalElement(current)) return null;
     if (INVALID_TAGS.has(current.tagName)) return null;
     const text = (current.innerText || '').trim();
     if (text && BLOCK_TAGS.has(current.tagName)) return current;
@@ -394,9 +432,14 @@ document.addEventListener('mouseout', () => {
   hoveredElement = null;
 });
 
-document.addEventListener('mouseup', () => {
+document.addEventListener('mouseup', (ev) => {
   const selection = window.getSelection();
   const selectedText = selection ? selection.toString().trim() : '';
+  const anchor = getSelectionAnchorNode();
+  if (isIfocalElement(ev.target as any) || isIfocalElement(anchor)) {
+    hideSelectionDot();
+    return;
+  }
   if (selectedText) {
     lastSelectionText = selectedText;
     lastSelectionRect = getSelectionRect();
@@ -413,7 +456,8 @@ document.addEventListener('mouseup', () => {
 document.addEventListener('selectionchange', () => {
   const selection = window.getSelection();
   const text = selection ? selection.toString().trim() : '';
-  if (!text) {
+  const anchor = getSelectionAnchorNode();
+  if (!text || isIfocalElement(anchor)) {
     hideSelectionDot();
   } else {
     if (selectionUpdateTimer) window.clearTimeout(selectionUpdateTimer);
@@ -425,10 +469,15 @@ document.addEventListener('selectionchange', () => {
 });
 
 // 触控端：在触摸结束时也做一次最终刷新
-document.addEventListener('touchend', () => {
+document.addEventListener('touchend', (ev) => {
   try {
     const selection = window.getSelection();
     const selectedText = selection ? selection.toString().trim() : '';
+    const anchor = getSelectionAnchorNode();
+    if (isIfocalElement(ev.target as any) || isIfocalElement(anchor)) {
+      hideSelectionDot();
+      return;
+    }
     if (selectedText) {
       lastSelectionText = selectedText;
       lastSelectionRect = getSelectionRect();
@@ -461,6 +510,8 @@ function getSelectionRect(): DOMRect | null {
   const selection = window.getSelection();
   if (!selection || selection.rangeCount === 0) return null;
   const range = selection.getRangeAt(0);
+  const anchor = selection.anchorNode;
+  if (isIfocalElement(anchor)) return null;
   const rects = range.getClientRects();
   const last = rects && rects.length ? rects[rects.length - 1] : range.getBoundingClientRect();
   if (last && last.width >= 0 && last.height >= 0) return last as DOMRect;
@@ -481,6 +532,7 @@ function getSelectionAnchorNode(): Node | null {
 function attachScrollListenerForSelection() {
   try {
     const anchor = getSelectionAnchorNode();
+    if (isIfocalElement(anchor)) return;
     const el = anchor instanceof HTMLElement ? anchor : (anchor ? (anchor.parentElement as HTMLElement | null) : null);
     const container = el ? (el.closest('.overflow-auto, .overflow-scroll') as HTMLElement | null) : null;
     const target = container || document;

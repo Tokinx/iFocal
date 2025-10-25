@@ -13,7 +13,15 @@ export function makePrompt(task: string, text: string, lang: string, templates: 
   return Object.keys(vars).reduce((acc, key) => acc.split(key).join(vars[key]), tpl);
 }
 
-export function makeMessage(model: string, prompt: string, systemText = 'You are a helpful assistant.') {
+export function makeMessage(model: string, prompt: string, systemText = 'You are a helpful assistant.', context?: Array<{role: string, content: string}>) {
+  // 如果有上下文，构建多轮对话消息
+  if (context && Array.isArray(context) && context.length > 0) {
+    return [
+      { role: 'system', content: systemText },
+      ...context,
+      { role: 'user', content: prompt }
+    ];
+  }
   // 默认将 system 合并到 user 提高兼容性
   return [{ role: 'user', content: `${systemText}\n\n${prompt}` }];
 }

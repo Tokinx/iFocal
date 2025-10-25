@@ -87,7 +87,8 @@ async function handleLegacyAction(request: any) {
   const channel = ensureChannel(cfg.channels, pair.channel);
   const targetLang = request.targetLang || cfg.translateTargetLang || 'zh-CN';
   const prompt = makePrompt(request.task, request.text || '', targetLang, cfg.promptTemplates || {});
-  const resultText = await invokeModel(channel, pair.model, prompt);
+  const context = request.context || undefined;
+  const resultText = await invokeModel(channel, pair.model, prompt, context);
   return { ok: true, result: resultText, channel: pair.channel, model: pair.model };
 }
 
@@ -319,20 +320,20 @@ import { makePrompt, makeMessage } from '@/shared/ai';
 
 // 非流式：移除 runWithStreaming 与流式供应商实现
 
-async function invokeModel(channel: any, model: string, prompt: string) {
+async function invokeModel(channel: any, model: string, prompt: string, context?: Array<{role: string, content: string}>) {
   if (!channel?.apiKey) throw new Error('Channel is missing API key');
   if (channel.type === 'openai' || channel.type === 'openai-compatible') {
-    return callOpenAI(channel.apiUrl, channel.apiKey, model, prompt);
+    return callOpenAI(channel.apiUrl, channel.apiKey, model, prompt, context);
   }
   if (channel.type === 'gemini') {
-    return callGemini(channel.apiUrl, channel.apiKey, model, prompt);
+    return callGemini(channel.apiUrl, channel.apiKey, model, prompt, context);
   }
   throw new Error(`Unsupported channel type: ${channel.type}`);
 }
 
-async function callOpenAI(baseUrl: string, apiKey: string, model: string, prompt: string) {
+async function callOpenAI(baseUrl: string, apiKey: string, model: string, prompt: string, context?: Array<{role: string, content: string}>) {
   const url = joinBasePath(baseUrl || 'https://api.openai.com/v1', '/chat/completions');
-  const body = { model, messages: makeMessage(model, prompt), temperature: 0.2 };
+  const body = { model, messages: makeMessage(model, prompt, 'You are a helpful assistant.', context), temperature: 0.2 };
   return rateLimited(async () => {
     const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: JSON.stringify(body) });
     if (!res.ok) throw new Error(`OpenAI HTTP ${res.status}`);
@@ -343,10 +344,27 @@ async function callOpenAI(baseUrl: string, apiKey: string, model: string, prompt
   });
 }
 
-async function callGemini(baseUrl: string, apiKey: string, model: string, prompt: string) {
+async function callGemini(baseUrl: string, apiKey: string, model: string, prompt: string, context?: Array<{role: string, content: string}>) {
   const base = baseUrl || 'https://generativelanguage.googleapis.com/v1beta';
   const url = joinBasePath(base, `/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`);
-  const body = { contents: [{ parts: [{ text: prompt }] }] };
+
+  // 构建 Gemini 格式的消息内容
+  let contents;
+  if (context && Array.isArray(context) && context.length > 0) {
+    // 多轮对话：转换为 Gemini 的 contents 格式
+    contents = context.map(msg => ({
+      role: msg.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: msg.content }]
+    })).concat([{
+      role: 'user',
+      parts: [{ text: prompt }]
+    }]);
+  } else {
+    // 单轮对话
+    contents = [{ parts: [{ text: prompt }] }];
+  }
+
+  const body = { contents };
   return rateLimited(async () => {
     const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);

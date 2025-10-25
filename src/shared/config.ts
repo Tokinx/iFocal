@@ -23,21 +23,27 @@ export const SUPPORTED_TASKS = [
 export const DEFAULT_CONFIG = {
   // 语言设置
   translateTargetLang: 'zh-CN',
-  
+
   // 任务设置
   defaultTask: 'translate',
-  
+
   // 显示设置
   displayMode: 'insert' as 'insert' | 'overlay',
   // 划词：是否启用划词翻译（显示小圆点）
   enableSelectionTranslation: true,
 
-  
+
   // 快捷键设置
   actionKey: 'Alt',
-  
+
   // 其他设置
   autoPasteGlobalAssistant: false,
+
+  // 会话管理
+  maxSessionsCount: 50, // 最大会话保存数量
+  enableContext: false, // 启用上下文
+  contextMessagesCount: 5, // 上下文消息数量
+
   // 新增：译文样式名称（应用到译文包裹元素），默认点状下划线
   wrapperStyleName: 'ifocal-target-style-dotted',
   // 新增：样式预设列表（可在设置页选择与编辑）
@@ -75,6 +81,9 @@ export const CONFIG_KEYS = [
   'enableSelectionTranslation',
   'actionKey',
   'autoPasteGlobalAssistant',
+  'maxSessionsCount',
+  'enableContext',
+  'contextMessagesCount',
   'wrapperStyleName',
   'targetStylePresets',
   // 已移除全文翻译相关设置
