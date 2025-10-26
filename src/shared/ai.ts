@@ -6,9 +6,8 @@ export function makePrompt(task: string, text: string, lang: string, templates: 
   const vars: Record<string, string> = { '{{targetLang}}': target, '{{text}}': (text || '').trim() };
   let tpl = '';
   if (task === 'translate') tpl = t.translate || 'Translate the following content to {{targetLang}}. Return the translation only.\n\n{{text}}';
+  else if (task === 'chat') tpl = t.chat || 'Reply in {{targetLang}}:\n\n{{text}}';
   else if (task === 'summarize') tpl = t.summarize || 'Summarize the following content in {{targetLang}} with concise bullet points.\n\n{{text}}';
-  else if (task === 'rewrite') tpl = t.rewrite || 'Rewrite the following content in {{targetLang}}, keeping the original meaning.\n\n{{text}}';
-  else if (task === 'polish') tpl = t.polish || 'Polish the following content in {{targetLang}} to improve fluency.\n\n{{text}}';
   else tpl = 'Provide a helpful answer for the following content:\n\n{{text}}';
   return Object.keys(vars).reduce((acc, key) => acc.split(key).join(vars[key]), tpl);
 }

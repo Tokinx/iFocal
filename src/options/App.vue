@@ -9,7 +9,7 @@ import { SUPPORTED_LANGUAGES, SUPPORTED_TASKS, DEFAULT_CONFIG, loadConfig, saveC
 
 type ModelPair = { channel: string; model: string } | null;
 
-// 左侧导航：默认显示“通用设置”
+// 左侧导航：默认显示"通用设置"
 const nav = ref<'channels' | 'settings' | 'debug' | 'about'>('settings');
 
 const { channels, modelPairs, addForm, addChannel, testModel, initTestModels, editForm, saveEdit, removeChannel, restoreChannelsSnapshot } = useChannels();
@@ -26,7 +26,7 @@ const customCss = ref<string>('');
 const activeStyleName = computed(() => styleSelection.value === '__custom__' ? (parseStyleNameFromCss(customCss.value) || 'ifocal-target-style-custom') : styleSelection.value);
 const activePreviewCss = computed(() => {
   if (styleSelection.value === '__custom__') return (customCss.value || '').trim();
-  const list = (config.value as any).targetStylePresets || [];
+  const list = Array.isArray((config.value as any).targetStylePresets) ? (config.value as any).targetStylePresets : [];
   const found = list.find((p: any) => p && p.name === styleSelection.value);
   return (found?.css || '').trim();
 });
@@ -85,7 +85,7 @@ async function loadAll() {
     ensureOptionPresetStyles((config.value as any).targetStylePresets);
     // 若当前选择在预设中，预填其 CSS；否则给出自定义模板
     try {
-      const list = (config.value as any).targetStylePresets || [];
+      const list = Array.isArray((config.value as any).targetStylePresets) ? (config.value as any).targetStylePresets : [];
       const found = list.find((p: any) => p && p.name === styleSelection.value);
       if (found?.css) customCss.value = String(found.css);
       else customCss.value = `.ifocal-target-inline-wrapper.${styleSelection.value} .ifocal-target-inner,
@@ -137,7 +137,7 @@ async function saveBasics() {
     // 保存配置
     // 样式保存：选择预设或自定义
     let wrapperStyleNameToSave = activeStyleName.value;
-    let presetsToSave = (config.value as any).targetStylePresets || [];
+    let presetsToSave = Array.isArray((config.value as any).targetStylePresets) ? (config.value as any).targetStylePresets : [];
     if (styleSelection.value === '__custom__') {
       const name = parseStyleNameFromCss(customCss.value);
       if (!name) { toast.error('自定义 CSS 必须包含 ifocal-target-style-* 类名'); return; }
@@ -162,7 +162,9 @@ async function saveBasics() {
       enableSelectionTranslation: config.value.enableSelectionTranslation,
       maxSessionsCount: config.value.maxSessionsCount || 50,
       enableContext: config.value.enableContext || false,
-      contextMessagesCount: config.value.contextMessagesCount || 5
+      contextMessagesCount: config.value.contextMessagesCount || 5,
+      enableStreaming: config.value.enableStreaming || false,
+      reduceVisualEffects: config.value.reduceVisualEffects || false
     });
 
     toast.success('基础设置已保存');
@@ -174,7 +176,7 @@ async function saveBasics() {
 async function saveStyleOnly() {
   try {
     let wrapperStyleNameToSave = activeStyleName.value;
-    let presetsToSave = (config.value as any).targetStylePresets || [];
+    let presetsToSave = Array.isArray((config.value as any).targetStylePresets) ? (config.value as any).targetStylePresets : [];
     if (styleSelection.value === '__custom__') {
       const name = parseStyleNameFromCss(customCss.value);
       if (!name) { toast.error('自定义 CSS 必须包含 ifocal-target-style-* 类名'); return; }
@@ -234,7 +236,7 @@ function handleSaveChannelInline(idx: number) {
 // 助手（非流式输出）
 const assistantDraft = ref('');
 const assistantModelValue = ref('');
-const assistantTask = ref<'translate' | 'summarize' | 'rewrite' | 'polish'>('translate');
+const assistantTask = ref<'translate' | 'chat' | 'summarize'>('translate');
 const assistantResult = ref('');
 const assistantLoading = ref(false);
 let assistantPort: chrome.runtime.Port | null = null;
@@ -684,6 +686,17 @@ onMounted(loadGlossary);
                 <Switch v-model="config.enableContext" />
               </div>
             </div>
+
+            <!-- 减弱视觉效果 -->
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <label class="text-sm font-medium leading-none block mb-1">减弱视觉效果</label>
+                <p class="text-xs text-muted-foreground">关闭毛玻璃效果以提升性能</p>
+              </div>
+              <div>
+                <Switch v-model="config.reduceVisualEffects" />
+              </div>
+            </div>
           </div>
           <!-- 译文样式：左label右select，预览独占一行 -->
           <div class="space-y-3">
@@ -734,7 +747,7 @@ onMounted(loadGlossary);
             </Button>
           </div>
         </div>
-        <!-- Prompt 模板已移动至“其它设置” -->
+        <!-- Prompt 模板已移动至"其它设置" -->
       </section>
 
       <!-- 其它设置（原 调试 + 全文翻译） -->
@@ -761,9 +774,8 @@ onMounted(loadGlossary);
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="translate">翻译</SelectItem>
+                  <SelectItem value="chat">聊天</SelectItem>
                   <SelectItem value="summarize">总结</SelectItem>
-                  <SelectItem value="rewrite">改写</SelectItem>
-                  <SelectItem value="polish">润色</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -831,17 +843,14 @@ onMounted(loadGlossary);
                 :placeholder="defaultTemplates.translate" />
             </div>
             <div>
+              <Label class="mb-1 block">聊天模板</Label>
+              <Textarea v-model="promptTemplates.chat" class="min-h-28"
+                :placeholder="defaultTemplates.chat" />
+            </div>
+            <div>
               <Label class="mb-1 block">总结模板</Label>
               <Textarea v-model="promptTemplates.summarize" class="min-h-28"
                 :placeholder="defaultTemplates.summarize" />
-            </div>
-            <div>
-              <Label class="mb-1 block">改写模板</Label>
-              <Textarea v-model="promptTemplates.rewrite" class="min-h-28" :placeholder="defaultTemplates.rewrite" />
-            </div>
-            <div>
-              <Label class="mb-1 block">润色模板</Label>
-              <Textarea v-model="promptTemplates.polish" class="min-h-28" :placeholder="defaultTemplates.polish" />
             </div>
           </div>
           <div class="flex items-center gap-2">

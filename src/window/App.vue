@@ -3,7 +3,7 @@
     <ScrollArea ref="messagesContainer" class="ifocal-scroll-style flex-1 px-4">
       <!-- 顶部工具栏 -->
       <header class="flex items-center gap-2 absolute top-0 left-0 right-0 p-3 z-10">
-        <Button variant="ghost" size="icon" class="h-8 w-8 shrink-0 rounded-full bg-white/60 backdrop-blur-md"
+        <Button variant="ghost" size="icon" :class="['h-8 w-8 shrink-0 rounded-full', bgClass, blurClass]"
           @click="historyOpen = true">
           <Icon icon="ri:menu-line" class="h-5 w-5" />
         </Button>
@@ -11,21 +11,23 @@
         <!-- 模型选择 Dropdown -->
         <DropdownMenu>
           <DropdownMenuTrigger as-child>
-            <Button variant="ghost" class="rounded-2xl justify-start truncate h-8 px-3 bg-white/60 backdrop-blur-md">
+            <Button variant="ghost" :class="['rounded-2xl justify-start truncate h-8 px-3', bgClass, blurClass]">
               <span class="truncate text-sm">{{ currentModelName || 'GPT-5' }}</span>
               <Icon icon="ri:arrow-down-s-line" class="h-8 w-8 shrink-0" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" class="w-56 rounded-2xl bg-white/60 backdrop-blur-md">
-            <template v-for="(group, channelName, groupIndex) in groupedModels" :key="channelName">
-              <DropdownMenuSeparator v-if="groupIndex" />
-              <DropdownMenuLabel>{{ channelName }}</DropdownMenuLabel>
-              <DropdownMenuItem v-for="model in group" :key="model.key" @click="selectModel(model.key)"
-                class="rounded-xl cursor-pointer">
-                <span class="truncate">{{ model.model }}</span>
-                <Icon v-if="selectedPairKey === model.key" icon="ri:check-line" class="ml-auto h-4 w-4" />
-              </DropdownMenuItem>
-            </template>
+          <DropdownMenuContent align="start" :class="['w-56 rounded-2xl', bgClass, blurClass]">
+            <ScrollArea class="h-80">
+              <template v-for="(group, channelName, groupIndex) in groupedModels" :key="channelName">
+                <DropdownMenuSeparator v-if="groupIndex" />
+                <DropdownMenuLabel>{{ channelName }}</DropdownMenuLabel>
+                <DropdownMenuItem v-for="model in group" :key="model.key" @click="selectModel(model.key)"
+                  class="rounded-xl cursor-pointer">
+                  <span class="truncate">{{ model.model }}</span>
+                  <Icon v-if="selectedPairKey === model.key" icon="ri:check-line" class="ml-auto h-4 w-4" />
+                </DropdownMenuItem>
+              </template>
+            </ScrollArea>
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -34,12 +36,12 @@
         <!-- 语言选择 Dropdown -->
         <DropdownMenu>
           <DropdownMenuTrigger as-child>
-            <Button variant="ghost" class="rounded-2xl h-8 shrink-0 px-3 bg-white/60 backdrop-blur-md">
+            <Button variant="ghost" :class="['rounded-2xl h-8 shrink-0 px-3', bgClass, blurClass]">
               <span class="truncate text-sm">{{ currentLangLabel }}</span>
               <Icon icon="ri:arrow-down-s-line" class="h-8 w-8 shrink-0" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" class="rounded-2xl bg-white/60 backdrop-blur-md">
+          <DropdownMenuContent align="end" :class="['rounded-2xl', bgClass, blurClass]">
             <DropdownMenuItem v-for="lang in SUPPORTED_LANGUAGES" :key="lang.value" @click="selectLanguage(lang.value)"
               class="rounded-xl cursor-pointer">
               {{ lang.label }}
@@ -56,12 +58,6 @@
           <h2 class="text-center text-2xl font-medium text-muted-foreground">
             有什么可以帮忙的？
           </h2>
-          <!-- <div class="grid gap-2">
-            <button v-for="example in exampleQuestions" :key="example" @click="useExample(example)"
-              class="rounded-full border bg-card p-3 text-left text-sm hover:bg-accent transition-colors">
-              {{ example }}
-            </button>
-          </div> -->
         </div>
 
         <!-- 对话历史 -->
@@ -69,8 +65,9 @@
           <!-- 用户消息 -->
           <div v-if="message.role === 'user'" class="flex justify-end">
             <div class="group relative max-w-[80%]">
-              <div class="rounded-xl !rounded-tr-none bg-slate-800/80 px-4 py-3 text-primary-foreground">
-                {{ message.content }}
+              <div
+                class="rounded-xl !rounded-tr-none bg-zinc-200 px-4 py-3 text-primary-foreground prose prose-sm prose-invert max-w-none"
+                v-html="renderMarkdown(message.content)">
               </div>
               <!-- 重试按钮 - 左下角 -->
               <Button variant="ghost" size="icon"
@@ -82,9 +79,9 @@
           </div>
 
           <!-- AI 回复 -->
-          <div v-else class="w-full group">
+          <div v-else :ref="el => setAiMessageRef(el, idx)" class="w-full group">
             <div class="flex items-center justify-between">
-              <span class="text-xs font-medium text-muted-foreground">{{ currentModelName || 'Assistant' }}</span>
+              <span class="text-xs font-medium text-muted-foreground">{{ message.modelName || 'Assistant' }}</span>
               <!-- 复制按钮 -->
               <Button variant="ghost" size="icon"
                 class="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400"
@@ -95,15 +92,21 @@
 
             <div class="w-full">
               <div v-if="message.isError" class="text-red-600">{{ message.content }}</div>
-              <div v-else class="prose prose-sm max-w-none" v-html="renderMarkdown(message.content)"></div>
+              <div v-else-if="!sending && message.content" class="prose prose-sm max-w-none"
+                v-html="renderMarkdown(message.content)"></div>
+              <div v-else class="space-y-3">
+                <div class="h-3 w-2/3 rounded bg-muted-foreground/20 animate-pulse"></div>
+                <div class="h-3 w-full rounded bg-muted-foreground/20 animate-pulse"></div>
+                <div class="h-3 w-5/6 rounded bg-muted-foreground/20 animate-pulse"></div>
+              </div>
             </div>
           </div>
         </template>
 
-        <!-- 加载状态 -->
+        <!-- 加载状态（骨架屏） -->
         <div v-if="sending" class="w-full">
           <div class="mb-2">
-            <span class="text-xs font-medium text-muted-foreground">{{ currentModelName || 'AI' }}</span>
+            <span class="text-xs font-medium text-muted-foreground">{{ currentModelName || 'Assistant' }}</span>
           </div>
 
           <div class="w-full">
@@ -122,19 +125,19 @@
           <!-- 快捷操作按钮 -->
           <div class="flex items-center gap-2">
             <Button variant="ghost" size="sm" class="gap-1"
-              :class="['bg-white/60 backdrop-blur-sm rounded-2xl', { '!bg-slate-800/80 !text-white': state.task === 'translate' }]"
+              :class="[bgClass, 'rounded-2xl', blurClassSm, { '!bg-slate-800/80 !text-white': state.task === 'translate' }]"
               @click="changeTask('translate')">
               <Icon icon="ri:translate" class="h-4 w-4" />
               翻译
             </Button>
             <Button variant="ghost" size="sm" class="gap-1"
-              :class="['bg-white/60 backdrop-blur-sm rounded-2xl', { '!bg-slate-800/80 !text-white': state.task === 'chat' }]"
+              :class="[bgClass, 'rounded-2xl', blurClassSm, { '!bg-slate-800/80 !text-white': state.task === 'chat' }]"
               @click="changeTask('chat')">
               <Icon icon="ri:chat-ai-line" class="h-4 w-4" />
               聊天
             </Button>
             <Button variant="ghost" size="sm" class="gap-1"
-              :class="['bg-white/60 backdrop-blur-sm rounded-2xl', { '!bg-slate-800/80 !text-white': state.task === 'summarize' }]"
+              :class="[bgClass, 'rounded-2xl', blurClassSm, { '!bg-slate-800/80 !text-white': state.task === 'summarize' }]"
               @click="changeTask('summarize')">
               <Icon icon="ri:quill-pen-ai-line" class="h-4 w-4" />
               总结
@@ -145,7 +148,7 @@
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger as-child>
-                  <Button variant="ghost" size="icon" class="h-8 w-8 shrink-0 rounded-full bg-white/60 backdrop-blur-md"
+                  <Button variant="ghost" size="icon" :class="['h-8 w-8 shrink-0 rounded-full', bgClass, blurClass]"
                     @click="() => startNewChat(false)">
                     <Icon icon="ri:pencil-ai-2-line" class="h-5 w-5" />
                   </Button>
@@ -158,11 +161,13 @@
           </div>
 
           <!-- 输入框 -->
-          <div class="relative bg-white/60 backdrop-blur-md rounded-xl">
+          <div :class="['relative rounded-xl', bgClass, blurClass]">
             <Textarea v-model="state.text" :rows="3" placeholder="输入你想了解到内容" class="resize-none rounded-xl"
               @keydown.enter.exact.prevent="handleSend()" />
+
+            <!-- 发送按钮（右下角） -->
             <Button variant="ghost" size="icon"
-              class="absolute bottom-2 right-2 h-7 w-7 bg-slate/60 backdrop-blur-md rounded-xl !bg-slate-800 !text-white"
+              :class="['absolute bottom-2 right-2 h-7 w-7 rounded-xl !bg-slate-800 !text-white', bgSlateClass, blurClass]"
               @click="handleSend()" v-show="state.text.trim() && !sending">
               <Icon icon="ri:send-plane-2-fill" class="h-3 w-3" />
             </Button>
@@ -173,15 +178,15 @@
 
     <!-- 历史会话抽屉 -->
     <Sheet v-model:open="historyOpen">
-      <SheetContent side="left" class="w-80">
+      <SheetContent side="left" class="w-80 flex flex-col">
         <SheetHeader>
-          <SheetTitle>历史会话</SheetTitle>
+          <SheetTitle>历史会话 ({{ sessions.length }})</SheetTitle>
           <SheetDescription>
             查看和管理您的对话历史
           </SheetDescription>
         </SheetHeader>
 
-        <div class="mt-6 space-y-2">
+        <div class="mt-6 space-y-2 flex-1 overflow-y-auto">
           <!-- 新建对话按钮 -->
           <Button variant="outline" class="w-full justify-start gap-2" @click="startNewChatFromDrawer">
             <Icon icon="ri:add-line" class="h-4 w-4" />
@@ -214,13 +219,24 @@
             暂无历史会话
           </div>
         </div>
+
+        <!-- 流式开关 -->
+        <div class="pt-4 border-t mt-4">
+          <div class="flex items-center justify-between">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm font-medium">流式响应</span>
+              <span class="text-xs text-muted-foreground">实时显示 AI 回复</span>
+            </div>
+            <Switch v-model="enableStreaming" @update:modelValue="toggleStreaming" />
+          </div>
+        </div>
       </SheetContent>
     </Sheet>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, nextTick } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, nextTick, type ComponentPublicInstance } from 'vue';
 import { marked } from 'marked';
 import { Icon } from '@iconify/vue';
 import { Button } from '@/components/ui/button';
@@ -236,6 +252,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Switch } from '@/components/ui/switch';
 import { SUPPORTED_LANGUAGES, SUPPORTED_TASKS, loadConfig, saveConfig } from '@/shared/config';
 
 type Pair = { channel: string; model: string };
@@ -245,6 +262,8 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   isError?: boolean;
+  modelName?: string; // 生成该消息的模型名称（仅 assistant 消息）
+  isStreaming?: boolean; // 标记是否正在流式显示
 }
 
 interface Session {
@@ -268,10 +287,14 @@ const rootEl = ref<HTMLElement | null>(null);
 const messagesContainer = ref<HTMLElement | null>(null);
 const historyOpen = ref(false);
 const isInitialLoad = ref(true);
+let saveSessionsTimer: ReturnType<typeof setTimeout> | null = null;
+const aiMessageElements = ref<HTMLElement[]>([]);
+const enableStreaming = ref(false);
+const reduceVisualEffects = ref(false); // 减弱视觉效果配置
 
 const state = reactive({
   text: '',
-  task: 'translate' as 'translate' | 'summarize' | 'rewrite' | 'polish' | 'chat',
+  task: '' as 'translate' | 'summarize' | 'rewrite' | 'polish' | 'chat',
   targetLang: 'zh-CN'
 });
 
@@ -290,11 +313,12 @@ const currentSession = computed(() => {
   };
 });
 
-const exampleQuestions = [
-  '帮我翻译这段文字',
-  '总结这篇文章的要点',
-  '用更专业的语言改写',
-];
+// 设置 AI 消息元素 ref
+function setAiMessageRef(el: Element | ComponentPublicInstance | null, idx: number) {
+  if (el && el instanceof HTMLElement) {
+    aiMessageElements.value[idx] = el;
+  }
+}
 
 // 获取当前任务的选中模型
 const selectedPairKey = computed(() => selectedModelByTask.value[state.task] || '');
@@ -321,26 +345,134 @@ const groupedModels = computed(() => {
   return groups;
 });
 
+// 动态类名：根据 reduceVisualEffects 决定是否应用 backdrop-blur 和背景透明
+const blurClass = computed(() => reduceVisualEffects.value ? '' : 'backdrop-blur-md');
+const blurClassSm = computed(() => reduceVisualEffects.value ? '' : 'backdrop-blur-sm');
+const bgClass = computed(() => reduceVisualEffects.value ? 'bg-white' : 'bg-white/60');
+const bgSlateClass = computed(() => reduceVisualEffects.value ? 'bg-slate-800' : 'bg-slate/60');
+
+// 获取可滚动元素
+function getScrollableElement(): HTMLElement | null {
+  if (!messagesContainer.value) return null;
+
+  // ScrollArea 的可滚动元素是 ScrollAreaViewport
+  // 尝试多种选择器以确保兼容性
+  const el = messagesContainer.value as any;
+
+  // 尝试 1: 通过 data-radix 属性查找
+  let scrollableEl = el.$el?.querySelector('[data-radix-scroll-area-viewport]');
+
+  // 尝试 2: 通过 class 查找
+  if (!scrollableEl) {
+    scrollableEl = el.$el?.querySelector('.scroll-area-viewport');
+  }
+
+  // 尝试 3: 查找所有 div，找到有 overflow 的
+  if (!scrollableEl && el.$el) {
+    const divs = el.$el.querySelectorAll('div');
+    for (const div of divs) {
+      const style = window.getComputedStyle(div);
+      if (style.overflow === 'auto' || style.overflow === 'scroll' ||
+        style.overflowY === 'auto' || style.overflowY === 'scroll') {
+        scrollableEl = div;
+        break;
+      }
+    }
+  }
+
+  return scrollableEl as HTMLElement | null;
+}
+
 // 滚动到底部
 function scrollToBottom() {
   nextTick(() => {
-    if (messagesContainer.value) {
-      // ScrollArea 的滚动元素是其父元素
-      const scrollableEl = messagesContainer.value.parentElement;
-      if (scrollableEl) {
-        scrollableEl.scrollTop = scrollableEl.scrollHeight;
-      }
+    const scrollableEl = getScrollableElement();
+    if (scrollableEl) {
+      scrollableEl.scrollTop = scrollableEl.scrollHeight;
+    } else {
+      console.warn('未找到可滚动元素');
     }
   });
 }
 
-// 监听消息变化，自动滚动到底部
+// 智能滚动：将指定元素滚动到距离顶部指定偏移量的位置
+function scrollToElement(element: HTMLElement, offsetTop = 60) {
+  nextTick(() => {
+    const scrollableEl = getScrollableElement();
+    if (scrollableEl && element) {
+      const elementTop = element.offsetTop;
+      const targetScrollTop = elementTop - offsetTop;
+      scrollableEl.scrollTop = targetScrollTop;
+    } else {
+      console.warn('未找到可滚动元素或目标元素');
+    }
+  });
+}
+
+// 监听消息变化，智能滚动
 watch(
   () => currentSession.value.messages.length,
-  () => {
-    scrollToBottom();
+  (newLength, oldLength) => {
+
+
+    // 只在消息增加时触发滚动
+    if (newLength > oldLength) {
+      const lastMessage = currentSession.value.messages[newLength - 1];
+
+      if (lastMessage?.role === 'user') {
+        // 用户消息：滚动到底部
+        scrollToBottom();
+      } else if (lastMessage?.role === 'assistant') {
+        // AI 消息：根据流式模式决定滚动方式
+
+        if (enableStreaming.value) {
+          // 流式模式：滚动到底部
+          scrollToBottom();
+        } else {
+          // 非流式模式：滚动到 AI 消息距离顶部 60px 的位置
+          // 使用延迟确保 DOM 已更新并且 ref 已绑定
+          setTimeout(() => {
+            // 找到最后一条 AI 消息的索引
+            let lastAiIndex = -1;
+            for (let i = currentSession.value.messages.length - 1; i >= 0; i--) {
+              if (currentSession.value.messages[i].role === 'assistant') {
+                lastAiIndex = i;
+                break;
+              }
+            }
+
+            const lastAiMessageEl = aiMessageElements.value[lastAiIndex];
+
+            if (lastAiMessageEl) {
+              scrollToElement(lastAiMessageEl, 60);
+            } else {
+              console.warn('lastAiMessageEl 为 null，回退到滚动底部');
+              scrollToBottom();
+            }
+          }, 100); // 延迟 100ms 确保 DOM 和 ref 都已更新
+        }
+      }
+    }
   }
 );
+
+// 监听会话变化，自动保存
+watch(
+  sessions,
+  () => {
+    // 使用 debounce 避免频繁保存
+    if (saveSessionsTimer) clearTimeout(saveSessionsTimer);
+    saveSessionsTimer = setTimeout(() => {
+      saveSessions();
+    }, 500);
+  },
+  { deep: true }
+);
+
+// 监听当前会话 ID 变化，自动保存
+watch(currentSessionId, () => {
+  saveSessions();
+});
 
 // 监听发送状态变化，自动滚动到底部
 watch(sending, () => {
@@ -348,7 +480,12 @@ watch(sending, () => {
 });
 
 function renderMarkdown(content: string) {
-  return marked(content);
+  // 使用标准 Markdown 渲染（不启用 breaks）
+  // 标准 Markdown 换行规则：行尾两个空格+\n 或 两个 \n（空行）才会换行
+  return marked(content, {
+    breaks: false, // 关闭 GFM 单换行支持，使用标准 Markdown 换行
+    gfm: true      // 启用 GitHub Flavored Markdown 其他特性（表格、删除线等）
+  });
 }
 
 function keyOf(pair: Pair) {
@@ -360,11 +497,6 @@ function parseKey(key: string): Pair | null {
   const [channel, model] = key.split(':');
   if (!channel || !model) return null;
   return { channel, model };
-}
-
-function useExample(example: string) {
-  state.text = example;
-  handleSend();
 }
 
 function formatDate(timestamp: number) {
@@ -397,13 +529,20 @@ function startNewChat(autoRun = false) {
     updatedAt: Date.now()
   };
   sessions.value.unshift(newSession);
+
+  // 限制会话数量（默认最多 50 个）
+  const maxCount = 50;
+  if (sessions.value.length > maxCount) {
+    sessions.value = sessions.value.slice(0, maxCount);
+  }
+
   currentSessionId.value = newSession.id;
   state.text = '';
   saveSessions();
 
-  // 如果需要自动运行，读取剪贴板并发送
+  // 如果需要自动运行，读取剪贴板到输入框（不自动发送）
   if (autoRun) {
-    readClipboardAndRun();
+    readClipboardToInput();
   }
 }
 
@@ -447,67 +586,70 @@ function deleteSession(sessionId: string) {
 
 function saveSessions() {
   try {
-    // 加载配置获取最大会话数量限制
-    loadConfig().then(config => {
-      const maxCount = config.maxSessionsCount || 50;
-
-      // 如果超出限制，删除最旧的会话
-      if (sessions.value.length > maxCount) {
-        sessions.value = sessions.value.slice(0, maxCount);
+    // 创建深拷贝以避免引用问题
+    const sessionsToSave = JSON.parse(JSON.stringify(sessions.value));
+    chrome.storage.local.set({
+      chatSessions: sessionsToSave,
+      currentSessionId: currentSessionId.value
+    }, () => {
+      if (chrome.runtime.lastError) {
+        console.error('保存会话失败:', chrome.runtime.lastError);
+      } else {
+        console.log('会话保存成功，已保存', sessionsToSave.length, '个会话');
       }
-
-      chrome.storage.local.set({
-        chatSessions: sessions.value,
-        currentSessionId: currentSessionId.value
-      });
-    }).catch(e => {
-      console.error('加载配置失败:', e);
-      // 使用默认值
-      const maxCount = 50;
-      if (sessions.value.length > maxCount) {
-        sessions.value = sessions.value.slice(0, maxCount);
-      }
-
-      chrome.storage.local.set({
-        chatSessions: sessions.value,
-        currentSessionId: currentSessionId.value
-      });
     });
   } catch (e) {
-    console.error('保存会话失败:', e);
+    console.error('保存会话异常:', e);
   }
 }
 
 async function loadSessions() {
   try {
+
+
     const data = await new Promise<any>(resolve => {
-      chrome.storage.local.get(['chatSessions', 'currentSessionId'], resolve);
+      chrome.storage.local.get(['chatSessions', 'currentSessionId', 'lastSelectedTask'], resolve);
     });
 
-    if (data.chatSessions && Array.isArray(data.chatSessions)) {
-      sessions.value = data.chatSessions;
+
+
+    // 恢复会话列表
+    if (data.chatSessions && Array.isArray(data.chatSessions) && data.chatSessions.length > 0) {
+      // 深拷贝以避免引用问题
+      sessions.value = JSON.parse(JSON.stringify(data.chatSessions));
+    } else {
     }
 
+    // 恢复上次选择的模式
+    if (data.lastSelectedTask) {
+      state.task = data.lastSelectedTask;
+    }
+
+    // 恢复当前会话
     if (data.currentSessionId && sessions.value.find(s => s.id === data.currentSessionId)) {
       currentSessionId.value = data.currentSessionId;
       const session = sessions.value.find(s => s.id === data.currentSessionId);
       if (session) {
+        // 使用会话的 task，而不是全局的 lastSelectedTask
         state.task = session.task;
       }
     } else if (sessions.value.length > 0) {
+      // 使用第一个会话
       currentSessionId.value = sessions.value[0].id;
       const session = sessions.value[0];
       state.task = session.task;
+
     } else {
-      // 创建默认会话并自动运行
+      // 创建默认会话并读取剪贴板到输入框
+
       startNewChat(true);
       return;
     }
 
-    // 如果是初始加载，自动读取剪贴板并运行
+    // 如果是初始加载，读取剪贴板到输入框（不自动发送）
     if (isInitialLoad.value) {
       isInitialLoad.value = false;
-      readClipboardAndRun();
+      readClipboardToInput();
     }
   } catch (e) {
     console.error('加载会话失败:', e);
@@ -531,31 +673,35 @@ async function loadModels() {
     selectedModelByTask.value = { ...selectedModelByTask.value, ...localData.selectedModelByTask };
   }
 
-  // 如果当前任务没有选择模型，使用默认值
-  if (!selectedModelByTask.value[state.task] && pairs.length) {
+  // 为所有任务类型预设默认模型（如果尚未设置）
+  if (pairs.length > 0) {
     const prefer: Pair | null = cfg.activeModel || cfg.defaultModel || null;
-    if (prefer) {
-      const k = keyOf(prefer);
-      if (pairs.some(p => p.key === k)) {
-        selectedModelByTask.value[state.task] = k;
-      } else {
-        selectedModelByTask.value[state.task] = pairs[0].key;
+    const defaultKey = prefer && pairs.some(p => p.key === keyOf(prefer)) ? keyOf(prefer) : pairs[0].key;
+
+    // 为每个任务类型设置默认模型（如果该任务还没有选择模型）
+    const allTasks: Array<'translate' | 'summarize' | 'rewrite' | 'polish' | 'chat'> = ['translate', 'chat', 'summarize', 'rewrite', 'polish'];
+    allTasks.forEach(task => {
+      if (!selectedModelByTask.value[task]) {
+        selectedModelByTask.value[task] = defaultKey;
       }
-    } else {
-      selectedModelByTask.value[state.task] = pairs[0].key;
-    }
+    });
+
+    // 保存到 storage
+    chrome.storage.local.set({
+      selectedModelByTask: selectedModelByTask.value
+    });
   }
 }
 
-async function readClipboardAndRun() {
+async function readClipboardToInput() {
   try {
     const text = await navigator.clipboard.readText();
     if (text && text.trim()) {
       state.text = text.trim();
-      handleSend();
+      // 不自动发送，只填充到输入框
     }
   } catch (e) {
-    console.warn('[iFocal] clipboard read failed', e);
+    console.warn('clipboard read failed', e);
   }
 }
 
@@ -587,11 +733,38 @@ async function handleSend() {
 
     session.updatedAt = Date.now();
     session.task = state.task;
+
+    // 立即触发响应式更新，让用户消息显示出来并滚动到底部
+    sessions.value = [...sessions.value];
   }
 
   state.text = '';
   sending.value = true;
 
+  // 确保骨架屏在可视区域内（在用户消息滚动后再次滚动）
+  await nextTick();
+  scrollToBottom();
+
+  // 保存当前选中的模型名称，避免回调时已切换模型
+  const currentModelNameSnapshot = currentModelName.value;
+
+  // 如果启用流式，使用流式调用
+  if (enableStreaming.value) {
+    await handleStreamingSend(text, pair, session, currentModelNameSnapshot, enableContext, contextCount);
+  } else {
+    await handleNonStreamingSend(text, pair, session, currentModelNameSnapshot, enableContext, contextCount);
+  }
+}
+
+// 非流式发送
+async function handleNonStreamingSend(
+  text: string,
+  pair: Pair | null,
+  session: Session | undefined,
+  currentModelNameSnapshot: string,
+  enableContext: boolean,
+  contextCount: number
+) {
   const msg: any = { action: 'performAiAction', task: state.task, text, targetLang: state.targetLang };
   if (pair) { msg.channel = pair.channel; msg.model = pair.model; }
 
@@ -615,7 +788,8 @@ async function handleSend() {
       const assistantMessage: Message = {
         role: 'assistant',
         content: '',
-        isError: false
+        isError: false,
+        modelName: currentModelNameSnapshot
       };
 
       if (!resp) {
@@ -631,7 +805,12 @@ async function handleSend() {
       if (session) {
         session.messages.push(assistantMessage);
         session.updatedAt = Date.now();
+
+        // 立即保存会话
         saveSessions();
+
+        // 触发响应式更新
+        sessions.value = [...sessions.value];
       }
     });
   } catch (e: any) {
@@ -640,13 +819,172 @@ async function handleSend() {
     const errorMessage: Message = {
       role: 'assistant',
       content: `错误：${String(e?.message || e || '调用失败')}`,
-      isError: true
+      isError: true,
+      modelName: currentModelNameSnapshot
+    };
+
+    if (session) {
+      session.messages.push(errorMessage);
+      session.updatedAt = Date.now();
+
+      // 立即保存会话
+      saveSessions();
+
+      // 触发响应式更新
+      sessions.value = [...sessions.value];
+    }
+  }
+}
+
+// 流式发送（真实流式，使用 Port 长连接）
+async function handleStreamingSend(
+  text: string,
+  pair: Pair | null,
+  session: Session | undefined,
+  currentModelNameSnapshot: string,
+  enableContext: boolean,
+  contextCount: number
+) {
+  const msg: any = { action: 'performAiAction', task: state.task, text, targetLang: state.targetLang };
+  if (pair) { msg.channel = pair.channel; msg.model = pair.model; }
+
+  // 如果启用上下文,添加历史消息
+  if (enableContext && session && session.messages.length > 1) {
+    const historyMessages = session.messages.slice(0, -1);
+    const contextMessages = historyMessages.slice(-contextCount);
+    msg.context = contextMessages.map(m => ({
+      role: m.role,
+      content: m.content
+    }));
+  }
+
+  try {
+    // 建立 Port 长连接
+    const port = chrome.runtime.connect({ name: 'streaming' });
+
+    let messageIndex = -1; // 延迟创建消息，等收到 start 或第一个 chunk 时再创建
+
+    // 监听 Port 消息
+    port.onMessage.addListener((response: any) => {
+      if (!session) return;
+
+      if (response.type === 'start') {
+
+        // 此时才创建空的 AI 消息并关闭骨架屏
+        const assistantMessage: Message = {
+          role: 'assistant',
+          content: '',
+          isError: false,
+          modelName: currentModelNameSnapshot,
+          isStreaming: true
+        };
+
+        session.messages.push(assistantMessage);
+        messageIndex = session.messages.length - 1;
+        session.updatedAt = Date.now();
+        sessions.value = [...sessions.value]; // 触发响应式更新
+
+        // 立即关闭骨架屏loading动画
+        sending.value = false;
+      } else if (response.type === 'chunk') {
+        // 真实流式：追加内容
+        if (messageIndex === -1) {
+          // 如果没有收到 start 消息，在第一个 chunk 时创建消息
+          const assistantMessage: Message = {
+            role: 'assistant',
+            content: response.content,
+            isError: false,
+            modelName: currentModelNameSnapshot,
+            isStreaming: true
+          };
+          session.messages.push(assistantMessage);
+          messageIndex = session.messages.length - 1;
+          session.updatedAt = Date.now();
+          sending.value = false;
+        } else {
+          const message = session.messages[messageIndex];
+          if (message) {
+            message.content += response.content;
+          }
+        }
+        sessions.value = [...sessions.value]; // 触发响应式更新
+        scrollToBottom();
+      } else if (response.type === 'done') {
+        if (messageIndex >= 0) {
+          const message = session.messages[messageIndex];
+          if (message) {
+            message.isStreaming = false;
+          }
+        }
+        sending.value = false; // 确保关闭骨架屏
+        saveSessions();
+        sessions.value = [...sessions.value];
+        port.disconnect();
+      } else if (response.type === 'error') {
+        console.error('流式响应错误:', response.error);
+
+        if (messageIndex === -1) {
+          // 如果还没创建消息，创建一个错误消息
+          const errorMessage: Message = {
+            role: 'assistant',
+            content: `错误：${response.error}`,
+            isError: true,
+            modelName: currentModelNameSnapshot
+          };
+          session.messages.push(errorMessage);
+          session.updatedAt = Date.now();
+        } else {
+          const message = session.messages[messageIndex];
+          if (message) {
+            message.content = `错误：${response.error}`;
+            message.isError = true;
+            message.isStreaming = false;
+          }
+        }
+
+        sending.value = false;
+        saveSessions();
+        sessions.value = [...sessions.value];
+        port.disconnect();
+      }
+    });
+
+    // 监听 Port 断开
+    port.onDisconnect.addListener(() => {
+      if (sending.value) {
+        sending.value = false;
+        if (session && messageIndex >= 0) {
+          const message = session.messages[messageIndex];
+          if (message && message.isStreaming) {
+            message.isStreaming = false;
+            if (!message.content) {
+              message.content = '错误：连接中断';
+              message.isError = true;
+            }
+            saveSessions();
+            sessions.value = [...sessions.value];
+          }
+        }
+      }
+    });
+
+    // 发送请求
+    port.postMessage(msg);
+  } catch (e: any) {
+    sending.value = false;
+
+    const errorMessage: Message = {
+      role: 'assistant',
+      content: `错误：${String(e?.message || e || '调用失败')}`,
+      isError: true,
+      modelName: currentModelNameSnapshot
     };
 
     if (session) {
       session.messages.push(errorMessage);
       session.updatedAt = Date.now();
       saveSessions();
+      sessions.value = [...sessions.value];
     }
   }
 }
@@ -671,9 +1009,24 @@ function changeTask(newTask: 'translate' | 'summarize' | 'rewrite' | 'polish' | 
 
   state.task = newTask;
 
-  // 保存当前选择的任务到配置
+  // 如果切换后的任务没有选择模型，自动选择第一个可用模型
+  if (!selectedModelByTask.value[newTask] && modelPairs.value.length > 0) {
+    selectedModelByTask.value[newTask] = modelPairs.value[0].key;
+
+    // 保存到 storage
+    chrome.storage.local.set({
+      selectedModelByTask: selectedModelByTask.value
+    });
+  }
+
+  // 保存当前选择的任务到配置（记忆功能）
   saveConfig({ defaultTask: newTask }).catch(e => {
     console.error('保存任务类型失败:', e);
+  });
+
+  // 同时保存到 local storage（用于快速恢复）
+  chrome.storage.local.set({ lastSelectedTask: newTask }).catch(e => {
+    console.error('保存最后选择的任务失败:', e);
   });
 
   // 不创建新会话，不自动运行
@@ -707,14 +1060,35 @@ async function copyMessage(content: string) {
   }
 }
 
+async function toggleStreaming(checked: boolean) {
+  enableStreaming.value = checked;
+  try {
+    await saveConfig({ enableStreaming: checked });
+    console.log('流式响应设置已保存:', checked);
+  } catch (e) {
+    console.error('保存流式响应设置失败:', e);
+  }
+}
+
 onMounted(async () => {
   await loadModels();
   await loadSessions();
+
+  // 加载全局配置
+  const globalConfig = await loadConfig();
+  enableStreaming.value = globalConfig.enableStreaming || false;
+  reduceVisualEffects.value = globalConfig.reduceVisualEffects || false;
 
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === 'sync' && changes.translateTargetLang) {
         state.targetLang = changes.translateTargetLang.newValue || 'zh-CN';
+      }
+      if (area === 'sync' && changes.enableStreaming) {
+        enableStreaming.value = changes.enableStreaming.newValue || false;
+      }
+      if (area === 'sync' && changes.reduceVisualEffects) {
+        reduceVisualEffects.value = changes.reduceVisualEffects.newValue || false;
       }
     });
   } catch { }
@@ -722,17 +1096,35 @@ onMounted(async () => {
   // 监听窗口聚焦事件（快捷键唤起）
   window.addEventListener('focus', () => {
     if (!isInitialLoad.value) {
-      readClipboardAndRun();
+      readClipboardToInput();  // 只读取到输入框，不自动发送
     }
   });
 
   // 监听窗口关闭事件，确保保存会话
   window.addEventListener('beforeunload', () => {
+    // 清理定时器
+    if (saveSessionsTimer) {
+      clearTimeout(saveSessionsTimer);
+      saveSessionsTimer = null;
+    }
+    // 立即同步保存会话
     saveSessions();
   });
 
   // 初始加载后滚动到底部
-  scrollToBottom();
+  setTimeout(() => {
+    scrollToBottom();
+  }, 150);
+});
+
+onBeforeUnmount(() => {
+  // 清理定时器
+  if (saveSessionsTimer) {
+    clearTimeout(saveSessionsTimer);
+    saveSessionsTimer = null;
+  }
+  // 组件卸载前保存会话
+  saveSessions();
 });
 </script>
 
@@ -748,10 +1140,45 @@ onMounted(async () => {
 .prose> :last-child {
   margin-bottom: 0;
 }
+
+/* 减少段落间距，避免过多换行 */
+.prose p {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+/* 确保第一个段落没有上边距 */
+.prose p:first-child {
+  margin-top: 0;
+}
+
+/* 确保最后一个段落没有下边距 */
+.prose p:last-child {
+  margin-bottom: 0;
+}
+
+/* 用户消息（深色背景）的 prose-invert 样式优化 */
+.prose-invert {
+  color: inherit;
+}
+
+/* 用户消息中的代码块样式 */
+.prose-invert code {
+  color: #e5e7eb;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* 用户消息中的链接样式 */
+.prose-invert a {
+  color: #60a5fa;
+}
 </style>
 <style>
-.ifocal-scroll-style>div {
-  /* h-screen w-full rounded-[inherit] pt-[60px] pb-[150px] */
+.prose hr {
+  margin: 1em 0 !important;
+}
+
+.ifocal-scroll-style>div>:not([class]) {
   padding-top: 60px;
   padding-bottom: 150px;
 }

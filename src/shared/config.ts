@@ -14,9 +14,8 @@ export const SUPPORTED_LANGUAGES = [
 // 支持的任务类型
 export const SUPPORTED_TASKS = [
   { value: 'translate', label: '翻译' },
-  { value: 'summarize', label: '总结' },
-  { value: 'rewrite', label: '改写' },
-  { value: 'polish', label: '润色' }
+  { value: 'chat', label: '聊天' },
+  { value: 'summarize', label: '总结' }
 ];
 
 // 默认配置
@@ -43,6 +42,10 @@ export const DEFAULT_CONFIG = {
   maxSessionsCount: 50, // 最大会话保存数量
   enableContext: false, // 启用上下文
   contextMessagesCount: 5, // 上下文消息数量
+  enableStreaming: false, // 启用流式响应
+
+  // 性能优化
+  reduceVisualEffects: false, // 减弱视觉效果（关闭 backdrop-blur）
 
   // 新增：译文样式名称（应用到译文包裹元素），默认点状下划线
   wrapperStyleName: 'ifocal-target-style-dotted',
@@ -84,9 +87,10 @@ export const CONFIG_KEYS = [
   'maxSessionsCount',
   'enableContext',
   'contextMessagesCount',
+  'enableStreaming',
+  'reduceVisualEffects',
   'wrapperStyleName',
-  'targetStylePresets',
-  // 已移除全文翻译相关设置
+  'targetStylePresets'
 ];
 
 // 从 Chrome 存储中加载配置
@@ -95,14 +99,19 @@ export async function loadConfig(): Promise<typeof DEFAULT_CONFIG> {
     try {
       chrome.storage.sync.get(CONFIG_KEYS, (items: any) => {
         const config = { ...DEFAULT_CONFIG };
-        
+
         // 更新配置值
         CONFIG_KEYS.forEach(key => {
           if (items[key] !== undefined) {
-            (config as any)[key] = items[key];
+            // 特殊处理：确保 targetStylePresets 为数组
+            if (key === 'targetStylePresets') {
+              (config as any)[key] = Array.isArray(items[key]) ? items[key] : DEFAULT_CONFIG.targetStylePresets;
+            } else {
+              (config as any)[key] = items[key];
+            }
           }
         });
-        
+
         resolve(config);
       });
     } catch (error) {

@@ -1,4 +1,5 @@
 export { };
+
 let isOpeningGlobalWindow = false; // 打开全局窗口的重入保护
 // 全局助手窗口单例 ID 存储键
 const GLOBAL_WIN_KEY = 'globalAssistantWindowId';
@@ -76,6 +77,38 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // translateBatch/getRateStatus 已移除（删除全文翻译与侧边栏指标）
 });
 
+// 流式响应：通过 Port 长连接通信
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== 'streaming') return;
+
+  port.onMessage.addListener(async (message) => {
+    if (message.action !== 'performAiAction') return;
+
+    try {
+      const cfg = await readConfig(['channels', 'defaultModel', 'translateModel', 'translateTargetLang', 'promptTemplates']);
+      const pair = pickModelFromConfig(message.task, message.channel && message.model ? { channel: message.channel, model: message.model } : null, cfg);
+      if (!pair) throw new Error('No available model');
+      const channel = ensureChannel(cfg.channels, pair.channel);
+      const targetLang = message.targetLang || cfg.translateTargetLang || 'zh-CN';
+      const prompt = makePrompt(message.task, message.text || '', targetLang, cfg.promptTemplates || {});
+      const context = message.context || undefined;
+
+      // 通知开始
+      port.postMessage({ type: 'start', channel: pair.channel, model: pair.model });
+
+      // 流式调用，每次收到 chunk 就发送给前端
+      await invokeModel(channel, pair.model, prompt, context, true, (chunk: string) => {
+        port.postMessage({ type: 'chunk', content: chunk });
+      });
+
+      // 通知完成
+      port.postMessage({ type: 'done' });
+    } catch (error: any) {
+      port.postMessage({ type: 'error', error: String(error?.message || error) });
+    }
+  });
+});
+
 // 已移除：bootstrap / 页面内容采集相关函数
 
 // 非流式：已移除 handleStreamRequest
@@ -88,8 +121,16 @@ async function handleLegacyAction(request: any) {
   const targetLang = request.targetLang || cfg.translateTargetLang || 'zh-CN';
   const prompt = makePrompt(request.task, request.text || '', targetLang, cfg.promptTemplates || {});
   const context = request.context || undefined;
-  const resultText = await invokeModel(channel, pair.model, prompt, context);
-  return { ok: true, result: resultText, channel: pair.channel, model: pair.model };
+  const enableStreaming = request.enableStreaming || false;
+
+  if (enableStreaming) {
+    // 流式响应：通过 Port 通信
+    throw new Error('Stream mode requires port connection');
+  } else {
+    // 非流式响应
+    const resultText = await invokeModel(channel, pair.model, prompt, context, false);
+    return { ok: true, result: resultText, channel: pair.channel, model: pair.model };
+  }
 }
 
 async function handleTestChannel(request: any) {
@@ -318,35 +359,75 @@ function pickModelFromConfig(task: string, requestPair: any, cfg: any) {
 
 import { makePrompt, makeMessage } from '@/shared/ai';
 
-// 非流式：移除 runWithStreaming 与流式供应商实现
-
-async function invokeModel(channel: any, model: string, prompt: string, context?: Array<{role: string, content: string}>) {
+async function invokeModel(channel: any, model: string, prompt: string, context?: Array<{role: string, content: string}>, stream: boolean = false, onChunk?: (chunk: string) => void) {
   if (!channel?.apiKey) throw new Error('Channel is missing API key');
   if (channel.type === 'openai' || channel.type === 'openai-compatible') {
-    return callOpenAI(channel.apiUrl, channel.apiKey, model, prompt, context);
+    return callOpenAI(channel.apiUrl, channel.apiKey, model, prompt, context, stream, onChunk);
   }
   if (channel.type === 'gemini') {
-    return callGemini(channel.apiUrl, channel.apiKey, model, prompt, context);
+    return callGemini(channel.apiUrl, channel.apiKey, model, prompt, context, stream, onChunk);
   }
   throw new Error(`Unsupported channel type: ${channel.type}`);
 }
 
-async function callOpenAI(baseUrl: string, apiKey: string, model: string, prompt: string, context?: Array<{role: string, content: string}>) {
+async function callOpenAI(baseUrl: string, apiKey: string, model: string, prompt: string, context?: Array<{role: string, content: string}>, stream: boolean = false, onChunk?: (chunk: string) => void) {
   const url = joinBasePath(baseUrl || 'https://api.openai.com/v1', '/chat/completions');
-  const body = { model, messages: makeMessage(model, prompt, 'You are a helpful assistant.', context), temperature: 0.2 };
+  const body = { model, messages: makeMessage(model, prompt, 'You are a helpful assistant.', context), temperature: 0.2, stream };
+
   return rateLimited(async () => {
     const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: JSON.stringify(body) });
     if (!res.ok) throw new Error(`OpenAI HTTP ${res.status}`);
-    const json = await res.json();
-    const content = json?.choices?.[0]?.message?.content;
-    if (!content) throw new Error('OpenAI returned empty response');
-    return content;
+
+    if (stream) {
+      // 流式响应
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error('No response body reader');
+
+      const decoder = new TextDecoder();
+      let fullContent = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n').filter(line => line.trim() !== '');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data === '[DONE]') continue;
+
+            try {
+              const json = JSON.parse(data);
+              const content = json?.choices?.[0]?.delta?.content;
+              if (content) {
+                fullContent += content;
+                if (onChunk) onChunk(content);
+              }
+            } catch (e) {
+              console.warn('Failed to parse SSE chunk:', e);
+            }
+          }
+        }
+      }
+
+      if (!fullContent) throw new Error('OpenAI returned empty response');
+      return fullContent;
+    } else {
+      // 非流式响应
+      const json = await res.json();
+      const content = json?.choices?.[0]?.message?.content;
+      if (!content) throw new Error('OpenAI returned empty response');
+      return content;
+    }
   });
 }
 
-async function callGemini(baseUrl: string, apiKey: string, model: string, prompt: string, context?: Array<{role: string, content: string}>) {
+async function callGemini(baseUrl: string, apiKey: string, model: string, prompt: string, context?: Array<{role: string, content: string}>, stream: boolean = false, onChunk?: (chunk: string) => void) {
   const base = baseUrl || 'https://generativelanguage.googleapis.com/v1beta';
-  const url = joinBasePath(base, `/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`);
+  const endpoint = stream ? 'streamGenerateContent' : 'generateContent';
+  const url = joinBasePath(base, `/models/${encodeURIComponent(model)}:${endpoint}?key=${encodeURIComponent(apiKey)}`);
 
   // 构建 Gemini 格式的消息内容
   let contents;
@@ -368,11 +449,49 @@ async function callGemini(baseUrl: string, apiKey: string, model: string, prompt
   return rateLimited(async () => {
     const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
-    const json = await res.json();
-    const parts = json?.candidates?.[0]?.content?.parts;
-    const out = Array.isArray(parts) ? parts.map((p: any) => p?.text || '').join('\n') : '';
-    if (!out) throw new Error('Gemini returned empty response');
-    return out;
+
+    if (stream) {
+      // 流式响应
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error('No response body reader');
+
+      const decoder = new TextDecoder();
+      let fullContent = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n').filter(line => line.trim() !== '');
+
+        for (const line of lines) {
+          try {
+            const json = JSON.parse(line);
+            const parts = json?.candidates?.[0]?.content?.parts;
+            if (Array.isArray(parts)) {
+              const content = parts.map((p: any) => p?.text || '').join('');
+              if (content) {
+                fullContent += content;
+                if (onChunk) onChunk(content);
+              }
+            }
+          } catch (e) {
+              console.warn('Failed to parse Gemini stream chunk:', e);
+            }
+        }
+      }
+
+      if (!fullContent) throw new Error('Gemini returned empty response');
+      return fullContent;
+    } else {
+      // 非流式响应
+      const json = await res.json();
+      const parts = json?.candidates?.[0]?.content?.parts;
+      const out = Array.isArray(parts) ? parts.map((p: any) => p?.text || '').join('\n') : '';
+      if (!out) throw new Error('Gemini returned empty response');
+      return out;
+    }
   });
 }
 
@@ -464,9 +583,5 @@ async function pickExistingExtensionUrl(paths: string[]): Promise<string> {
 }
 
 // 已移除：侧边栏弹窗入口
-
-
-
-
 
 // 流式端口已移除：统一使用非流式 performAiAction

@@ -214,14 +214,12 @@ function ensureUiRoot(): ShadowRoot {
       }
     }
   } catch (error) {
-    console.warn('[iFocal] failed to init shadow root', error);
+    console.warn('failed to init shadow root', error);
     return (document as any);
   }
   return uiShadow!;
 }
-const LOG_PREFIX = '[iFocal]';
-
-console.log(`${LOG_PREFIX} content script ready`);
+console.log('content script ready');
 
 type OverlayHandle = {
   root: HTMLElement;
@@ -342,7 +340,7 @@ function readHotkeys() {
       if (changes.enableSelectionTranslation) enableSelectionTranslation = !!changes.enableSelectionTranslation.newValue;
     });
   } catch (error) {
-    console.warn(`${LOG_PREFIX} failed to read hotkeys`, error);
+    console.warn('failed to read hotkeys', error);
   }
 }
 
@@ -663,7 +661,7 @@ function toggleHoverTranslate(blockEl: HTMLElement) {
       });
     });
   } catch (error) {
-    console.warn(`${LOG_PREFIX} toggleHoverTranslate failed`, error);
+    console.warn('toggleHoverTranslate failed', error);
   }
 }
 
@@ -840,7 +838,7 @@ function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair
         try {
           overlay._port.disconnect();
         } catch (error) {
-          console.warn(`${LOG_PREFIX} failed to disconnect port`, error);
+          console.warn('failed to disconnect port', error);
         }
         overlay._port = null;
       }
@@ -873,7 +871,7 @@ document.addEventListener('keydown', (event) => {
       try {
         lastOverlay._port.disconnect();
       } catch (error) {
-        console.warn(`${LOG_PREFIX} failed to disconnect port`, error);
+        console.warn('failed to disconnect port', error);
       }
       lastOverlay._port = null;
     }
