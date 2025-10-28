@@ -16,7 +16,7 @@
               <Icon icon="ri:arrow-down-s-line" class="h-8 w-8 shrink-0" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" :class="['w-56 rounded-2xl', bgClass, blurClass]">
+          <DropdownMenuContent align="start" :class="['w-56 rounded-2xl border-none', bgClass, blurClass]">
             <ScrollArea class="h-80">
               <template v-for="(group, channelName, groupIndex) in groupedModels" :key="channelName">
                 <DropdownMenuSeparator v-if="groupIndex" />
@@ -41,7 +41,7 @@
               <Icon icon="ri:arrow-down-s-line" class="h-8 w-8 shrink-0" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" :class="['rounded-2xl', bgClass, blurClass]">
+          <DropdownMenuContent align="end" :class="['rounded-2xl border-none', bgClass, blurClass]">
             <DropdownMenuItem v-for="lang in SUPPORTED_LANGUAGES" :key="lang.value" @click="selectLanguage(lang.value)"
               class="rounded-xl cursor-pointer">
               {{ lang.label }}
@@ -92,7 +92,7 @@
 
             <div class="w-full">
               <div v-if="message.isError" class="text-red-600">{{ message.content }}</div>
-              <div v-else-if="!sending && message.content" class="prose prose-sm max-w-none"
+              <div v-else-if="message.content" class="prose prose-sm max-w-none"
                 v-html="renderMarkdown(message.content)"></div>
               <div v-else class="space-y-3">
                 <div class="h-3 w-2/3 rounded bg-muted-foreground/20 animate-pulse"></div>
@@ -145,6 +145,57 @@
 
             <div class="flex-1"></div>
 
+            <DropdownMenu>
+              <DropdownMenuTrigger as-child>
+                <Button variant="ghost" size="icon" :class="['h-8 w-8 shrink-0 rounded-full', bgClass, blurClass]">
+                  <Icon icon="ri:apps-2-ai-line" class="h-5 w-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" :class="['w-56 rounded-2xl border-none', bgClass, blurClass]">
+                <ScrollArea class="h-60 py-1 px-3">
+                  <!-- 流式开关 -->
+                  <div class="py-1 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <Icon icon="ri:dvd-ai-line" class="h-4 w-4" />
+                      <span class="text-sm font-medium">流式响应</span>
+                    </div>
+                    <Switch v-model="enableStreaming" @update:modelValue="toggleStreaming" />
+                  </div>
+                  <!-- 思考模式 -->
+                  <div class="py-1 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <Icon icon="ri:lightbulb-ai-line" class="h-4 w-4" />
+                      <span class="text-sm font-medium">思考模式</span>
+                    </div>
+                    <Switch />
+                  </div>
+                  <!-- 上下文 -->
+                  <div class="py-1 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <Icon icon="ri:message-ai-3-line" class="h-4 w-4" />
+                      <span class="text-sm font-medium">上下文</span>
+                    </div>
+                    <Switch />
+                  </div>
+                  <!-- 网络搜索 -->
+                  <div class="py-1 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <Icon icon="ri:search-ai-line" class="h-4 w-4" />
+                      <span class="text-sm font-medium">网络搜索</span>
+                    </div>
+                    <Switch />
+                  </div>
+                  <DropdownMenuSeparator />
+                  <!-- 添加图片和文件 -->
+                  <div class="py-2 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <Icon icon="ri:attachment-2" class="h-4 w-4" />
+                      <span class="text-sm font-medium">添加图片和文件</span>
+                    </div>
+                  </div>
+                </ScrollArea>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger as-child>
@@ -162,13 +213,16 @@
 
           <!-- 输入框 -->
           <div :class="['relative rounded-xl', bgClass, blurClass]">
-            <Textarea v-model="state.text" :rows="3" placeholder="输入你想了解到内容" class="resize-none rounded-xl"
+            <Textarea v-model="state.text" :rows="3" placeholder="输入你想了解到内容" class="resize-none rounded-xl border-none"
               @keydown.enter.exact.prevent="handleSend()" />
+
+            <div class="absolute bottom-2 left-2 z-10">
+            </div>
 
             <!-- 发送按钮（右下角） -->
             <Button variant="ghost" size="icon"
-              :class="['absolute bottom-2 right-2 h-7 w-7 rounded-xl !bg-slate-800 !text-white', bgSlateClass, blurClass]"
-              @click="handleSend()" v-show="state.text.trim() && !sending">
+              class="absolute bottom-2 right-2 h-7 w-7 rounded-xl !bg-slate-800 !text-white" @click="handleSend()"
+              v-show="state.text.trim() && !sending">
               <Icon icon="ri:send-plane-2-fill" class="h-3 w-3" />
             </Button>
           </div>
@@ -217,17 +271,6 @@
           <!-- 空状态 -->
           <div v-if="sessions.length === 0" class="py-8 text-center text-sm text-muted-foreground">
             暂无历史会话
-          </div>
-        </div>
-
-        <!-- 流式开关 -->
-        <div class="pt-4 border-t mt-4">
-          <div class="flex items-center justify-between">
-            <div class="flex flex-col gap-1">
-              <span class="text-sm font-medium">流式响应</span>
-              <span class="text-xs text-muted-foreground">实时显示 AI 回复</span>
-            </div>
-            <Switch v-model="enableStreaming" @update:modelValue="toggleStreaming" />
           </div>
         </div>
       </SheetContent>
@@ -287,6 +330,14 @@ const rootEl = ref<HTMLElement | null>(null);
 const messagesContainer = ref<HTMLElement | null>(null);
 const historyOpen = ref(false);
 const isInitialLoad = ref(true);
+let clipboardWatcher: ReturnType<typeof setInterval> | null = null;
+let latestClipboardSnapshot = '';
+let lastAutoFilledClipboard = '';
+const CLIPBOARD_POLL_INTERVAL = 1000; // ms
+let clipboardPollPromise: Promise<void> | null = null;
+let clipboardErrorLogged = false;
+let windowFocusHandler: (() => void) | null = null;
+let windowBlurHandler: (() => void) | null = null;
 let saveSessionsTimer: ReturnType<typeof setTimeout> | null = null;
 const aiMessageElements = ref<HTMLElement[]>([]);
 const enableStreaming = ref(false);
@@ -349,7 +400,6 @@ const groupedModels = computed(() => {
 const blurClass = computed(() => reduceVisualEffects.value ? '' : 'backdrop-blur-md');
 const blurClassSm = computed(() => reduceVisualEffects.value ? '' : 'backdrop-blur-sm');
 const bgClass = computed(() => reduceVisualEffects.value ? 'bg-white' : 'bg-white/60');
-const bgSlateClass = computed(() => reduceVisualEffects.value ? 'bg-slate-800' : 'bg-slate/60');
 
 // 获取可滚动元素
 function getScrollableElement(): HTMLElement | null {
@@ -538,6 +588,7 @@ function startNewChat(autoRun = false) {
 
   currentSessionId.value = newSession.id;
   state.text = '';
+  lastAutoFilledClipboard = '';
   saveSessions();
 
   // 如果需要自动运行，读取剪贴板到输入框（不自动发送）
@@ -559,6 +610,7 @@ function switchSession(sessionId: string) {
   }
   historyOpen.value = false;
   state.text = '';
+  lastAutoFilledClipboard = '';
 
   // 切换会话后滚动到底部
   scrollToBottom();
@@ -693,16 +745,99 @@ async function loadModels() {
   }
 }
 
-async function readClipboardToInput() {
+async function fetchClipboardText(): Promise<string | null> {
   try {
     const text = await navigator.clipboard.readText();
-    if (text && text.trim()) {
-      state.text = text.trim();
-      // 不自动发送，只填充到输入框
-    }
+    clipboardErrorLogged = false;
+    return text ?? '';
   } catch (e) {
-    console.warn('clipboard read failed', e);
+    if (!clipboardErrorLogged) {
+      console.warn('clipboard read failed', e);
+      clipboardErrorLogged = true;
+    }
+    return null;
   }
+}
+
+function applyClipboardText(raw: string | null, force: boolean) {
+  if (typeof raw !== 'string') return;
+  const trimmed = raw.trim();
+  const inputHasValue = !!state.text.trim();
+  const showingAutoFilled = state.text === lastAutoFilledClipboard;
+  const alreadyApplied = state.text === trimmed;
+  // Always refresh snapshot for future comparisons
+  const prevSnapshot = latestClipboardSnapshot;
+  latestClipboardSnapshot = trimmed;
+
+  // Empty clipboard: only clear when input is already empty
+  if (!trimmed) {
+    if (!inputHasValue) {
+      state.text = '';
+      lastAutoFilledClipboard = '';
+    }
+    return;
+  }
+
+  // If user has typed something (value exists and not the auto-filled value), never overwrite
+  if (inputHasValue && !showingAutoFilled) {
+    return;
+  }
+
+  // When input is empty, avoid refilling with the same content we just auto-filled previously
+  if (!inputHasValue && trimmed === lastAutoFilledClipboard) {
+    return;
+  }
+
+  // If the same text is already present, just refresh sentinel
+  if (alreadyApplied) {
+    lastAutoFilledClipboard = trimmed;
+    return;
+  }
+
+  // Safe to apply: either input is empty or currently showing auto-filled text
+  state.text = trimmed;
+  lastAutoFilledClipboard = trimmed;
+}
+
+function pollClipboardOnce(force = false): Promise<void> {
+  if (clipboardPollPromise && !force) {
+    return clipboardPollPromise;
+  }
+  if (clipboardPollPromise && force) {
+    return clipboardPollPromise.then(() => pollClipboardOnce(false));
+  }
+  clipboardPollPromise = fetchClipboardText()
+    .then(result => applyClipboardText(result, force))
+    .finally(() => {
+      clipboardPollPromise = null;
+    });
+  return clipboardPollPromise;
+}
+
+function startClipboardMonitoring(force = false) {
+  if (force) {
+    void pollClipboardOnce(true);
+  } else {
+    void pollClipboardOnce(false);
+  }
+  if (clipboardWatcher) {
+    return;
+  }
+  clipboardWatcher = window.setInterval(() => {
+    void pollClipboardOnce(false);
+  }, CLIPBOARD_POLL_INTERVAL);
+}
+
+function stopClipboardMonitoring() {
+  if (clipboardWatcher) {
+    clearInterval(clipboardWatcher);
+    clipboardWatcher = null;
+  }
+  clipboardPollPromise = null;
+}
+
+async function readClipboardToInput() {
+  await pollClipboardOnce(true);
 }
 
 async function handleSend() {
@@ -739,6 +874,10 @@ async function handleSend() {
   }
 
   state.text = '';
+  // 防止发送后因当前剪贴板未变化导致被再次回填
+  // 将“最后一次自动填充”的标记设置为当前已知的剪贴板值
+  // 这样在剪贴板未发生变化的情况下，轮询不会再次写回输入框
+  lastAutoFilledClipboard = latestClipboardSnapshot;
   sending.value = true;
 
   // 确保骨架屏在可视区域内（在用户消息滚动后再次滚动）
@@ -1093,12 +1232,18 @@ onMounted(async () => {
     });
   } catch { }
 
-  // 监听窗口聚焦事件（快捷键唤起）
-  window.addEventListener('focus', () => {
-    if (!isInitialLoad.value) {
-      readClipboardToInput();  // 只读取到输入框，不自动发送
-    }
-  });
+  windowFocusHandler = () => {
+    startClipboardMonitoring(true);
+  };
+  windowBlurHandler = () => {
+    stopClipboardMonitoring();
+  };
+
+  window.addEventListener('focus', windowFocusHandler);
+  window.addEventListener('blur', windowBlurHandler);
+  if (document.hasFocus()) {
+    startClipboardMonitoring(true);
+  }
 
   // 监听窗口关闭事件，确保保存会话
   window.addEventListener('beforeunload', () => {
@@ -1107,6 +1252,7 @@ onMounted(async () => {
       clearTimeout(saveSessionsTimer);
       saveSessionsTimer = null;
     }
+    stopClipboardMonitoring();
     // 立即同步保存会话
     saveSessions();
   });
@@ -1118,6 +1264,15 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  if (windowFocusHandler) {
+    window.removeEventListener('focus', windowFocusHandler);
+    windowFocusHandler = null;
+  }
+  if (windowBlurHandler) {
+    window.removeEventListener('blur', windowBlurHandler);
+    windowBlurHandler = null;
+  }
+  stopClipboardMonitoring();
   // 清理定时器
   if (saveSessionsTimer) {
     clearTimeout(saveSessionsTimer);
