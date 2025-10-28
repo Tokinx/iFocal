@@ -44,6 +44,9 @@ export const DEFAULT_CONFIG = {
   contextMessagesCount: 5, // 上下文消息数量
   enableStreaming: false, // 启用流式响应
 
+  // 思考模式
+  enableReasoning: false, // 启用思考模式
+
   // 性能优化
   reduceVisualEffects: false, // 减弱视觉效果（关闭 backdrop-blur）
 
@@ -88,6 +91,7 @@ export const CONFIG_KEYS = [
   'enableContext',
   'contextMessagesCount',
   'enableStreaming',
+  'enableReasoning',
   'reduceVisualEffects',
   'wrapperStyleName',
   'targetStylePresets'

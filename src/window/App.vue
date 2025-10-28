@@ -82,39 +82,98 @@
           <div v-else :ref="el => setAiMessageRef(el, idx)" class="w-full group">
             <div class="flex items-center justify-between">
               <span class="text-xs font-medium text-muted-foreground">{{ message.modelName || 'Assistant' }}</span>
-              <!-- 复制按钮 -->
-              <Button variant="ghost" size="icon"
-                class="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400"
-                @click="copyMessage(message.content)" title="复制">
-                <Icon icon="ri:file-copy-line" class="h-3 w-3" />
-              </Button>
+              <div class="flex items-center gap-1">
+                <!-- 复制按钮 -->
+                <Button variant="ghost" size="icon"
+                  class="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400"
+                  @click="copyMessage(message.content)" title="复制">
+                  <Icon icon="ri:file-copy-line" class="h-3 w-3" />
+                </Button>
+              </div>
             </div>
 
             <div class="w-full">
               <div v-if="message.isError" class="text-red-600">{{ message.content }}</div>
-              <div v-else-if="message.content" class="prose prose-sm max-w-none"
-                v-html="renderMarkdown(message.content)"></div>
-              <div v-else class="space-y-3">
-                <div class="h-3 w-2/3 rounded bg-muted-foreground/20 animate-pulse"></div>
-                <div class="h-3 w-full rounded bg-muted-foreground/20 animate-pulse"></div>
-                <div class="h-3 w-5/6 rounded bg-muted-foreground/20 animate-pulse"></div>
+              <div v-else-if="message.content">
+                <!-- 解析思考过程和答案 -->
+                <template v-if="getParsed(message, idx).reasoning">
+                  <template
+                    v-if="message.isStreaming && enableReasoning && !getParsed(message, idx).answer">
+                    <Button variant="ghost" size="xs" class="h-6 p-0 text-xs gap-1">
+                      <Icon icon="ri:lightbulb-line" class="h-4 w-4 text-muted-foreground" />
+                      <span class="text-xs text-muted-foreground shimmer-text">
+                        正在思考...
+                      </span>
+                    </Button>
+                  </template>
+                  <template v-else>
+                    <div class="flex items-center">
+                      <Button variant="ghost" size="xs" class="group/inner h-6 p-0 text-xs gap-1"
+                        @click="message.reasoningCollapsed = !message.reasoningCollapsed">
+                        <div class="relative h-4 w-4">
+                          <Icon icon="ri:lightbulb-line"
+                            class="absolute left-0 top-0 opacity-100 group-hover/inner:opacity-0 h-4 w-4 text-muted-foreground transition-opacity" />
+                          <Icon :icon="message.reasoningCollapsed ? 'ri:arrow-down-s-line' : 'ri:arrow-up-s-line'"
+                            class="absolute left-0 top-0 opacity-0 group-hover/inner:opacity-100 h-4 w-4 transition-opacity" />
+                        </div>
+                        <span class="text-xs text-muted-foreground">
+                          思考过程
+                        </span>
+                      </Button>
+                      <span class="ml-2 text-muted-foreground" v-if="getReasoningDurationSeconds(message) > '0.00'">
+                        {{ getReasoningDurationSeconds(message) }}s
+                      </span>
+                    </div>
+                    <div v-if="!message.reasoningCollapsed"
+                      class="p-3 bg-white rounded-md prose prose-sm max-w-none !text-muted-foreground text-xs"
+                      v-html="renderMarkdown(getParsed(message, idx).reasoning)"></div>
+                  </template>
+                  <div v-if="getParsed(message, idx).answer" class="h-2"></div>
+                  <div class="prose prose-sm max-w-none"
+                    v-html="renderMarkdown(getParsed(message, idx).answer)">
+                  </div>
+                </template>
+                <!-- 普通消息（没有思考过程） -->
+                <div v-else class="prose prose-sm max-w-none" v-html="renderMarkdown(message.content)"></div>
+              </div>
+              <div v-else>
+                <template v-if="enableReasoning">
+                  <Button variant="ghost" size="xs" class="h-6 p-0 text-xs gap-1">
+                    <Icon icon="ri:lightbulb-line" class="h-4 w-4 text-muted-foreground" />
+                    <span class="text-xs text-muted-foreground shimmer-text">
+                      正在思考...
+                    </span>
+                  </Button>
+                </template>
+                <template v-else>
+                  <div class="space-y-3">
+                    <div class="h-3 w-2/3 rounded bg-muted-foreground/20 animate-pulse"></div>
+                    <div class="h-3 w-full rounded bg-muted-foreground/20 animate-pulse"></div>
+                    <div class="h-3 w-5/6 rounded bg-muted-foreground/20 animate-pulse"></div>
+                  </div>
+                </template>
               </div>
             </div>
           </div>
         </template>
 
-        <!-- 加载状态（骨架屏） -->
+        <!-- 加载状态（骨架屏/思考动画） -->
         <div v-if="sending" class="w-full">
           <div class="mb-2">
             <span class="text-xs font-medium text-muted-foreground">{{ currentModelName || 'Assistant' }}</span>
           </div>
 
           <div class="w-full">
-            <div class="space-y-3">
-              <div class="h-3 w-2/3 rounded bg-muted-foreground/20 animate-pulse"></div>
-              <div class="h-3 w-full rounded bg-muted-foreground/20 animate-pulse"></div>
-              <div class="h-3 w-5/6 rounded bg-muted-foreground/20 animate-pulse"></div>
-            </div>
+            <template v-if="enableReasoning">
+              <div class="text-sm text-muted-foreground shimmer-text">正在思考...</div>
+            </template>
+            <template v-else>
+              <div class="space-y-3">
+                <div class="h-3 w-2/3 rounded bg-muted-foreground/20 animate-pulse"></div>
+                <div class="h-3 w-full rounded bg-muted-foreground/20 animate-pulse"></div>
+                <div class="h-3 w-5/6 rounded bg-muted-foreground/20 animate-pulse"></div>
+              </div>
+            </template>
           </div>
         </div>
       </div>
@@ -167,15 +226,16 @@
                       <Icon icon="ri:lightbulb-ai-line" class="h-4 w-4" />
                       <span class="text-sm font-medium">思考模式</span>
                     </div>
-                    <Switch />
+                    <Switch v-model="enableReasoning" @update:modelValue="toggleReasoning" />
                   </div>
+
                   <!-- 上下文 -->
                   <div class="py-1 flex items-center justify-between">
                     <div class="flex items-center gap-2">
                       <Icon icon="ri:message-ai-3-line" class="h-4 w-4" />
                       <span class="text-sm font-medium">上下文</span>
                     </div>
-                    <Switch />
+                    <Switch v-model="enableContext" @update:modelValue="toggleContext" />
                   </div>
                   <!-- 网络搜索 -->
                   <div class="py-1 flex items-center justify-between">
@@ -307,6 +367,9 @@ interface Message {
   isError?: boolean;
   modelName?: string; // 生成该消息的模型名称（仅 assistant 消息）
   isStreaming?: boolean; // 标记是否正在流式显示
+  reasoningStartedAt?: number; // 思考开始（检测到起始标签）
+  reasoningEndedAt?: number;   // 思考结束（检测到闭合标签或完成）
+  reasoningCollapsed?: boolean; // 思考过程是否折叠（仅 assistant 消息）
 }
 
 interface Session {
@@ -341,7 +404,26 @@ let windowBlurHandler: (() => void) | null = null;
 let saveSessionsTimer: ReturnType<typeof setTimeout> | null = null;
 const aiMessageElements = ref<HTMLElement[]>([]);
 const enableStreaming = ref(false);
+const enableReasoning = ref(false); // 思考模式
+const enableContext = ref(false); // 上下文
 const reduceVisualEffects = ref(false); // 减弱视觉效果配置
+
+// 解析缓存，按 会话ID:消息索引 做键，避免模板中重复解析
+type ParsedParts = { reasoning: string; answer: string };
+const parsedCache: Record<string, { content: string; parsed: ParsedParts }> = {};
+
+function cacheKey(idx: number) {
+  return `${currentSessionId.value}:${idx}`;
+}
+
+function getParsed(message: Message, idx: number): ParsedParts {
+  const key = cacheKey(idx);
+  const cur = parsedCache[key];
+  if (cur && cur.content === message.content) return cur.parsed;
+  const parsed = parseMessageWithReasoning(message.content);
+  parsedCache[key] = { content: message.content, parsed };
+  return parsed;
+}
 
 const state = reactive({
   text: '',
@@ -394,6 +476,11 @@ const groupedModels = computed(() => {
     groups[pair.channel].push(pair);
   });
   return groups;
+});
+
+// 切换会话时清空解析缓存
+watch(currentSessionId, () => {
+  for (const k in parsedCache) delete (parsedCache as any)[k];
 });
 
 // 动态类名：根据 reduceVisualEffects 决定是否应用 backdrop-blur 和背景透明
@@ -463,7 +550,8 @@ function scrollToElement(element: HTMLElement, offsetTop = 60) {
 watch(
   () => currentSession.value.messages.length,
   (newLength, oldLength) => {
-
+    // 每次数量变化清理解析缓存，避免索引错位与缓存污染
+    for (const k in parsedCache) delete (parsedCache as any)[k];
 
     // 只在消息增加时触发滚动
     if (newLength > oldLength) {
@@ -536,6 +624,90 @@ function renderMarkdown(content: string) {
     breaks: false, // 关闭 GFM 单换行支持，使用标准 Markdown 换行
     gfm: true      // 启用 GitHub Flavored Markdown 其他特性（表格、删除线等）
   });
+}
+
+// 解析消息中的思考过程和答案（兼容多种标签/字段，并支持流式未闭合标签）
+function parseMessageWithReasoning(content: string): { reasoning: string; answer: string } {
+  const text = String(content ?? '');
+
+  // 1) JSON 结构兼容：提取 reasoning/answer 字段
+  try {
+    // 去除可能的代码块围栏
+    const jsonStr = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '');
+    if (jsonStr.trim().startsWith('{')) {
+      const obj = JSON.parse(jsonStr);
+      if (obj && typeof obj === 'object') {
+        const rKey = ['reasoning', 'thought', 'think', 'analysis'].find(k => typeof obj[k] === 'string' && obj[k].trim());
+        const aKey = ['answer', 'final', 'output', 'content', 'response', 'message'].find(k => typeof obj[k] === 'string' && obj[k].trim());
+        if (rKey || aKey) {
+          return {
+            reasoning: rKey ? String(obj[rKey]).trim() : '',
+            answer: aKey ? String(obj[aKey]).trim() : ''
+          };
+        }
+      }
+    }
+  } catch { /* 非 JSON 内容，忽略 */ }
+
+  // 2) 标签对兼容：<thought>/<think>/<analysis>/<reasoning> 和 <answer>/<final>/<response>/<output>
+  const reasoningTagRe = /<(thought|think|analysis|reasoning)[^>]*>([\s\S]*?)<\/\1>/i;
+  const answerTagRe = /<(answer|final|response|output)[^>]*>([\s\S]*?)<\/\1>/i;
+  const rPair = text.match(reasoningTagRe);
+  const aPair = text.match(answerTagRe);
+
+  if (rPair && aPair) {
+    return { reasoning: rPair[2].trim(), answer: aPair[2].trim() };
+  }
+  if (rPair) {
+    // 思考有闭合标签，但答案未使用标签：取闭合标签后的剩余文本作为答案
+    const after = text.slice((rPair.index ?? 0) + rPair[0].length).trim();
+    return { reasoning: rPair[2].trim(), answer: after };
+  }
+  if (aPair) {
+    return { reasoning: '', answer: aPair[2].trim() };
+  }
+
+  // 3) 流式未闭合标签：检测到思考的起始标签后，将后续文本全部作为 reasoning，直到闭合出现
+  const reasoningOpenRe = /<(thought|think|analysis|reasoning)[^>]*>/i;
+  const open = text.match(reasoningOpenRe);
+  if (open) {
+    const openIdx = open.index ?? -1;
+    const openLen = open[0].length;
+    // 若尚未出现对应闭合标签，则将起始标签之后的内容当作 reasoning，之前的当作（临时）answer
+    const closeRe = new RegExp(`</${open[1]}>`, 'i');
+    if (!closeRe.test(text)) {
+      const before = text.slice(0, openIdx).trim();
+      const after = text.slice(openIdx + openLen).trim();
+      return { reasoning: after, answer: before };
+    }
+  }
+
+  // 4) 无思考结构：原样作为答案
+  return { reasoning: '', answer: text };
+}
+
+// 检测是否已出现思考起始/闭合标签（用于流式渲染状态）
+function detectReasoningTagState(content: string): { opened: boolean; closed: boolean } {
+  const text = String(content ?? '');
+  const open = text.match(/<(thought|think|analysis|reasoning)[^>]*>/i);
+  if (!open) return { opened: false, closed: false };
+  const closeRe = new RegExp(`</${open[1]}>`, 'i');
+  const closed = closeRe.test(text);
+  return { opened: true, closed };
+}
+
+function updateReasoningTimingForMessage(message: Message) {
+  const { opened, closed } = detectReasoningTagState(message.content);
+  const now = Date.now();
+  if (opened && !message.reasoningStartedAt) message.reasoningStartedAt = now;
+  if (opened && closed && !message.reasoningEndedAt) message.reasoningEndedAt = now;
+}
+
+function getReasoningDurationSeconds(message: Message): string {
+  if (!message.reasoningStartedAt || !message.reasoningEndedAt) return '0.00';
+  const ms = Math.max(0, message.reasoningEndedAt - message.reasoningStartedAt);
+  const seconds = ms / 1000;
+  return seconds.toFixed(2);
 }
 
 function keyOf(pair: Pair) {
@@ -843,13 +1015,15 @@ async function readClipboardToInput() {
 async function handleSend() {
   const text = state.text.trim();
   if (!text || sending.value) return;
+  const requestStartAt = Date.now();
 
   const pair = parseKey(selectedPairKey.value);
 
-  // 加载配置检查是否启用上下文
+  // 加载配置
   const globalConfig = await loadConfig();
   const enableContext = globalConfig.enableContext || false;
   const contextCount = globalConfig.contextMessagesCount || 5;
+  const enableReasoning = globalConfig.enableReasoning || false;
 
   // 添加用户消息到当前会话
   const userMessage: Message = {
@@ -889,9 +1063,9 @@ async function handleSend() {
 
   // 如果启用流式，使用流式调用
   if (enableStreaming.value) {
-    await handleStreamingSend(text, pair, session, currentModelNameSnapshot, enableContext, contextCount);
+    await handleStreamingSend(text, pair, session, currentModelNameSnapshot, enableContext, contextCount, enableReasoning, requestStartAt);
   } else {
-    await handleNonStreamingSend(text, pair, session, currentModelNameSnapshot, enableContext, contextCount);
+    await handleNonStreamingSend(text, pair, session, currentModelNameSnapshot, enableContext, contextCount, enableReasoning, requestStartAt);
   }
 }
 
@@ -902,9 +1076,11 @@ async function handleNonStreamingSend(
   session: Session | undefined,
   currentModelNameSnapshot: string,
   enableContext: boolean,
-  contextCount: number
+  contextCount: number,
+  enableReasoning: boolean,
+  requestStartAt: number
 ) {
-  const msg: any = { action: 'performAiAction', task: state.task, text, targetLang: state.targetLang };
+  const msg: any = { action: 'performAiAction', task: state.task, text, targetLang: state.targetLang, enableReasoning };
   if (pair) { msg.channel = pair.channel; msg.model = pair.model; }
 
   // 如果启用上下文，添加历史消息
@@ -928,7 +1104,8 @@ async function handleNonStreamingSend(
         role: 'assistant',
         content: '',
         isError: false,
-        modelName: currentModelNameSnapshot
+        modelName: currentModelNameSnapshot,
+        reasoningCollapsed: true
       };
 
       if (!resp) {
@@ -936,6 +1113,13 @@ async function handleNonStreamingSend(
         assistantMessage.isError = true;
       } else if (resp.ok) {
         assistantMessage.content = String(resp.result || '');
+        if (enableReasoning) {
+          const parsed = parseMessageWithReasoning(assistantMessage.content);
+          if (parsed.reasoning) {
+            assistantMessage.reasoningStartedAt = requestStartAt;
+            assistantMessage.reasoningEndedAt = Date.now();
+          }
+        }
       } else {
         assistantMessage.content = `错误：${resp.error || '未知错误'}`;
         assistantMessage.isError = true;
@@ -959,7 +1143,8 @@ async function handleNonStreamingSend(
       role: 'assistant',
       content: `错误：${String(e?.message || e || '调用失败')}`,
       isError: true,
-      modelName: currentModelNameSnapshot
+      modelName: currentModelNameSnapshot,
+      reasoningCollapsed: true
     };
 
     if (session) {
@@ -982,9 +1167,11 @@ async function handleStreamingSend(
   session: Session | undefined,
   currentModelNameSnapshot: string,
   enableContext: boolean,
-  contextCount: number
+  contextCount: number,
+  enableReasoning: boolean,
+  requestStartAt: number
 ) {
-  const msg: any = { action: 'performAiAction', task: state.task, text, targetLang: state.targetLang };
+  const msg: any = { action: 'performAiAction', task: state.task, text, targetLang: state.targetLang, enableReasoning };
   if (pair) { msg.channel = pair.channel; msg.model = pair.model; }
 
   // 如果启用上下文,添加历史消息
@@ -1015,7 +1202,8 @@ async function handleStreamingSend(
           content: '',
           isError: false,
           modelName: currentModelNameSnapshot,
-          isStreaming: true
+          isStreaming: true,
+          reasoningCollapsed: true
         };
 
         session.messages.push(assistantMessage);
@@ -1034,7 +1222,8 @@ async function handleStreamingSend(
             content: response.content,
             isError: false,
             modelName: currentModelNameSnapshot,
-            isStreaming: true
+            isStreaming: true,
+            reasoningCollapsed: true
           };
           session.messages.push(assistantMessage);
           messageIndex = session.messages.length - 1;
@@ -1044,6 +1233,8 @@ async function handleStreamingSend(
           const message = session.messages[messageIndex];
           if (message) {
             message.content += response.content;
+            // 更新思考计时
+            updateReasoningTimingForMessage(message);
           }
         }
         sessions.value = [...sessions.value]; // 触发响应式更新
@@ -1053,6 +1244,15 @@ async function handleStreamingSend(
           const message = session.messages[messageIndex];
           if (message) {
             message.isStreaming = false;
+            if (enableReasoning) {
+              const state = detectReasoningTagState(message.content);
+              if (state.opened && !message.reasoningStartedAt) {
+                message.reasoningStartedAt = requestStartAt;
+              }
+              if (state.opened && !message.reasoningEndedAt) {
+                message.reasoningEndedAt = Date.now();
+              }
+            }
           }
         }
         sending.value = false; // 确保关闭骨架屏
@@ -1068,7 +1268,8 @@ async function handleStreamingSend(
             role: 'assistant',
             content: `错误：${response.error}`,
             isError: true,
-            modelName: currentModelNameSnapshot
+            modelName: currentModelNameSnapshot,
+            reasoningCollapsed: true
           };
           session.messages.push(errorMessage);
           session.updatedAt = Date.now();
@@ -1116,7 +1317,8 @@ async function handleStreamingSend(
       role: 'assistant',
       content: `错误：${String(e?.message || e || '调用失败')}`,
       isError: true,
-      modelName: currentModelNameSnapshot
+      modelName: currentModelNameSnapshot,
+      reasoningCollapsed: true
     };
 
     if (session) {
@@ -1209,6 +1411,27 @@ async function toggleStreaming(checked: boolean) {
   }
 }
 
+async function toggleReasoning(checked: boolean) {
+  enableReasoning.value = checked;
+  try {
+    await saveConfig({ enableReasoning: checked });
+    console.log('思考模式设置已保存:', checked);
+  } catch (e) {
+    console.error('保存思考模式设置失败:', e);
+  }
+}
+
+
+async function toggleContext(checked: boolean) {
+  enableContext.value = checked;
+  try {
+    await saveConfig({ enableContext: checked });
+    console.log('上下文设置已保存:', checked);
+  } catch (e) {
+    console.error('保存上下文设置失败:', e);
+  }
+}
+
 onMounted(async () => {
   await loadModels();
   await loadSessions();
@@ -1216,6 +1439,8 @@ onMounted(async () => {
   // 加载全局配置
   const globalConfig = await loadConfig();
   enableStreaming.value = globalConfig.enableStreaming || false;
+  enableReasoning.value = globalConfig.enableReasoning || false;
+  enableContext.value = globalConfig.enableContext || false;
   reduceVisualEffects.value = globalConfig.reduceVisualEffects || false;
 
   try {
@@ -1225,6 +1450,12 @@ onMounted(async () => {
       }
       if (area === 'sync' && changes.enableStreaming) {
         enableStreaming.value = changes.enableStreaming.newValue || false;
+      }
+      if (area === 'sync' && changes.enableReasoning) {
+        enableReasoning.value = changes.enableReasoning.newValue || false;
+      }
+      if (area === 'sync' && changes.enableContext) {
+        enableContext.value = changes.enableContext.newValue || false;
       }
       if (area === 'sync' && changes.reduceVisualEffects) {
         reduceVisualEffects.value = changes.reduceVisualEffects.newValue || false;
@@ -1329,6 +1560,27 @@ onBeforeUnmount(() => {
 }
 </style>
 <style>
+.shimmer-text {
+  position: relative;
+  display: inline-block;
+  background: linear-gradient(90deg, rgba(150, 150, 150, 0.5), rgba(80, 80, 80, 1), rgba(150, 150, 150, 0.5));
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 2s linear infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
+}
+
 .prose hr {
   margin: 1em 0 !important;
 }
