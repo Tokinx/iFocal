@@ -9,46 +9,26 @@
         </Button>
 
         <!-- 模型选择 Dropdown -->
-        <DropdownMenu>
-          <DropdownMenuTrigger as-child>
-            <Button variant="ghost" :class="['rounded-2xl justify-start truncate h-8 px-3', bgClass, blurClass]">
-              <span class="truncate text-sm">{{ currentModelName || 'GPT-5' }}</span>
-              <Icon icon="ri:arrow-down-s-line" class="h-8 w-8 shrink-0" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" :class="['w-56 rounded-2xl border-none', bgClass, blurClass]">
-            <ScrollArea class="h-80">
-              <template v-for="(group, channelName, groupIndex) in groupedModels" :key="channelName">
-                <DropdownMenuSeparator v-if="groupIndex" />
-                <DropdownMenuLabel>{{ channelName }}</DropdownMenuLabel>
-                <DropdownMenuItem v-for="model in group" :key="model.key" @click="selectModel(model.key)"
-                  class="rounded-xl cursor-pointer">
-                  <span class="truncate">{{ model.model }}</span>
-                  <Icon v-if="selectedPairKey === model.key" icon="ri:check-line" class="ml-auto h-4 w-4" />
-                </DropdownMenuItem>
-              </template>
-            </ScrollArea>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <ModelSelect
+          :current-model-name="currentModelName"
+          :grouped-models="groupedModels"
+          :selected-pair-key="selectedPairKey"
+          :bg-class="bgClass"
+          :blur-class="blurClass"
+          @selectModel="selectModel"
+        />
 
         <div class="flex-1"></div>
 
         <!-- 语言选择 Dropdown -->
-        <DropdownMenu>
-          <DropdownMenuTrigger as-child>
-            <Button variant="ghost" :class="['rounded-2xl h-8 shrink-0 px-3', bgClass, blurClass]">
-              <span class="truncate text-sm">{{ currentLangLabel }}</span>
-              <Icon icon="ri:arrow-down-s-line" class="h-8 w-8 shrink-0" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" :class="['rounded-2xl border-none', bgClass, blurClass]">
-            <DropdownMenuItem v-for="lang in SUPPORTED_LANGUAGES" :key="lang.value" @click="selectLanguage(lang.value)"
-              class="rounded-xl cursor-pointer">
-              {{ lang.label }}
-              <Icon v-if="state.targetLang === lang.value" icon="ri:check-line" class="ml-auto h-4 w-4" />
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <LanguageSelect
+          :current-lang-label="currentLangLabel"
+          :current-target-lang="state.targetLang"
+          :supported-languages="SUPPORTED_LANGUAGES"
+          :bg-class="bgClass"
+          :blur-class="blurClass"
+          @selectLanguage="selectLanguage"
+        />
       </header>
 
       <!-- 对话区域 -->
@@ -180,180 +160,41 @@
 
       <!-- 底部操作区 -->
       <footer ref="footerEl" class="p-3 absolute left-0 right-0 bottom-0">
-        <div class="mx-auto max-w-3xl space-y-2">
-          <!-- 快捷操作按钮 -->
-          <div class="flex items-center gap-2">
-            <Button variant="ghost" size="sm" class="gap-1"
-              :class="[bgClass, 'rounded-2xl', blurClassSm, { '!bg-slate-800/80 !text-white': state.task === 'translate' }]"
-              @click="changeTask('translate')">
-              <Icon icon="ri:translate-ai" class="h-4 w-4" />
-              翻译
-            </Button>
-            <Button variant="ghost" size="sm" class="gap-1"
-              :class="[bgClass, 'rounded-2xl', blurClassSm, { '!bg-slate-800/80 !text-white': state.task === 'chat' }]"
-              @click="changeTask('chat')">
-              <Icon icon="ri:chat-ai-line" class="h-4 w-4" />
-              聊天
-            </Button>
-            <Button variant="ghost" size="sm" class="gap-1"
-              :class="[bgClass, 'rounded-2xl', blurClassSm, { '!bg-slate-800/80 !text-white': state.task === 'summarize' }]"
-              @click="changeTask('summarize')">
-              <Icon icon="ri:quill-pen-ai-line" class="h-4 w-4" />
-              总结
-            </Button>
-
-            <div class="flex-1"></div>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger as-child>
-                <Button variant="ghost" size="icon" :class="['h-8 w-8 shrink-0 rounded-full', bgClass, blurClass]">
-                  <Icon icon="ri:apps-2-ai-line" class="h-5 w-5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" :class="['w-56 rounded-2xl border-none', bgClass, blurClass]">
-                <ScrollArea class="h-60 py-1 px-3">
-                  <!-- 流式开关 -->
-                  <div class="py-1 flex items-center justify-between">
-                    <div class="flex items-center gap-2">
-                      <Icon icon="ri:dvd-ai-line" class="h-4 w-4" />
-                      <span class="text-sm font-medium">流式响应</span>
-                    </div>
-                    <Switch v-model="enableStreaming" @update:modelValue="toggleStreaming" />
-                  </div>
-                  <!-- 思考模式 -->
-                  <div class="py-1 flex items-center justify-between">
-                    <div class="flex items-center gap-2">
-                      <Icon icon="ri:lightbulb-ai-line" class="h-4 w-4" />
-                      <span class="text-sm font-medium">思考模式</span>
-                    </div>
-                    <Switch v-model="enableReasoning" @update:modelValue="toggleReasoning" />
-                  </div>
-
-                  <!-- 启用上下文 -->
-                  <div class="py-1 flex items-center justify-between">
-                    <div class="flex items-center gap-2">
-                      <Icon icon="ri:message-ai-3-line" class="h-4 w-4" />
-                      <span class="text-sm font-medium">启用上下文</span>
-                    </div>
-                    <Switch v-model="enableContext" @update:modelValue="toggleContext" />
-                  </div>
-                  <!-- 监听剪切板 -->
-                  <div class="py-1 flex items-center justify-between">
-                    <div class="flex items-center gap-2">
-                      <Icon icon="ri:file-ai-line" class="h-4 w-4" />
-                      <span class="text-sm font-medium">监听剪切板</span>
-                    </div>
-                    <Switch v-model="autoPasteGlobalAssistant" @update:modelValue="toggleClipboardListening" />
-                  </div>
-                  <!-- 网络搜索 -->
-                  <div class="py-1 flex items-center justify-between">
-                    <div class="flex items-center gap-2">
-                      <Icon icon="ri:search-ai-line" class="h-4 w-4" />
-                      <span class="text-sm font-medium">网络搜索</span>
-                    </div>
-                    <Switch />
-                  </div>
-                  <DropdownMenuSeparator />
-                  <!-- 添加图片和文件 -->
-                  <div class="py-2 flex items-center justify-between">
-                    <div class="flex items-center gap-2">
-                      <Icon icon="ri:attachment-2" class="h-4 w-4" />
-                      <span class="text-sm font-medium">添加图片和文件</span>
-                    </div>
-                  </div>
-                </ScrollArea>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger as-child>
-                  <Button variant="ghost" size="icon" :class="['h-8 w-8 shrink-0 rounded-full', bgClass, blurClass]"
-                    @click="() => startNewChat(false)">
-                    <Icon icon="ri:pencil-ai-2-line" class="h-5 w-5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>新会话</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </div>
-
-          <!-- 输入框 -->
-          <div :class="['relative rounded-xl', bgClass, blurClass]">
-            <Textarea
-              v-model="state.text"
-              v-autosize="8"
-              :rows="3"
-              placeholder="输入你想了解到内容"
-              class="resize-none rounded-xl border-none"
-              @keydown.enter.exact.prevent="handleSend()"
-            />
-
-            <div class="absolute bottom-2 left-2 z-10">
-            </div>
-
-            <!-- 发送按钮（右下角） -->
-            <Button variant="ghost" size="icon"
-              class="absolute bottom-2 right-2 h-7 w-7 rounded-xl !bg-slate-800 !text-white" @click="handleSend()"
-              v-show="state.text.trim() && !sending">
-              <Icon icon="ri:send-plane-2-fill" class="h-3 w-3" />
-            </Button>
-          </div>
-        </div>
+        <ChatInput
+          v-model="state.text"
+          :sending="sending"
+          :task="state.task"
+          :enable-streaming="enableStreaming"
+          :enable-reasoning="enableReasoning"
+          :enable-context="enableContext"
+          :auto-paste-global-assistant="autoPasteGlobalAssistant"
+          :bg-class="bgClass"
+          :blur-class="blurClass"
+          @send="handleSend()"
+          @changeTask="changeTask"
+          @toggleStreaming="toggleStreaming"
+          @toggleReasoning="toggleReasoning"
+          @toggleContext="toggleContext"
+          @toggleClipboardListening="toggleClipboardListening"
+          @newChat="() => startNewChat(false)"
+        />
       </footer>
     </ScrollArea>
 
     <!-- 历史会话抽屉 -->
-    <Sheet v-model:open="historyOpen">
-      <SheetContent side="left" class="w-80 flex flex-col">
-        <SheetHeader>
-          <SheetTitle>历史会话 ({{ sessions.length }})</SheetTitle>
-          <SheetDescription>
-            查看和管理您的对话历史
-          </SheetDescription>
-        </SheetHeader>
-
-        <div class="mt-6 space-y-2 flex-1 overflow-y-auto">
-          <!-- 新建对话按钮 -->
-          <Button variant="outline" class="w-full justify-start gap-2" @click="startNewChatFromDrawer">
-            <Icon icon="ri:add-line" class="h-4 w-4" />
-            新建对话
-          </Button>
-
-          <!-- 会话列表 -->
-          <div class="space-y-1">
-            <button v-for="(session, idx) in sessions" :key="session.id" @click="switchSession(session.id)"
-              class="w-full rounded-lg p-3 text-left transition-colors hover:bg-accent"
-              :class="{ 'bg-accent': currentSessionId === session.id }">
-              <div class="flex items-start justify-between gap-2">
-                <div class="flex-1 min-w-0">
-                  <div class="truncate text-sm font-medium">
-                    {{ session.title || '新对话' }}
-                  </div>
-                  <div class="text-xs text-muted-foreground">
-                    {{ formatDate(session.updatedAt) }}
-                  </div>
-                </div>
-                <Button variant="ghost" size="icon" class="h-6 w-6 shrink-0" @click.stop="deleteSession(session.id)">
-                  <Icon icon="ri:delete-bin-line" class="h-4 w-4" />
-                </Button>
-              </div>
-            </button>
-          </div>
-
-          <!-- 空状态 -->
-          <div v-if="sessions.length === 0" class="py-8 text-center text-sm text-muted-foreground">
-            暂无历史会话
-          </div>
-        </div>
-      </SheetContent>
-    </Sheet>
+    <HistoryDrawer
+      v-model:open="historyOpen"
+      :sessions="sessions"
+      :current-session-id="currentSessionId"
+      @switchSession="switchSession"
+      @deleteSession="deleteSession"
+      @newChatFromDrawer="startNewChatFromDrawer"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, nextTick, type ComponentPublicInstance, type Directive } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, nextTick, type ComponentPublicInstance } from 'vue';
 import { marked } from 'marked';
 import { Icon } from '@iconify/vue';
 import { Button } from '@/components/ui/button';
@@ -371,6 +212,10 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Switch } from '@/components/ui/switch';
 import { SUPPORTED_LANGUAGES, SUPPORTED_TASKS, loadConfig, saveConfig } from '@/shared/config';
+import ModelSelect from './components/ModelSelect.vue';
+import LanguageSelect from './components/LanguageSelect.vue';
+import ChatInput from './components/ChatInput.vue';
+import HistoryDrawer from './components/HistoryDrawer.vue';
 
 type Pair = { channel: string; model: string };
 type Channel = { name: string; type: string; apiKey?: string; apiUrl?: string; models?: string[] };
@@ -439,67 +284,6 @@ function updateBottomGap() {
   setBottomGap(gap);
 }
 
-// 文本域自动增高指令：根据内容自动调整高度，最大不超过指定行数（默认8行）
-const vAutosize: Directive<HTMLElement, number | undefined> = {
-  mounted(el, binding) {
-    const textarea = resolveTextarea(el);
-    if (!textarea) return;
-
-    const onInput = () => adjustTextareaHeight(textarea, binding.value);
-    textarea.style.overflowY = 'hidden';
-    textarea.addEventListener('input', onInput);
-    // 初始调整（包括程序性赋值场景）
-    void nextTick(() => adjustTextareaHeight(textarea, binding.value));
-
-    // 保存清理句柄
-    (el as any).__autosizeCleanup__ = () => textarea.removeEventListener('input', onInput);
-  },
-  updated(el, binding) {
-    const textarea = resolveTextarea(el);
-    if (!textarea) return;
-    adjustTextareaHeight(textarea, binding.value);
-  },
-  beforeUnmount(el) {
-    const cleanup = (el as any).__autosizeCleanup__ as (() => void) | undefined;
-    if (cleanup) cleanup();
-  }
-};
-
-function resolveTextarea(el: HTMLElement): HTMLTextAreaElement | null {
-  if (el.tagName === 'TEXTAREA') return el as HTMLTextAreaElement;
-  const inner = el.querySelector('textarea');
-  return inner as HTMLTextAreaElement | null;
-}
-
-function parsePx(v: string | null): number {
-  if (!v) return 0;
-  const n = parseFloat(v);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function getLineHeightPx(el: HTMLElement): number {
-  const cs = getComputedStyle(el);
-  const lh = cs.lineHeight;
-  if (lh && lh !== 'normal') return parsePx(lh);
-  const fs = parsePx(cs.fontSize) || 14; // 兜底 14px
-  return Math.round(fs * 1.4); // 近似 normal 行高
-}
-
-function adjustTextareaHeight(textarea: HTMLTextAreaElement, maxLines?: number) {
-  const cs = getComputedStyle(textarea);
-  const padding = parsePx(cs.paddingTop) + parsePx(cs.paddingBottom);
-  const border = parsePx(cs.borderTopWidth) + parsePx(cs.borderBottomWidth);
-  const lineHeight = getLineHeightPx(textarea);
-  const maxRows = Math.max(1, Number(maxLines || 8));
-  const maxHeight = lineHeight * maxRows + padding + border;
-
-  // 先重置为 auto 以便收缩
-  textarea.style.height = 'auto';
-  const newHeight = Math.min(textarea.scrollHeight, Math.ceil(maxHeight));
-  textarea.style.maxHeight = `${Math.ceil(maxHeight)}px`;
-  textarea.style.height = `${newHeight}px`;
-  textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
-}
 
 // 在助手页内复制的抑制标记：在一定冷却时间内忽略剪贴板回填
 let suppressClipboardUntil = 0;
