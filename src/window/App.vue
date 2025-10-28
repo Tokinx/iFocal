@@ -179,7 +179,7 @@
       </div>
 
       <!-- 底部操作区 -->
-      <footer class="p-3 absolute left-0 right-0 bottom-0">
+      <footer ref="footerEl" class="p-3 absolute left-0 right-0 bottom-0">
         <div class="mx-auto max-w-3xl space-y-2">
           <!-- 快捷操作按钮 -->
           <div class="flex items-center gap-2">
@@ -281,8 +281,14 @@
 
           <!-- 输入框 -->
           <div :class="['relative rounded-xl', bgClass, blurClass]">
-            <Textarea v-model="state.text" :rows="3" placeholder="输入你想了解到内容" class="resize-none rounded-xl border-none"
-              @keydown.enter.exact.prevent="handleSend()" />
+            <Textarea
+              v-model="state.text"
+              v-autosize="8"
+              :rows="3"
+              placeholder="输入你想了解到内容"
+              class="resize-none rounded-xl border-none"
+              @keydown.enter.exact.prevent="handleSend()"
+            />
 
             <div class="absolute bottom-2 left-2 z-10">
             </div>
@@ -347,7 +353,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, nextTick, type ComponentPublicInstance } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, nextTick, type ComponentPublicInstance, type Directive } from 'vue';
 import { marked } from 'marked';
 import { Icon } from '@iconify/vue';
 import { Button } from '@/components/ui/button';
@@ -416,6 +422,84 @@ const enableReasoning = ref(false); // 思考模式
 const enableContext = ref(false); // 上下文
 const reduceVisualEffects = ref(false); // 减弱视觉效果配置
 const autoPasteGlobalAssistant = ref(false); // 全局助手：是否自动粘贴剪贴板
+const footerEl = ref<HTMLElement | null>(null);
+let footerResizeObserver: ResizeObserver | null = null;
+
+function setBottomGap(px: number) {
+  const el: any = messagesContainer.value as any;
+  const host = el?.$el as HTMLElement | null;
+  if (host) host.style.setProperty('--ifocal-bottom-gap', `${Math.max(0, Math.round(px))}px`);
+}
+
+function updateBottomGap() {
+  const footer = footerEl.value;
+  if (!footer) return;
+  const extra = 16; // 额外留白
+  const gap = footer.offsetHeight + extra;
+  setBottomGap(gap);
+}
+
+// 文本域自动增高指令：根据内容自动调整高度，最大不超过指定行数（默认8行）
+const vAutosize: Directive<HTMLElement, number | undefined> = {
+  mounted(el, binding) {
+    const textarea = resolveTextarea(el);
+    if (!textarea) return;
+
+    const onInput = () => adjustTextareaHeight(textarea, binding.value);
+    textarea.style.overflowY = 'hidden';
+    textarea.addEventListener('input', onInput);
+    // 初始调整（包括程序性赋值场景）
+    void nextTick(() => adjustTextareaHeight(textarea, binding.value));
+
+    // 保存清理句柄
+    (el as any).__autosizeCleanup__ = () => textarea.removeEventListener('input', onInput);
+  },
+  updated(el, binding) {
+    const textarea = resolveTextarea(el);
+    if (!textarea) return;
+    adjustTextareaHeight(textarea, binding.value);
+  },
+  beforeUnmount(el) {
+    const cleanup = (el as any).__autosizeCleanup__ as (() => void) | undefined;
+    if (cleanup) cleanup();
+  }
+};
+
+function resolveTextarea(el: HTMLElement): HTMLTextAreaElement | null {
+  if (el.tagName === 'TEXTAREA') return el as HTMLTextAreaElement;
+  const inner = el.querySelector('textarea');
+  return inner as HTMLTextAreaElement | null;
+}
+
+function parsePx(v: string | null): number {
+  if (!v) return 0;
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function getLineHeightPx(el: HTMLElement): number {
+  const cs = getComputedStyle(el);
+  const lh = cs.lineHeight;
+  if (lh && lh !== 'normal') return parsePx(lh);
+  const fs = parsePx(cs.fontSize) || 14; // 兜底 14px
+  return Math.round(fs * 1.4); // 近似 normal 行高
+}
+
+function adjustTextareaHeight(textarea: HTMLTextAreaElement, maxLines?: number) {
+  const cs = getComputedStyle(textarea);
+  const padding = parsePx(cs.paddingTop) + parsePx(cs.paddingBottom);
+  const border = parsePx(cs.borderTopWidth) + parsePx(cs.borderBottomWidth);
+  const lineHeight = getLineHeightPx(textarea);
+  const maxRows = Math.max(1, Number(maxLines || 8));
+  const maxHeight = lineHeight * maxRows + padding + border;
+
+  // 先重置为 auto 以便收缩
+  textarea.style.height = 'auto';
+  const newHeight = Math.min(textarea.scrollHeight, Math.ceil(maxHeight));
+  textarea.style.maxHeight = `${Math.ceil(maxHeight)}px`;
+  textarea.style.height = `${newHeight}px`;
+  textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+}
 
 // 在助手页内复制的抑制标记：在一定冷却时间内忽略剪贴板回填
 let suppressClipboardUntil = 0;
@@ -443,6 +527,9 @@ const state = reactive({
   task: '' as 'translate' | 'summarize' | 'rewrite' | 'polish' | 'chat',
   targetLang: 'zh-CN'
 });
+
+// 监听输入文本变化，异步刷新底部留白（适配自动增高）
+watch(() => state.text, () => nextTick(() => updateBottomGap()));
 
 // 会话管理
 const sessions = ref<Session[]>([]);
@@ -1557,6 +1644,15 @@ onMounted(async () => {
   setTimeout(() => {
     scrollToBottom();
   }, 150);
+
+  // 监听 footer 尺寸变化以动态设置内容底部留白
+  try {
+    footerResizeObserver = new ResizeObserver(() => updateBottomGap());
+    if (footerEl.value) footerResizeObserver.observe(footerEl.value);
+  } catch {}
+  window.addEventListener('resize', updateBottomGap);
+  await nextTick();
+  updateBottomGap();
 });
 
 onBeforeUnmount(() => {
@@ -1578,6 +1674,8 @@ onBeforeUnmount(() => {
   saveSessions();
   // 移除 copy 监听
   try { document.removeEventListener('copy', onInAppCopy as any); } catch {}
+  if (footerResizeObserver) footerResizeObserver.disconnect();
+  window.removeEventListener('resize', updateBottomGap);
 });
 </script>
 
@@ -1654,6 +1752,6 @@ onBeforeUnmount(() => {
 
 .ifocal-scroll-style>div>:not([class]) {
   padding-top: 60px;
-  padding-bottom: 150px;
+  padding-bottom: var(--ifocal-bottom-gap, 150px);
 }
 </style>
