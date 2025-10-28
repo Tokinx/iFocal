@@ -186,7 +186,7 @@
             <Button variant="ghost" size="sm" class="gap-1"
               :class="[bgClass, 'rounded-2xl', blurClassSm, { '!bg-slate-800/80 !text-white': state.task === 'translate' }]"
               @click="changeTask('translate')">
-              <Icon icon="ri:translate" class="h-4 w-4" />
+              <Icon icon="ri:translate-ai" class="h-4 w-4" />
               翻译
             </Button>
             <Button variant="ghost" size="sm" class="gap-1"
@@ -229,13 +229,21 @@
                     <Switch v-model="enableReasoning" @update:modelValue="toggleReasoning" />
                   </div>
 
-                  <!-- 上下文 -->
+                  <!-- 启用上下文 -->
                   <div class="py-1 flex items-center justify-between">
                     <div class="flex items-center gap-2">
                       <Icon icon="ri:message-ai-3-line" class="h-4 w-4" />
-                      <span class="text-sm font-medium">上下文</span>
+                      <span class="text-sm font-medium">启用上下文</span>
                     </div>
                     <Switch v-model="enableContext" @update:modelValue="toggleContext" />
+                  </div>
+                  <!-- 监听剪切板 -->
+                  <div class="py-1 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <Icon icon="ri:file-ai-line" class="h-4 w-4" />
+                      <span class="text-sm font-medium">监听剪切板</span>
+                    </div>
+                    <Switch v-model="autoPasteGlobalAssistant" @update:modelValue="toggleClipboardListening" />
                   </div>
                   <!-- 网络搜索 -->
                   <div class="py-1 flex items-center justify-between">
@@ -407,6 +415,11 @@ const enableStreaming = ref(false);
 const enableReasoning = ref(false); // 思考模式
 const enableContext = ref(false); // 上下文
 const reduceVisualEffects = ref(false); // 减弱视觉效果配置
+const autoPasteGlobalAssistant = ref(false); // 全局助手：是否自动粘贴剪贴板
+
+// 在助手页内复制的抑制标记：在一定冷却时间内忽略剪贴板回填
+let suppressClipboardUntil = 0;
+let lastInAppCopiedText = '';
 
 // 解析缓存，按 会话ID:消息索引 做键，避免模板中重复解析
 type ParsedParts = { reasoning: string; answer: string };
@@ -829,8 +842,9 @@ function saveSessions() {
 
 async function loadSessions() {
   try {
-
-
+    // 读取配置以决定是否启用自动粘贴
+    const globalCfg = await loadConfig();
+    const allowAutoPaste = !!globalCfg.autoPasteGlobalAssistant;
     const data = await new Promise<any>(resolve => {
       chrome.storage.local.get(['chatSessions', 'currentSessionId', 'lastSelectedTask'], resolve);
     });
@@ -865,19 +879,22 @@ async function loadSessions() {
 
     } else {
       // 创建默认会话并读取剪贴板到输入框
-
-      startNewChat(true);
+      startNewChat(allowAutoPaste);
       return;
     }
 
     // 如果是初始加载，读取剪贴板到输入框（不自动发送）
     if (isInitialLoad.value) {
       isInitialLoad.value = false;
-      readClipboardToInput();
+      if (allowAutoPaste) {
+        readClipboardToInput();
+      }
     }
   } catch (e) {
     console.error('加载会话失败:', e);
-    startNewChat(true);
+    // 兜底：创建默认会话，不自动读取剪贴板（除非配置允许）
+    const globalCfgFallback = await loadConfig();
+    startNewChat(!!globalCfgFallback.autoPasteGlobalAssistant);
   }
 }
 
@@ -934,6 +951,15 @@ async function fetchClipboardText(): Promise<string | null> {
 function applyClipboardText(raw: string | null, force: boolean) {
   if (typeof raw !== 'string') return;
   const trimmed = raw.trim();
+  const now = Date.now();
+  // 若为助手页面内刚触发的复制（按钮或快捷键），在冷却时间内忽略回填
+  if (now < suppressClipboardUntil) {
+    return;
+  }
+  // 永久忽略：如果当前剪贴板内容等于助手页内最近复制的文本，则不回填
+  if (trimmed && trimmed === lastInAppCopiedText) {
+    return;
+  }
   const inputHasValue = !!state.text.trim();
   const showingAutoFilled = state.text === lastAutoFilledClipboard;
   const alreadyApplied = state.text === trimmed;
@@ -1396,6 +1422,9 @@ async function copyMessage(content: string) {
     await navigator.clipboard.writeText(content);
     // 可以添加一个toast提示，这里简单处理
     console.log('消息已复制到剪贴板');
+    // 标记为页面内复制，短时间内忽略回填
+    lastInAppCopiedText = String(content ?? '').trim();
+    suppressClipboardUntil = Date.now() + 1500; // 1.5s 冷却
   } catch (e) {
     console.error('复制失败:', e);
   }
@@ -1432,6 +1461,23 @@ async function toggleContext(checked: boolean) {
   }
 }
 
+async function toggleClipboardListening(checked: boolean) {
+  autoPasteGlobalAssistant.value = checked;
+  try {
+    await saveConfig({ autoPasteGlobalAssistant: checked });
+    console.log('监听剪切板设置已保存:', checked);
+  } catch (e) {
+    console.error('保存监听剪切板设置失败:', e);
+  }
+
+  // 立即启停监听器
+  if (checked && document.hasFocus()) {
+    startClipboardMonitoring(true);
+  } else {
+    stopClipboardMonitoring();
+  }
+}
+
 onMounted(async () => {
   await loadModels();
   await loadSessions();
@@ -1442,6 +1488,7 @@ onMounted(async () => {
   enableReasoning.value = globalConfig.enableReasoning || false;
   enableContext.value = globalConfig.enableContext || false;
   reduceVisualEffects.value = globalConfig.reduceVisualEffects || false;
+  autoPasteGlobalAssistant.value = !!globalConfig.autoPasteGlobalAssistant;
 
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
@@ -1460,11 +1507,21 @@ onMounted(async () => {
       if (area === 'sync' && changes.reduceVisualEffects) {
         reduceVisualEffects.value = changes.reduceVisualEffects.newValue || false;
       }
+      if (area === 'sync' && changes.autoPasteGlobalAssistant) {
+        autoPasteGlobalAssistant.value = !!changes.autoPasteGlobalAssistant.newValue;
+        if (autoPasteGlobalAssistant.value && document.hasFocus()) {
+          startClipboardMonitoring(true);
+        } else {
+          stopClipboardMonitoring();
+        }
+      }
     });
   } catch { }
 
   windowFocusHandler = () => {
-    startClipboardMonitoring(true);
+    if (autoPasteGlobalAssistant.value) {
+      startClipboardMonitoring(true);
+    }
   };
   windowBlurHandler = () => {
     stopClipboardMonitoring();
@@ -1472,7 +1529,15 @@ onMounted(async () => {
 
   window.addEventListener('focus', windowFocusHandler);
   window.addEventListener('blur', windowBlurHandler);
-  if (document.hasFocus()) {
+  // 监听在助手页内的复制事件，抑制剪贴板回填
+  const onInAppCopy = (e: ClipboardEvent) => {
+    try {
+      lastInAppCopiedText = String(window.getSelection()?.toString() ?? '').trim();
+    } catch { lastInAppCopiedText = ''; }
+    suppressClipboardUntil = Date.now() + 1500; // 1.5s 冷却
+  };
+  document.addEventListener('copy', onInAppCopy);
+  if (document.hasFocus() && autoPasteGlobalAssistant.value) {
     startClipboardMonitoring(true);
   }
 
@@ -1511,6 +1576,8 @@ onBeforeUnmount(() => {
   }
   // 组件卸载前保存会话
   saveSessions();
+  // 移除 copy 监听
+  try { document.removeEventListener('copy', onInAppCopy as any); } catch {}
 });
 </script>
 

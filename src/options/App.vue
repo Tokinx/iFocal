@@ -634,7 +634,7 @@ onMounted(loadGlossary);
             </div>
             <div class="flex items-center justify-between gap-4">
               <div>
-                <label class="text-sm font-medium leading-none block mb-1">全局助手</label>
+                <label class="text-sm font-medium leading-none block mb-1">全局助手 - 监听剪切板</label>
                 <p class="text-xs text-muted-foreground">自动粘贴剪贴板到助手输入框</p>
               </div>
               <div>
