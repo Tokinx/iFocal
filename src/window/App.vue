@@ -9,26 +9,15 @@
         </Button>
 
         <!-- 模型选择 Dropdown -->
-        <ModelSelect
-          :current-model-name="currentModelName"
-          :grouped-models="groupedModels"
-          :selected-pair-key="selectedPairKey"
-          :bg-class="bgClass"
-          :blur-class="blurClass"
-          @selectModel="selectModel"
-        />
+        <ModelSelect :current-model-name="currentModelName" :grouped-models="groupedModels"
+          :selected-pair-key="selectedPairKey" :bg-class="bgClass" :blur-class="blurClass" @selectModel="selectModel" />
 
         <div class="flex-1"></div>
 
         <!-- 语言选择 Dropdown -->
-        <LanguageSelect
-          :current-lang-label="currentLangLabel"
-          :current-target-lang="state.targetLang"
-          :supported-languages="SUPPORTED_LANGUAGES"
-          :bg-class="bgClass"
-          :blur-class="blurClass"
-          @selectLanguage="selectLanguage"
-        />
+        <LanguageSelect :current-lang-label="currentLangLabel" :current-target-lang="state.targetLang"
+          :supported-languages="SUPPORTED_LANGUAGES" :bg-class="bgClass" :blur-class="blurClass"
+          @selectLanguage="selectLanguage" />
       </header>
 
       <!-- 对话区域 -->
@@ -47,7 +36,7 @@
             <div class="group relative max-w-[80%]">
               <div
                 class="rounded-xl !rounded-tr-none bg-zinc-200 px-4 py-3 text-primary-foreground prose prose-sm prose-invert max-w-none"
-                v-html="renderMarkdown(message.content)">
+                v-html="renderMarkdownSafe(message.content)">
               </div>
               <!-- 重试按钮 - 左下角 -->
               <Button variant="ghost" size="icon"
@@ -77,8 +66,7 @@
               <div v-else-if="message.content">
                 <!-- 解析思考过程和答案 -->
                 <template v-if="getParsed(message, idx).reasoning">
-                  <template
-                    v-if="message.isStreaming && enableReasoning && !getParsed(message, idx).answer">
+                  <template v-if="message.isStreaming && enableReasoning && !getParsed(message, idx).answer">
                     <Button variant="ghost" size="xs" class="h-6 p-0 text-xs gap-1">
                       <Icon icon="ri:lightbulb-line" class="h-4 w-4 text-muted-foreground" />
                       <span class="text-xs text-muted-foreground shimmer-text">
@@ -109,8 +97,7 @@
                       v-html="renderMarkdown(getParsed(message, idx).reasoning)"></div>
                   </template>
                   <div v-if="getParsed(message, idx).answer" class="h-2"></div>
-                  <div class="prose prose-sm max-w-none"
-                    v-html="renderMarkdown(getParsed(message, idx).answer)">
+                  <div class="prose prose-sm max-w-none" v-html="renderMarkdown(getParsed(message, idx).answer)">
                   </div>
                 </template>
                 <!-- 普通消息（没有思考过程） -->
@@ -160,36 +147,18 @@
 
       <!-- 底部操作区 -->
       <footer ref="footerEl" class="p-3 absolute left-0 right-0 bottom-0">
-        <ChatInput
-          v-model="state.text"
-          :sending="sending"
-          :task="state.task"
-          :enable-streaming="enableStreaming"
-          :enable-reasoning="enableReasoning"
-          :enable-context="enableContext"
-          :auto-paste-global-assistant="autoPasteGlobalAssistant"
-          :bg-class="bgClass"
-          :blur-class="blurClass"
-          @send="handleSend()"
-          @changeTask="changeTask"
-          @toggleStreaming="toggleStreaming"
-          @toggleReasoning="toggleReasoning"
-          @toggleContext="toggleContext"
-          @toggleClipboardListening="toggleClipboardListening"
-          @newChat="() => startNewChat(false)"
-        />
+        <ChatInput v-model="state.text" :sending="sending" :task="state.task" :enable-streaming="enableStreaming"
+          :enable-reasoning="enableReasoning" :enable-context="enableContext"
+          :auto-paste-global-assistant="autoPasteGlobalAssistant" :bg-class="bgClass" :blur-class="blurClass"
+          @send="handleSend()" @changeTask="changeTask" @toggleStreaming="toggleStreaming"
+          @toggleReasoning="toggleReasoning" @toggleContext="toggleContext"
+          @toggleClipboardListening="toggleClipboardListening" @newChat="() => startNewChat(false)" />
       </footer>
     </ScrollArea>
 
     <!-- 历史会话抽屉 -->
-    <HistoryDrawer
-      v-model:open="historyOpen"
-      :sessions="sessions"
-      :current-session-id="currentSessionId"
-      @switchSession="switchSession"
-      @deleteSession="deleteSession"
-      @newChatFromDrawer="startNewChatFromDrawer"
-    />
+    <HistoryDrawer v-model:open="historyOpen" :sessions="sessions" :current-session-id="currentSessionId"
+      @switchSession="switchSession" @deleteSession="deleteSession" @newChatFromDrawer="startNewChatFromDrawer" />
   </div>
 </template>
 
@@ -510,6 +479,23 @@ function renderMarkdown(content: string) {
   });
 }
 
+function renderMarkdownSafe(content: string) {
+  return marked(escapeUserHtml(content), {
+    breaks: false,
+    gfm: true
+  });
+}
+
+// 新增：更严谨的用户输入转义（包含双引号/单引号）
+function escapeUserHtml(text: string) {
+  return String(text ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // 解析消息中的思考过程和答案（兼容多种标签/字段，并支持流式未闭合标签）
 function parseMessageWithReasoning(content: string): { reasoning: string; answer: string } {
   const text = String(content ?? '');
@@ -534,7 +520,8 @@ function parseMessageWithReasoning(content: string): { reasoning: string; answer
   } catch { /* 非 JSON 内容，忽略 */ }
 
   // 2) 标签对兼容：<thought>/<think>/<analysis>/<reasoning> 和 <answer>/<final>/<response>/<output>
-  const reasoningTagRe = /<(thought|think|analysis|reasoning)[^>]*>([\s\S]*?)<\/\1>/i;
+  // 仅在内容开头提取思考标签，避免中间出现 <think> 等被误判为思考内容
+  const reasoningTagRe = /^\s*<(thought|think|analysis|reasoning)[^>]*>([\s\S]*?)<\/\1>/i;
   const answerTagRe = /<(answer|final|response|output)[^>]*>([\s\S]*?)<\/\1>/i;
   const rPair = text.match(reasoningTagRe);
   const aPair = text.match(answerTagRe);
@@ -551,8 +538,8 @@ function parseMessageWithReasoning(content: string): { reasoning: string; answer
     return { reasoning: '', answer: aPair[2].trim() };
   }
 
-  // 3) 流式未闭合标签：检测到思考的起始标签后，将后续文本全部作为 reasoning，直到闭合出现
-  const reasoningOpenRe = /<(thought|think|analysis|reasoning)[^>]*>/i;
+  // 3) 流式未闭合标签：仅当开头出现思考起始标签时，将后续文本作为 reasoning
+  const reasoningOpenRe = /^\s*<(thought|think|analysis|reasoning)[^>]*>/i;
   const open = text.match(reasoningOpenRe);
   if (open) {
     const openIdx = open.index ?? -1;
@@ -573,7 +560,8 @@ function parseMessageWithReasoning(content: string): { reasoning: string; answer
 // 检测是否已出现思考起始/闭合标签（用于流式渲染状态）
 function detectReasoningTagState(content: string): { opened: boolean; closed: boolean } {
   const text = String(content ?? '');
-  const open = text.match(/<(thought|think|analysis|reasoning)[^>]*>/i);
+  // 仅识别开头的思考起始标签，避免中间的 <think> 被误识别
+  const open = text.match(/^\s*<(thought|think|analysis|reasoning)[^>]*>/i);
   if (!open) return { opened: false, closed: false };
   const closeRe = new RegExp(`</${open[1]}>`, 'i');
   const closed = closeRe.test(text);
@@ -1433,7 +1421,7 @@ onMounted(async () => {
   try {
     footerResizeObserver = new ResizeObserver(() => updateBottomGap());
     if (footerEl.value) footerResizeObserver.observe(footerEl.value);
-  } catch {}
+  } catch { }
   window.addEventListener('resize', updateBottomGap);
   await nextTick();
   updateBottomGap();
@@ -1457,7 +1445,7 @@ onBeforeUnmount(() => {
   // 组件卸载前保存会话
   saveSessions();
   // 移除 copy 监听
-  try { document.removeEventListener('copy', onInAppCopy as any); } catch {}
+  try { document.removeEventListener('copy', onInAppCopy as any); } catch { }
   if (footerResizeObserver) footerResizeObserver.disconnect();
   window.removeEventListener('resize', updateBottomGap);
 });
