@@ -92,6 +92,7 @@ chrome.runtime.onConnect.addListener((port) => {
       const targetLang = message.targetLang || cfg.translateTargetLang || 'zh-CN';
       const prompt = makePrompt(message.task, message.text || '', targetLang, cfg.promptTemplates || {});
       const context = message.context || undefined;
+      const enableReasoning = !!message.enableReasoning;
 
       // 通知开始
       port.postMessage({ type: 'start', channel: pair.channel, model: pair.model });
@@ -99,7 +100,7 @@ chrome.runtime.onConnect.addListener((port) => {
       // 流式调用，每次收到 chunk 就发送给前端
       await invokeModel(channel, pair.model, prompt, context, true, (chunk: string) => {
         port.postMessage({ type: 'chunk', content: chunk });
-      });
+      }, { enableReasoning });
 
       // 通知完成
       port.postMessage({ type: 'done' });
@@ -122,13 +123,14 @@ async function handleLegacyAction(request: any) {
   const prompt = makePrompt(request.task, request.text || '', targetLang, cfg.promptTemplates || {});
   const context = request.context || undefined;
   const enableStreaming = request.enableStreaming || false;
+  const enableReasoning = !!request.enableReasoning;
 
   if (enableStreaming) {
     // 流式响应：通过 Port 通信
     throw new Error('Stream mode requires port connection');
   } else {
     // 非流式响应
-    const resultText = await invokeModel(channel, pair.model, prompt, context, false);
+    const resultText = await invokeModel(channel, pair.model, prompt, context, false, undefined, { enableReasoning });
     return { ok: true, result: resultText, channel: pair.channel, model: pair.model };
   }
 }
@@ -359,10 +361,10 @@ function pickModelFromConfig(task: string, requestPair: any, cfg: any) {
 
 import { makePrompt, makeMessage } from '@/shared/ai';
 
-async function invokeModel(channel: any, model: string, prompt: string, context?: Array<{role: string, content: string}>, stream: boolean = false, onChunk?: (chunk: string) => void) {
+async function invokeModel(channel: any, model: string, prompt: string, context?: Array<{role: string, content: string}>, stream: boolean = false, onChunk?: (chunk: string) => void, opts?: { enableReasoning?: boolean }) {
   if (!channel?.apiKey) throw new Error('Channel is missing API key');
   if (channel.type === 'openai' || channel.type === 'openai-compatible') {
-    return callOpenAI(channel.apiUrl, channel.apiKey, model, prompt, context, stream, onChunk);
+    return callOpenAI(channel.apiUrl, channel.apiKey, model, prompt, context, stream, onChunk, opts);
   }
   if (channel.type === 'gemini') {
     return callGemini(channel.apiUrl, channel.apiKey, model, prompt, context, stream, onChunk);
@@ -370,9 +372,38 @@ async function invokeModel(channel: any, model: string, prompt: string, context?
   throw new Error(`Unsupported channel type: ${channel.type}`);
 }
 
-async function callOpenAI(baseUrl: string, apiKey: string, model: string, prompt: string, context?: Array<{role: string, content: string}>, stream: boolean = false, onChunk?: (chunk: string) => void) {
+// 基于模型名和开关注入“思考”相关参数（尽量兼容常见 OpenAI 兼容生态）
+function buildReasoningParams(model: string, enabled: boolean | undefined) {
+  if (!enabled) return {} as any;
+  const m = (model || '').toLowerCase();
+  const params: any = {};
+  // 常见别名，未被识别的字段通常会被服务端忽略（OpenAI 兼容行为）
+  params.enable_thinking = true;   // 通用开关（如部分聚合服务/Qwen/DeepSeek 代理）
+  params.enable_reasoning = true;  // 别名
+  params.enable_thoughts = true;   // Qwen/DashScope 常见命名
+  // OpenAI o3 系列在 Responses API 支持 reasoning.effort，这里仅作为兼容字段透传
+  params.reasoning = { effort: 'medium' };
+
+  // DeepSeek 特殊：通常 deepseek-reasoner 会默认返回 reasoning_content，这里显式开启亦可被忽略
+  if (m.includes('deepseek')) {
+    params.model = model; // 不改模型，仅确保所有别名传递
+  }
+  // Qwen：部分兼容端要求 enable_thoughts/enable_thinking
+  if (m.includes('qwen')) {
+    params.model = model;
+  }
+  // GLM（智谱/ChatGLM）思考开关：官方文档为 thinking: { type: 'enabled' }
+  if (m.includes('glm')) {
+    params.thinking = { type: 'enabled' };
+  }
+  return params;
+}
+
+async function callOpenAI(baseUrl: string, apiKey: string, model: string, prompt: string, context?: Array<{role: string, content: string}>, stream: boolean = false, onChunk?: (chunk: string) => void, opts?: { enableReasoning?: boolean }) {
   const url = joinBasePath(baseUrl || 'https://api.openai.com/v1', '/chat/completions');
-  const body = { model, messages: makeMessage(model, prompt, 'You are a helpful assistant.', context), temperature: 0.2, stream };
+  const body: any = { model, messages: makeMessage(model, prompt, 'You are a helpful assistant.', context), temperature: 0.2, stream };
+  // 注入“思考开关”相关参数（尽量兼容）
+  Object.assign(body, buildReasoningParams(model, opts?.enableReasoning));
 
   return rateLimited(async () => {
     const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: JSON.stringify(body) });
@@ -385,6 +416,7 @@ async function callOpenAI(baseUrl: string, apiKey: string, model: string, prompt
 
       const decoder = new TextDecoder();
       let fullContent = '';
+      let thinkingStarted = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -400,8 +432,24 @@ async function callOpenAI(baseUrl: string, apiKey: string, model: string, prompt
 
             try {
               const json = JSON.parse(data);
-              const content = json?.choices?.[0]?.delta?.content;
-              if (content) {
+              const delta = json?.choices?.[0]?.delta || {};
+              // 通用：若出现 reasoning_content（DeepSeek/GLM 等），包裹 <think> 方便前端解析
+              if (typeof (delta as any).reasoning_content === 'string' && (delta as any).reasoning_content) {
+                const seg = String((delta as any).reasoning_content);
+                const wrapped = thinkingStarted ? seg : `<think>${seg}`;
+                thinkingStarted = true;
+                fullContent += wrapped;
+                if (onChunk) onChunk(wrapped);
+              }
+              const content = delta?.content;
+              if (typeof content === 'string' && content) {
+                // 若此前输出过思考片段但尚未闭合，则在首个答案 token 前闭合
+                if (thinkingStarted) {
+                  const closing = `</think>`;
+                  fullContent += closing;
+                  if (onChunk) onChunk(closing);
+                  thinkingStarted = false;
+                }
                 fullContent += content;
                 if (onChunk) onChunk(content);
               }
@@ -417,7 +465,13 @@ async function callOpenAI(baseUrl: string, apiKey: string, model: string, prompt
     } else {
       // 非流式响应
       const json = await res.json();
-      const content = json?.choices?.[0]?.message?.content;
+      const choice = json?.choices?.[0]?.message || {};
+      let content: string = choice?.content || '';
+      // 通用：若返回 reasoning_content（DeepSeek/GLM 等），合并为 <think> 片段
+      const rc = (choice as any)?.reasoning_content;
+      if (typeof rc === 'string' && rc) {
+        content = `<think>${rc}</think>\n` + (content || '');
+      }
       if (!content) throw new Error('OpenAI returned empty response');
       return content;
     }

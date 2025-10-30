@@ -35,7 +35,7 @@
           <div v-if="message.role === 'user'" class="flex justify-end">
             <div class="group relative max-w-[80%]">
               <div
-                class="rounded-xl !rounded-tr-none bg-zinc-200 px-4 py-3 text-primary-foreground prose prose-sm prose-invert max-w-none"
+                class="rounded-xl !rounded-tr-none bg-zinc-200 px-4 py-3 text-foreground prose prose-sm max-w-none"
                 v-html="renderMarkdownSafe(message.content)">
               </div>
               <!-- 重试按钮 - 左下角 -->
@@ -481,7 +481,7 @@ function renderMarkdown(content: string) {
 
 function renderMarkdownSafe(content: string) {
   return marked(escapeUserHtml(content), {
-    breaks: false,
+    breaks: true,
     gfm: true
   });
 }
@@ -1480,20 +1480,53 @@ onBeforeUnmount(() => {
   margin-bottom: 0;
 }
 
+/* 统一链接样式：在浅底/深底下都保证可读性 */
+.prose a {
+  color: #2563eb; /* 蓝色链接 */
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.prose a:hover { color: #1d4ed8; }
+
+/* 行内代码样式（更大字号、更清晰的背景与圆角） */
+.prose code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.93rem;
+  background-color: rgba(2, 6, 23, 0.06); /* slate-950 @ ~6% */
+  padding: 0.15em 0.35em;
+  border-radius: 0.375rem; /* rounded-md */
+}
+
+/* 代码块：增加字号、行高、内边距与边框，保证可读性 */
+.prose pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.93rem;
+  line-height: 1.55;
+  background-color: #f6f8fa; /* 与 GitHub 接近的浅灰 */
+  border: 1px solid #e5e7eb; /* zinc-200 边框 */
+  border-radius: 0.5rem;
+  padding: 0.85rem 1rem;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 避免代码块内再叠加行内 code 的背景与内边距 */
+.prose pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 0.93rem;
+}
+
 /* 用户消息（深色背景）的 prose-invert 样式优化 */
 .prose-invert {
   color: inherit;
 }
 
-/* 用户消息中的代码块样式 */
+/* 深底部场景下（若未来启用）仍然可读 */
+.prose-invert a { color: #93c5fd; }
 .prose-invert code {
-  color: #e5e7eb;
-  background-color: rgba(255, 255, 255, 0.1);
-}
-
-/* 用户消息中的链接样式 */
-.prose-invert a {
-  color: #60a5fa;
+  color: inherit;
+  background-color: rgba(255, 255, 255, 0.12);
 }
 </style>
 <style>
