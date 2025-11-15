@@ -1,43 +1,32 @@
 <template>
   <Sheet v-model:open="innerOpen">
-    <SheetContent side="left" class="w-80 flex flex-col">
+    <SheetContent side="left" class="w-80 flex flex-col bg-white/60 backdrop-blur-md border-none rounded-r-2xl">
       <SheetHeader>
-        <SheetTitle>历史会话 ({{ sessions.length }})</SheetTitle>
-        <SheetDescription>
-          查看和管理您的对话历史
-        </SheetDescription>
+        <SheetTitle class="text-lg font-medium">历史会话 ({{ sessions.length }})</SheetTitle>
       </SheetHeader>
 
-      <div class="mt-6 space-y-2 flex-1 overflow-y-auto">
-        <!-- 新建对话按钮 -->
-        <Button variant="outline" class="w-full justify-start gap-2" @click="$emit('newChatFromDrawer')">
-          <Icon icon="ri:add-line" class="h-4 w-4" />
-          新建对话
-        </Button>
-
+      <div class="space-y-1 flex-1 overflow-y-auto">
         <!-- 会话列表 -->
-        <div class="space-y-1">
-          <button v-for="(session, idx) in sessions" :key="session.id" @click="$emit('switchSession', session.id)"
-            class="w-full rounded-lg p-3 text-left transition-colors hover:bg-accent"
-            :class="{ 'bg-accent': currentSessionId === session.id }">
-            <div class="flex items-start justify-between gap-2">
-              <div class="flex-1 min-w-0">
-                <div class="truncate text-sm font-medium">
-                  {{ session.title || '新对话' }}
-                </div>
-                <div class="text-xs text-muted-foreground">
-                  {{ formatDate(session.updatedAt) }}
-                </div>
+        <button v-for="(session, idx) in sessions" :key="session.id" @click="$emit('switchSession', session.id)"
+          class="w-full rounded-lg p-3 text-left transition-colors hover:bg-white/60"
+          :class="{ 'bg-white/80': currentSessionId === session.id }">
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex-1 min-w-0">
+              <div class="truncate text-sm font-medium text-foreground">
+                {{ session.title || '新对话' }}
               </div>
-              <Button variant="ghost" size="icon" class="h-6 w-6 shrink-0" @click.stop="$emit('deleteSession', session.id)">
-                <Icon icon="ri:delete-bin-line" class="h-4 w-4" />
-              </Button>
+              <div class="text-xs text-muted-foreground mt-0.5">
+                {{ formatDate(session.updatedAt) }}
+              </div>
             </div>
-          </button>
-        </div>
+            <Button variant="ghost" size="icon" class="h-6 w-6 shrink-0 hover:bg-zinc-200/80" @click.stop="$emit('deleteSession', session.id)">
+              <Icon icon="ri:delete-bin-line" class="h-4 w-4 text-muted-foreground" />
+            </Button>
+          </div>
+        </button>
 
         <!-- 空状态 -->
-        <div v-if="sessions.length === 0" class="py-8 text中心 text-sm text-muted-foreground">
+        <div v-if="sessions.length === 0" class="py-8 text-center text-sm text-muted-foreground">
           暂无历史会话
         </div>
       </div>
