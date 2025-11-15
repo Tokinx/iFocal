@@ -109,12 +109,13 @@ chrome.runtime.onConnect.addListener((port) => {
     if (message.action !== 'performAiAction') return;
 
     try {
-      const cfg = await readConfig(['channels', 'defaultModel', 'translateModel', 'translateTargetLang', 'promptTemplates']);
+      const cfg = await readConfig(['channels', 'defaultModel', 'translateModel', 'translateTargetLang', 'prevLanguage', 'promptTemplates']);
       const pair = pickModelFromConfig(message.task, message.channel && message.model ? { channel: message.channel, model: message.model } : null, cfg);
       if (!pair) throw new Error('No available model');
       const channel = ensureChannel(cfg.channels, pair.channel);
       const targetLang = message.targetLang || cfg.translateTargetLang || 'zh-CN';
-      const prompt = makePrompt(message.task, message.text || '', targetLang, cfg.promptTemplates || {});
+      const prevLang = message.prevLang || cfg.prevLanguage || 'en';
+      const prompt = makePrompt(message.task, message.text || '', targetLang, cfg.promptTemplates || {}, prevLang);
       const context = message.context || undefined;
       const enableReasoning = !!message.enableReasoning;
 
@@ -147,12 +148,13 @@ chrome.runtime.onConnect.addListener((port) => {
 // 非流式：已移除 handleStreamRequest
 
 async function handleLegacyAction(request: any) {
-  const cfg = await readConfig(['channels', 'defaultModel', 'translateModel', 'translateTargetLang', 'promptTemplates']);
+  const cfg = await readConfig(['channels', 'defaultModel', 'translateModel', 'translateTargetLang', 'prevLanguage', 'promptTemplates']);
   const pair = pickModelFromConfig(request.task, request.channel && request.model ? { channel: request.channel, model: request.model } : null, cfg);
   if (!pair) throw new Error('No available model');
   const channel = ensureChannel(cfg.channels, pair.channel);
   const targetLang = request.targetLang || cfg.translateTargetLang || 'zh-CN';
-  const prompt = makePrompt(request.task, request.text || '', targetLang, cfg.promptTemplates || {});
+  const prevLang = request.prevLang || cfg.prevLanguage || 'en';
+  const prompt = makePrompt(request.task, request.text || '', targetLang, cfg.promptTemplates || {}, prevLang);
   const context = request.context || undefined;
   const enableStreaming = request.enableStreaming || false;
   const enableReasoning = !!request.enableReasoning;

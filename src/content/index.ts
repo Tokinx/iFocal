@@ -237,6 +237,7 @@ type StorageConfig = {
   translateModel?: ChannelPair;
   activeModel?: ChannelPair;
   translateTargetLang?: string;
+  prevLanguage?: string;
 };
 
 let hoveredElement: HTMLElement | null = null;
@@ -687,21 +688,23 @@ function triggerSelectionTranslate() {
   const rect = lastSelectionRect || getSelectionRect();
   const overlay = rect ? createOverlayAt(rect.left + window.scrollX, rect.bottom + window.scrollY + 8) : createOverlayAt(80, 80);
   overlay.setLoading(true);
-  chrome.storage.sync.get(['channels', 'defaultModel', 'translateModel', 'activeModel', 'translateTargetLang'], (cfg: StorageConfig) => {
+  chrome.storage.sync.get(['channels', 'defaultModel', 'translateModel', 'activeModel', 'translateTargetLang', 'prevLanguage'], (cfg: StorageConfig) => {
     const reqPair = cfg.activeModel || null;
     const pair = pickPair(cfg, 'translate', reqPair);
     const lang = cfg.translateTargetLang || 'zh-CN';
-    attachOverlayHeaderVue(overlay, cfg, pair, lang, lastSelectionText);
-    startStreamForOverlay(overlay, 'translate', lastSelectionText, pair, lang);
+    const prevLang = cfg.prevLanguage || 'en';
+    attachOverlayHeaderVue(overlay, cfg, pair, lang, prevLang, lastSelectionText);
+    startStreamForOverlay(overlay, 'translate', lastSelectionText, pair, lang, prevLang);
   });
 }
 
-function startStreamForOverlay(overlay: OverlayHandle, task: string, text: string, pair: ChannelPair, lang: string) {
+function startStreamForOverlay(overlay: OverlayHandle, task: string, text: string, pair: ChannelPair, lang: string, prevLang?: string) {
   overlay.setText('');
   overlay.setLoading(true);
   const payload: any = { action: 'performAiAction', task, text };
   if (pair?.channel && pair.model) { payload.channel = pair.channel; payload.model = pair.model; }
   if (lang) payload.targetLang = lang;
+  if (prevLang) payload.prevLang = prevLang;
   try {
     chrome.runtime.sendMessage(payload, (resp: any) => {
       try { void chrome.runtime.lastError; } catch { }
@@ -716,7 +719,7 @@ function startStreamForOverlay(overlay: OverlayHandle, task: string, text: strin
   }
 }
 
-function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair: ChannelPair, lang: string, text: string) {
+function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair: ChannelPair, lang: string, prevLang: string, text: string) {
   const header = document.createElement('div');
   header.className = 'ifocal-overlay-header';
 
@@ -768,9 +771,11 @@ function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair
     item.textContent = `${L.label}`;
     item.addEventListener('click', (ev) => {
       ev.stopPropagation(); ev.preventDefault();
-      chrome.storage.sync.set({ translateTargetLang: L.value }, () => {
+      // 智能语言切换：将当前语言保存为 prevLanguage
+      const oldLang = lang;
+      chrome.storage.sync.set({ translateTargetLang: L.value, prevLanguage: oldLang }, () => {
         langBtn.textContent = L.label;
-        startStreamForOverlay(overlay, 'translate', text, parsePair(modelBtn.textContent || ''), L.value);
+        startStreamForOverlay(overlay, 'translate', text, parsePair(modelBtn.textContent || ''), L.value, oldLang);
       });
       langMenu.classList.add('hidden');
     });

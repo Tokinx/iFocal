@@ -304,7 +304,8 @@ function getParsed(message: Message, idx: number): ParsedParts {
 const state = reactive({
   text: '',
   task: '' as 'translate' | 'summarize' | 'rewrite' | 'polish' | 'chat',
-  targetLang: 'zh-CN'
+  targetLang: 'zh-CN',
+  prevLang: 'en' // 上一次选择的语言
 });
 
 // 监听输入文本变化，异步刷新底部留白（适配自动增高）
@@ -822,6 +823,7 @@ async function loadModels() {
   const pairs = channels.flatMap(ch => (ch.models || []).map(m => ({ key: keyOf({ channel: ch.name, model: m }), channel: ch.name, model: m })));
   modelPairs.value = pairs;
   state.targetLang = globalConfig.translateTargetLang;
+  state.prevLang = globalConfig.prevLanguage || 'en';
 
   // 加载每个任务的模型选择
   if (localData.selectedModelByTask) {
@@ -1023,7 +1025,7 @@ async function handleNonStreamingSend(
   requestStartAt: number,
   requestId: string
 ) {
-  const msg: any = { action: 'performAiAction', task: state.task, text, targetLang: state.targetLang, enableReasoning, requestId };
+  const msg: any = { action: 'performAiAction', task: state.task, text, targetLang: state.targetLang, prevLang: state.prevLang, enableReasoning, requestId };
   if (pair) { msg.channel = pair.channel; msg.model = pair.model; }
 
   // 如果启用上下文，添加历史消息
@@ -1124,7 +1126,7 @@ async function handleStreamingSend(
   requestStartAt: number,
   requestId: string
 ) {
-  const msg: any = { action: 'performAiAction', task: state.task, text, targetLang: state.targetLang, enableReasoning };
+  const msg: any = { action: 'performAiAction', task: state.task, text, targetLang: state.targetLang, prevLang: state.prevLang, enableReasoning };
   if (pair) { msg.channel = pair.channel; msg.model = pair.model; }
 
   // 如果启用上下文,添加历史消息
@@ -1417,10 +1419,22 @@ function selectModel(key: string) {
 }
 
 function selectLanguage(lang: string) {
+  // 智能语言切换逻辑：
+  // 当用户切换语言时，将当前的 targetLang 保存为 prevLang
+  // 然后将新选择的语言设置为 targetLang
+  const oldTargetLang = state.targetLang;
+  state.prevLang = oldTargetLang;
   state.targetLang = lang;
-  saveConfig({ translateTargetLang: lang }).catch(error => {
+
+  saveConfig({
+    translateTargetLang: lang,
+    prevLanguage: oldTargetLang
+  }).catch(error => {
     console.error('保存语言设置失败:', error);
-    chrome.storage.sync.set({ translateTargetLang: lang });
+    chrome.storage.sync.set({
+      translateTargetLang: lang,
+      prevLanguage: oldTargetLang
+    });
   });
 }
 

@@ -22,6 +22,7 @@ export const SUPPORTED_TASKS = [
 export const DEFAULT_CONFIG = {
   // 语言设置
   translateTargetLang: 'zh-CN',
+  prevLanguage: 'en', // 上一次选择的语言（用于智能双向翻译）
 
   // 任务设置
   defaultTask: 'translate',
@@ -82,6 +83,7 @@ export const DEFAULT_CONFIG = {
 // 配置键名列表，用于存储和读取
 export const CONFIG_KEYS = [
   'translateTargetLang',
+  'prevLanguage',
   'defaultTask',
   'displayMode',
   'enableSelectionTranslation',
