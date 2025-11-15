@@ -5,6 +5,8 @@ let isOpeningGlobalWindow = false; // 打开全局窗口的重入保护
 const GLOBAL_WIN_KEY = 'globalAssistantWindowId';
 
 // 监听窗口关闭，若为全局助手，则清理存储的 ID
+// 非流式请求中断：为每个 requestId 维护 AbortController
+const abortControllers: Record<string, AbortController> = {};
 try {
   chrome.windows.onRemoved.addListener((windowId) => {
     try {
@@ -68,6 +70,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     handleLegacyAction(message).then(sendResponse).catch((error) => sendResponse({ ok: false, error: String(error) }));
     return true;
   }
+  if (message.action === 'abortRequest') {
+    try {
+      const id = String(message.requestId || '');
+      if (id && abortControllers[id]) {
+        try { abortControllers[id]!.abort(); } catch { }
+        delete abortControllers[id];
+      }
+      sendResponse({ ok: true });
+    } catch (e: any) {
+      sendResponse({ ok: false, error: String(e?.message || e) });
+    }
+    return false;
+  }
 
   if (message.action === 'testChannel') {
     handleTestChannel(message).then(sendResponse).catch((error) => sendResponse({ ok: false, error: String(error) }));
@@ -77,9 +92,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // translateBatch/getRateStatus 已移除（删除全文翻译与侧边栏指标）
 });
 
+
 // 流式响应：通过 Port 长连接通信
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'streaming') return;
+
+  let portDisconnected = false;
+  try { port.onDisconnect.addListener(() => { portDisconnected = true; }); } catch { }
+
+  const safePost = (msg: any) => {
+    if (portDisconnected) return;
+    try { port.postMessage(msg); } catch { /* 端口已断开，忽略 */ }
+  };
 
   port.onMessage.addListener(async (message) => {
     if (message.action !== 'performAiAction') return;
@@ -95,17 +119,25 @@ chrome.runtime.onConnect.addListener((port) => {
       const enableReasoning = !!message.enableReasoning;
 
       // 通知开始
-      port.postMessage({ type: 'start', channel: pair.channel, model: pair.model });
+      safePost({ type: 'start', channel: pair.channel, model: pair.model });
 
       // 流式调用，每次收到 chunk 就发送给前端
-      await invokeModel(channel, pair.model, prompt, context, true, (chunk: string) => {
-        port.postMessage({ type: 'chunk', content: chunk });
-      }, { enableReasoning });
+      await invokeModel(
+        channel,
+        pair.model,
+        prompt,
+        context,
+        true,
+        (chunk: string) => {
+          if (!portDisconnected) safePost({ type: 'chunk', content: chunk });
+        },
+        { enableReasoning, shouldStop: () => portDisconnected }
+      );
 
       // 通知完成
-      port.postMessage({ type: 'done' });
+      safePost({ type: 'done' });
     } catch (error: any) {
-      port.postMessage({ type: 'error', error: String(error?.message || error) });
+      safePost({ type: 'error', error: String(error?.message || error) });
     }
   });
 });
@@ -124,14 +156,21 @@ async function handleLegacyAction(request: any) {
   const context = request.context || undefined;
   const enableStreaming = request.enableStreaming || false;
   const enableReasoning = !!request.enableReasoning;
+  const reqId = request.requestId ? String(request.requestId) : '';
+  const controller = new AbortController();
+  if (!enableStreaming && reqId) abortControllers[reqId] = controller;
 
   if (enableStreaming) {
     // 流式响应：通过 Port 通信
     throw new Error('Stream mode requires port connection');
   } else {
     // 非流式响应
-    const resultText = await invokeModel(channel, pair.model, prompt, context, false, undefined, { enableReasoning });
-    return { ok: true, result: resultText, channel: pair.channel, model: pair.model };
+    try {
+      const resultText = await invokeModel(channel, pair.model, prompt, context, false, undefined, { enableReasoning, signal: controller.signal });
+      return { ok: true, result: resultText, channel: pair.channel, model: pair.model };
+    } finally {
+      if (reqId && abortControllers[reqId]) delete abortControllers[reqId];
+    }
   }
 }
 
@@ -361,13 +400,21 @@ function pickModelFromConfig(task: string, requestPair: any, cfg: any) {
 
 import { makePrompt, makeMessage } from '@/shared/ai';
 
-async function invokeModel(channel: any, model: string, prompt: string, context?: Array<{role: string, content: string}>, stream: boolean = false, onChunk?: (chunk: string) => void, opts?: { enableReasoning?: boolean }) {
+async function invokeModel(
+  channel: any,
+  model: string,
+  prompt: string,
+  context?: Array<{ role: string; content: string }>,
+  stream: boolean = false,
+  onChunk?: (chunk: string) => void,
+  opts?: { enableReasoning?: boolean; shouldStop?: () => boolean; signal?: AbortSignal }
+) {
   if (!channel?.apiKey) throw new Error('Channel is missing API key');
   if (channel.type === 'openai' || channel.type === 'openai-compatible') {
     return callOpenAI(channel.apiUrl, channel.apiKey, model, prompt, context, stream, onChunk, opts);
   }
   if (channel.type === 'gemini') {
-    return callGemini(channel.apiUrl, channel.apiKey, model, prompt, context, stream, onChunk);
+    return callGemini(channel.apiUrl, channel.apiKey, model, prompt, context, stream, onChunk, opts);
   }
   throw new Error(`Unsupported channel type: ${channel.type}`);
 }
@@ -399,14 +446,23 @@ function buildReasoningParams(model: string, enabled: boolean | undefined) {
   return params;
 }
 
-async function callOpenAI(baseUrl: string, apiKey: string, model: string, prompt: string, context?: Array<{role: string, content: string}>, stream: boolean = false, onChunk?: (chunk: string) => void, opts?: { enableReasoning?: boolean }) {
+async function callOpenAI(
+  baseUrl: string,
+  apiKey: string,
+  model: string,
+  prompt: string,
+  context?: Array<{ role: string; content: string }>,
+  stream: boolean = false,
+  onChunk?: (chunk: string) => void,
+  opts?: { enableReasoning?: boolean; shouldStop?: () => boolean; signal?: AbortSignal }
+) {
   const url = joinBasePath(baseUrl || 'https://api.openai.com/v1', '/chat/completions');
   const body: any = { model, messages: makeMessage(model, prompt, 'You are a helpful assistant.', context), temperature: 0.2, stream };
   // 注入“思考开关”相关参数（尽量兼容）
   Object.assign(body, buildReasoningParams(model, opts?.enableReasoning));
 
   return rateLimited(async () => {
-    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: JSON.stringify(body) });
+    const res = await withBackoff(() => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: JSON.stringify(body), signal: opts?.signal as any }));
     if (!res.ok) throw new Error(`OpenAI HTTP ${res.status}`);
 
     if (stream) {
@@ -419,6 +475,10 @@ async function callOpenAI(baseUrl: string, apiKey: string, model: string, prompt
       let thinkingStarted = false;
 
       while (true) {
+        if (opts?.shouldStop && opts.shouldStop()) {
+          try { await reader.cancel(); } catch { }
+          break;
+        }
         const { done, value } = await reader.read();
         if (done) break;
 
@@ -478,7 +538,16 @@ async function callOpenAI(baseUrl: string, apiKey: string, model: string, prompt
   });
 }
 
-async function callGemini(baseUrl: string, apiKey: string, model: string, prompt: string, context?: Array<{role: string, content: string}>, stream: boolean = false, onChunk?: (chunk: string) => void) {
+async function callGemini(
+  baseUrl: string,
+  apiKey: string,
+  model: string,
+  prompt: string,
+  context?: Array<{ role: string; content: string }>,
+  stream: boolean = false,
+  onChunk?: (chunk: string) => void,
+  opts?: { shouldStop?: () => boolean; signal?: AbortSignal }
+) {
   const base = baseUrl || 'https://generativelanguage.googleapis.com/v1beta';
   const endpoint = stream ? 'streamGenerateContent' : 'generateContent';
   const url = joinBasePath(base, `/models/${encodeURIComponent(model)}:${endpoint}?key=${encodeURIComponent(apiKey)}`);
@@ -501,7 +570,7 @@ async function callGemini(baseUrl: string, apiKey: string, model: string, prompt
 
   const body = { contents };
   return rateLimited(async () => {
-    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const res = await withBackoff(() => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: opts?.signal as any }));
     if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
 
     if (stream) {
@@ -513,6 +582,10 @@ async function callGemini(baseUrl: string, apiKey: string, model: string, prompt
       let fullContent = '';
 
       while (true) {
+        if (opts?.shouldStop && opts.shouldStop()) {
+          try { await reader.cancel(); } catch { }
+          break;
+        }
         const { done, value } = await reader.read();
         if (done) break;
 

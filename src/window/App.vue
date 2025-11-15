@@ -23,7 +23,7 @@
       <!-- 对话区域 -->
       <div class="mx-auto max-w-[50rem] space-y-6 ">
         <!-- 示例问题（仅在无对话时显示） -->
-        <div v-if="!currentSession.messages.length && !sending" class="space-y-4 mx-auto w-[80%] pt-[38%]">
+        <div v-if="!currentSession.messages.length && !isBusy" class="space-y-4 mx-auto w-[80%] pt-[38%]">
           <h2 class="text-center text-2xl font-medium text-muted-foreground">
             有什么可以帮忙的？
           </h2>
@@ -34,8 +34,7 @@
           <!-- 用户消息 -->
           <div v-if="message.role === 'user'" class="flex justify-end">
             <div class="group relative max-w-[80%]">
-              <div
-                class="rounded-xl !rounded-tr-none bg-zinc-200 px-4 py-3 text-foreground prose prose-sm max-w-none"
+              <div class="rounded-xl !rounded-tr-none bg-zinc-200 px-4 py-3 text-foreground prose prose-sm max-w-none"
                 v-html="renderMarkdownSafe(message.content)">
               </div>
               <!-- 重试按钮 - 左下角 -->
@@ -67,12 +66,17 @@
                 <!-- 解析思考过程和答案 -->
                 <template v-if="getParsed(message, idx).reasoning">
                   <template v-if="message.isStreaming && enableReasoning && !getParsed(message, idx).answer">
-                    <Button variant="ghost" size="xs" class="h-6 p-0 text-xs gap-1">
-                      <Icon icon="ri:lightbulb-line" class="h-4 w-4 text-muted-foreground" />
-                      <span class="text-xs text-muted-foreground shimmer-text">
-                        正在思考...
+                    <div class="flex items-center">
+                      <Button variant="ghost" size="xs" class="h-6 p-0 text-xs gap-1">
+                        <Icon icon="ri:lightbulb-line" class="h-4 w-4 text-muted-foreground" />
+                        <span class="text-xs text-muted-foreground shimmer-text">
+                          正在思考...
+                        </span>
+                      </Button>
+                      <span class="ml-2 text-muted-foreground" v-if="getReasoningElapsedSeconds(message) > 0">
+                        {{ getReasoningElapsedLabel(message) }}s
                       </span>
-                    </Button>
+                    </div>
                   </template>
                   <template v-else>
                     <div class="flex items-center">
@@ -88,8 +92,8 @@
                           思考过程
                         </span>
                       </Button>
-                      <span class="ml-2 text-muted-foreground" v-if="getReasoningDurationSeconds(message) > '0.00'">
-                        {{ getReasoningDurationSeconds(message) }}s
+                      <span class="ml-2 text-muted-foreground" v-if="getReasoningElapsedSeconds(message) > 0">
+                        {{ getReasoningElapsedLabel(message) }}s
                       </span>
                     </div>
                     <div v-if="!message.reasoningCollapsed"
@@ -147,10 +151,10 @@
 
       <!-- 底部操作区 -->
       <footer ref="footerEl" class="p-3 absolute left-0 right-0 bottom-0">
-        <ChatInput v-model="state.text" :sending="sending" :task="state.task" :enable-streaming="enableStreaming"
+        <ChatInput v-model="state.text" :sending="isBusy" :task="state.task" :enable-streaming="enableStreaming"
           :enable-reasoning="enableReasoning" :enable-context="enableContext"
           :auto-paste-global-assistant="autoPasteGlobalAssistant" :bg-class="bgClass" :blur-class="blurClass"
-          @send="handleSend()" @changeTask="changeTask" @toggleStreaming="toggleStreaming"
+          @send="handleSend()" @stop="stopGenerating" @changeTask="changeTask" @toggleStreaming="toggleStreaming"
           @toggleReasoning="toggleReasoning" @toggleContext="toggleContext"
           @toggleClipboardListening="toggleClipboardListening" @newChat="() => startNewChat(false)" />
       </footer>
@@ -238,6 +242,28 @@ const reduceVisualEffects = ref(false); // 减弱视觉效果配置
 const autoPasteGlobalAssistant = ref(false); // 全局助手：是否自动粘贴剪贴板
 const footerEl = ref<HTMLElement | null>(null);
 let footerResizeObserver: ResizeObserver | null = null;
+// 当前流式端口（用于停止）
+let currentStreamingPort: chrome.runtime.Port | null = null;
+// 当前非流式请求 ID（用于中断）
+let inflightRequestId: string | null = null;
+const abortedRequests = new Set<string>();
+
+// 综合忙碌状态：发送中或存在流式输出中的 AI 消息
+const isBusy = computed(() => {
+  if (sending.value) return true;
+  const session = currentSession.value;
+  if (!session) return false;
+  return (session.messages || []).some(m => m.role === 'assistant' && (m as any).isStreaming);
+});
+
+function isExtensionAlive(): boolean {
+  try {
+    // 当扩展上下文被失效（关闭/刷新）时，runtime 或 id 可能不可用
+    return !!(typeof chrome !== 'undefined' && chrome?.runtime && chrome.runtime.id);
+  } catch {
+    return false;
+  }
+}
 
 function setBottomGap(px: number) {
   const el: any = messagesContainer.value as any;
@@ -575,11 +601,21 @@ function updateReasoningTimingForMessage(message: Message) {
   if (opened && closed && !message.reasoningEndedAt) message.reasoningEndedAt = now;
 }
 
-function getReasoningDurationSeconds(message: Message): string {
-  if (!message.reasoningStartedAt || !message.reasoningEndedAt) return '0.00';
-  const ms = Math.max(0, message.reasoningEndedAt - message.reasoningStartedAt);
-  const seconds = ms / 1000;
-  return seconds.toFixed(2);
+// 实时计时：在思考未结束时，使用当前时间参与计算
+const nowTick = ref(Date.now());
+let nowTickTimer: number | null = null;
+
+function getReasoningElapsedSeconds(message: Message): number {
+  const start = message.reasoningStartedAt;
+  if (!start) return 0;
+  const end = message.reasoningEndedAt || nowTick.value;
+  const seconds = Math.max(0, (end - start) / 1000);
+  // 统一两位小数
+  return Number(seconds.toFixed(2));
+}
+
+function getReasoningElapsedLabel(message: Message): string {
+  return getReasoningElapsedSeconds(message).toFixed(2);
 }
 
 function keyOf(pair: Pair) {
@@ -682,20 +718,39 @@ function deleteSession(sessionId: string) {
 
 function saveSessions() {
   try {
+    if (!isExtensionAlive()) {
+      // 页面卸载或扩展上下文失效时无需保存，避免抛错噪音
+      return;
+    }
     // 创建深拷贝以避免引用问题
     const sessionsToSave = JSON.parse(JSON.stringify(sessions.value));
-    chrome.storage.local.set({
-      chatSessions: sessionsToSave,
-      currentSessionId: currentSessionId.value
-    }, () => {
-      if (chrome.runtime.lastError) {
-        console.error('保存会话失败:', chrome.runtime.lastError);
-      } else {
-        console.log('会话保存成功，已保存', sessionsToSave.length, '个会话');
+    chrome.storage.local.set(
+      {
+        chatSessions: sessionsToSave,
+        currentSessionId: currentSessionId.value,
+      },
+      () => {
+        const err = chrome.runtime.lastError as any;
+        if (err) {
+          const msg = String(err?.message || err || '');
+          // 常见在关闭页面/扩展重载时出现，属于无害错误，降级为 warn
+          if (/context invalidated/i.test(msg) || /message port closed/i.test(msg)) {
+            console.warn('保存会话被中断（上下文失效）');
+          } else {
+            console.error('保存会话失败:', err);
+          }
+        } else {
+          console.log('会话保存成功，已保存', sessionsToSave.length, '个会话');
+        }
       }
-    });
+    );
   } catch (e) {
-    console.error('保存会话异常:', e);
+    const msg = String((e as any)?.message || e || '');
+    if (/context invalidated/i.test(msg) || /message port closed/i.test(msg)) {
+      console.warn('保存会话被中断（上下文失效）');
+    } else {
+      console.error('保存会话异常:', e);
+    }
   }
 }
 
@@ -899,8 +954,9 @@ async function readClipboardToInput() {
 
 async function handleSend() {
   const text = state.text.trim();
-  if (!text || sending.value) return;
+  if (!text || isBusy.value) return;
   const requestStartAt = Date.now();
+  const requestId = `${requestStartAt}-${Math.random().toString(36).slice(2)}`;
 
   const pair = parseKey(selectedPairKey.value);
 
@@ -948,9 +1004,10 @@ async function handleSend() {
 
   // 如果启用流式，使用流式调用
   if (enableStreaming.value) {
-    await handleStreamingSend(text, pair, session, currentModelNameSnapshot, enableContext, contextCount, enableReasoning, requestStartAt);
+    await handleStreamingSend(text, pair, session, currentModelNameSnapshot, enableContext, contextCount, enableReasoning, requestStartAt, requestId);
   } else {
-    await handleNonStreamingSend(text, pair, session, currentModelNameSnapshot, enableContext, contextCount, enableReasoning, requestStartAt);
+    inflightRequestId = requestId;
+    await handleNonStreamingSend(text, pair, session, currentModelNameSnapshot, enableContext, contextCount, enableReasoning, requestStartAt, requestId);
   }
 }
 
@@ -963,9 +1020,10 @@ async function handleNonStreamingSend(
   enableContext: boolean,
   contextCount: number,
   enableReasoning: boolean,
-  requestStartAt: number
+  requestStartAt: number,
+  requestId: string
 ) {
-  const msg: any = { action: 'performAiAction', task: state.task, text, targetLang: state.targetLang, enableReasoning };
+  const msg: any = { action: 'performAiAction', task: state.task, text, targetLang: state.targetLang, enableReasoning, requestId };
   if (pair) { msg.channel = pair.channel; msg.model = pair.model; }
 
   // 如果启用上下文，添加历史消息
@@ -983,7 +1041,15 @@ async function handleNonStreamingSend(
   try {
     chrome.runtime.sendMessage(msg, (resp: any) => {
       try { void chrome.runtime.lastError; } catch { }
+      const aborted = requestId && abortedRequests.has(requestId);
+      inflightRequestId = null;
       sending.value = false;
+
+      if (aborted) {
+        // 已被用户取消：不追加 AI 消息
+        abortedRequests.delete(requestId);
+        return;
+      }
 
       const assistantMessage: Message = {
         role: 'assistant',
@@ -1022,6 +1088,7 @@ async function handleNonStreamingSend(
       }
     });
   } catch (e: any) {
+    inflightRequestId = null;
     sending.value = false;
 
     const errorMessage: Message = {
@@ -1054,7 +1121,8 @@ async function handleStreamingSend(
   enableContext: boolean,
   contextCount: number,
   enableReasoning: boolean,
-  requestStartAt: number
+  requestStartAt: number,
+  requestId: string
 ) {
   const msg: any = { action: 'performAiAction', task: state.task, text, targetLang: state.targetLang, enableReasoning };
   if (pair) { msg.channel = pair.channel; msg.model = pair.model; }
@@ -1072,6 +1140,7 @@ async function handleStreamingSend(
   try {
     // 建立 Port 长连接
     const port = chrome.runtime.connect({ name: 'streaming' });
+    currentStreamingPort = port;
 
     let messageIndex = -1; // 延迟创建消息，等收到 start 或第一个 chunk 时再创建
 
@@ -1143,7 +1212,8 @@ async function handleStreamingSend(
         sending.value = false; // 确保关闭骨架屏
         saveSessions();
         sessions.value = [...sessions.value];
-        port.disconnect();
+        try { port.disconnect(); } catch { }
+        if (currentStreamingPort === port) currentStreamingPort = null;
       } else if (response.type === 'error') {
         console.error('流式响应错误:', response.error);
 
@@ -1170,31 +1240,49 @@ async function handleStreamingSend(
         sending.value = false;
         saveSessions();
         sessions.value = [...sessions.value];
-        port.disconnect();
+        try { port.disconnect(); } catch { }
+        if (currentStreamingPort === port) currentStreamingPort = null;
       }
     });
 
     // 监听 Port 断开
     port.onDisconnect.addListener(() => {
-      if (sending.value) {
-        sending.value = false;
-        if (session && messageIndex >= 0) {
-          const message = session.messages[messageIndex];
-          if (message && message.isStreaming) {
-            message.isStreaming = false;
-            if (!message.content) {
-              message.content = '错误：连接中断';
-              message.isError = true;
-            }
-            saveSessions();
-            sessions.value = [...sessions.value];
+      if (currentStreamingPort === port) currentStreamingPort = null;
+      // 无论是否仍处于“发送中”骨架阶段，都要关闭流式标记
+      if (session && messageIndex >= 0) {
+        const message = session.messages[messageIndex];
+        if (message && message.isStreaming) {
+          message.isStreaming = false;
+          if (!message.content) {
+            message.content = '错误：连接中断';
+            message.isError = true;
           }
+          saveSessions();
+          sessions.value = [...sessions.value];
         }
       }
+      if (sending.value) sending.value = false;
     });
 
     // 发送请求
-    port.postMessage(msg);
+    try {
+      port.postMessage(msg);
+    } catch (e) {
+      console.error('发送流式请求失败:', e);
+      if (session) {
+        session.messages.push({
+          role: 'assistant',
+          content: `错误：${String((e as any)?.message || e || '发送失败')}`,
+          isError: true,
+          modelName: currentModelNameSnapshot,
+          reasoningCollapsed: true,
+        });
+        sessions.value = [...sessions.value];
+      }
+      sending.value = false;
+      try { port.disconnect(); } catch { }
+      if (currentStreamingPort === port) currentStreamingPort = null;
+    }
   } catch (e: any) {
     sending.value = false;
 
@@ -1213,6 +1301,66 @@ async function handleStreamingSend(
       sessions.value = [...sessions.value];
     }
   }
+}
+
+// 停止当前生成（优先断开流式端口）
+function stopGenerating() {
+  try {
+    // 立即关闭本地“忙碌/骨架屏”，避免 UI 残留
+    if (sending.value) sending.value = false;
+    // 主动清理可能残留的 isStreaming 标记，避免 isBusy 计算为真
+    const session = currentSession.value;
+    if (session && Array.isArray(session.messages)) {
+      let touched = false;
+      for (const m of session.messages) {
+        if (m.role === 'assistant' && (m as any).isStreaming) {
+          (m as any).isStreaming = false;
+          // 强制覆盖为“已中断”，不保留任何既有片段
+          m.content = '已中断';
+          m.isError = false;
+          m.reasoningCollapsed = true;
+          // 清理计时
+          delete (m as any).reasoningStartedAt;
+          delete (m as any).reasoningEndedAt;
+          touched = true;
+        }
+      }
+      if (touched) {
+        try { saveSessions(); } catch { }
+        sessions.value = [...sessions.value];
+      }
+    }
+
+    if (currentStreamingPort) {
+      try { currentStreamingPort.disconnect(); } catch { }
+      currentStreamingPort = null;
+      return;
+    }
+    // 非流式：发送 abort 给后台，并忽略该请求的回调
+    if (inflightRequestId) {
+      abortedRequests.add(inflightRequestId);
+      try {
+        chrome.runtime.sendMessage({ action: 'abortRequest', requestId: inflightRequestId }, () => {
+          try { void chrome.runtime.lastError; } catch { }
+        });
+      } catch { }
+      inflightRequestId = null;
+      if (sending.value) sending.value = false;
+      // 在当前会话尾部追加一条“已中断”AI 消息
+      if (session) {
+        session.messages.push({
+          role: 'assistant',
+          content: '已中断',
+          isError: false,
+          modelName: currentModelName.value,
+          reasoningCollapsed: true
+        });
+        session.updatedAt = Date.now();
+        try { saveSessions(); } catch { }
+        sessions.value = [...sessions.value];
+      }
+    }
+  } catch { }
 }
 
 function retryMessage(messageIndex: number) {
@@ -1341,6 +1489,23 @@ onMounted(async () => {
   await loadModels();
   await loadSessions();
 
+  // 清理历史会话中可能遗留的 isStreaming 标记，避免误判忙碌态
+  try {
+    let touched = false;
+    for (const s of sessions.value) {
+      for (const m of s.messages) {
+        if (m.role === 'assistant' && (m as any).isStreaming) {
+          (m as any).isStreaming = false;
+          touched = true;
+        }
+      }
+    }
+    if (touched) {
+      saveSessions();
+      sessions.value = [...sessions.value];
+    }
+  } catch { }
+
   // 加载全局配置
   const globalConfig = await loadConfig();
   enableStreaming.value = globalConfig.enableStreaming || false;
@@ -1417,6 +1582,12 @@ onMounted(async () => {
     scrollToBottom();
   }, 150);
 
+  // 启动“思考用时”心跳，实时刷新
+  try {
+    if (nowTickTimer) clearInterval(nowTickTimer);
+    nowTickTimer = window.setInterval(() => { nowTick.value = Date.now(); }, 100);
+  } catch { }
+
   // 监听 footer 尺寸变化以动态设置内容底部留白
   try {
     footerResizeObserver = new ResizeObserver(() => updateBottomGap());
@@ -1448,6 +1619,8 @@ onBeforeUnmount(() => {
   try { document.removeEventListener('copy', onInAppCopy as any); } catch { }
   if (footerResizeObserver) footerResizeObserver.disconnect();
   window.removeEventListener('resize', updateBottomGap);
+  // 停止“思考用时”心跳
+  try { if (nowTickTimer) clearInterval(nowTickTimer); } catch { }
 });
 </script>
 
@@ -1482,19 +1655,25 @@ onBeforeUnmount(() => {
 
 /* 统一链接样式：在浅底/深底下都保证可读性 */
 .prose a {
-  color: #2563eb; /* 蓝色链接 */
+  color: #2563eb;
+  /* 蓝色链接 */
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-.prose a:hover { color: #1d4ed8; }
+
+.prose a:hover {
+  color: #1d4ed8;
+}
 
 /* 行内代码样式（更大字号、更清晰的背景与圆角） */
 .prose code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: 0.93rem;
-  background-color: rgba(2, 6, 23, 0.06); /* slate-950 @ ~6% */
+  background-color: rgba(2, 6, 23, 0.06);
+  /* slate-950 @ ~6% */
   padding: 0.15em 0.35em;
-  border-radius: 0.375rem; /* rounded-md */
+  border-radius: 0.375rem;
+  /* rounded-md */
 }
 
 /* 代码块：增加字号、行高、内边距与边框，保证可读性 */
@@ -1502,8 +1681,10 @@ onBeforeUnmount(() => {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: 0.93rem;
   line-height: 1.55;
-  background-color: #f6f8fa; /* 与 GitHub 接近的浅灰 */
-  border: 1px solid #e5e7eb; /* zinc-200 边框 */
+  background-color: #f6f8fa;
+  /* 与 GitHub 接近的浅灰 */
+  border: 1px solid #e5e7eb;
+  /* zinc-200 边框 */
   border-radius: 0.5rem;
   padding: 0.85rem 1rem;
   overflow: auto;
@@ -1523,7 +1704,10 @@ onBeforeUnmount(() => {
 }
 
 /* 深底部场景下（若未来启用）仍然可读 */
-.prose-invert a { color: #93c5fd; }
+.prose-invert a {
+  color: #93c5fd;
+}
+
 .prose-invert code {
   color: inherit;
   background-color: rgba(255, 255, 255, 0.12);

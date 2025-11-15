@@ -432,7 +432,7 @@ onMounted(loadGlossary);
 
         <div v-if="!channels.length" class="text-sm text-muted-foreground">暂无渠道，请先添加。</div>
         <div v-else class="space-y-3">
-          <div v-for="(ch, idx) in channels" :key="ch.name" class="space-y-3">
+          <div v-for="(ch, idx) in channels" :key="idx + ch.apiKey" class="space-y-3">
             <!-- 顶部：名称/类型/测试模型 -->
             <div class="flex items-center justify-between gap-2">
               <div class="text-sm">
@@ -609,7 +609,7 @@ onMounted(loadGlossary);
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem v-for="lang in SUPPORTED_LANGUAGES" :key="lang.value" :value="lang.value">{{ lang.label
-                    }}</SelectItem>
+                      }}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -737,9 +737,7 @@ onMounted(loadGlossary);
               </div>
             </div>
           </div>
-          <div class="space-y-4">
-            
-          </div>
+          <div class="space-y-4"></div>
           <div>
             <Button class="bg-primary text-primary-foreground flex items-center gap-1"
               @click="() => { saveModels(); saveBasics(); }">
@@ -802,7 +800,8 @@ onMounted(loadGlossary);
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <Button class="bg-primary text-primary-foreground flex items-center gap-1" :disabled="assistantLoading" @click="startAssistantStream">
+            <Button class="bg-primary text-primary-foreground flex items-center gap-1" :disabled="assistantLoading"
+              @click="startAssistantStream">
               <Icon v-if="!assistantLoading" icon="proicons:bolt" width="16" />
               <Icon v-else icon="line-md:loading-twotone-loop" width="16" class="animate-spin" />
               执行
@@ -813,15 +812,12 @@ onMounted(loadGlossary);
       <!-- 已移除：全文翻译（调优项） -->
 
       <!-- 术语库（与 Prompt 模板同级） -->
-      <section v-if="nav==='debug'" :id="'opt-glossary'" class="space-y-4">
+      <section v-if="nav === 'debug'" :id="'opt-glossary'" class="space-y-4">
         <header class="flex items-center h-10 text-base font-semibold">术语库</header>
         <div class="space-y-3 text-sm">
           <p class="text-xs text-muted-foreground">支持混合输入：不译词（单行）与术语映射（key=value）。可用 # 开头写注释。</p>
-          <Textarea
-            v-model="glossaryAllText"
-            class="min-h-40"
-            placeholder="# 不译词&#10;GPU&#10;iPhone&#10;# 术语映射&#10;Sign in=登录&#10;Settings=设置"
-          />
+          <Textarea v-model="glossaryAllText" class="min-h-40"
+            placeholder="# 不译词&#10;GPU&#10;iPhone&#10;# 术语映射&#10;Sign in=登录&#10;Settings=设置" />
           <div>
             <Button class="bg-primary text-primary-foreground flex items-center gap-1" @click="saveGlossary">
               <Icon :icon="iconOfAction('save')" width="16" /> 保存术语库
@@ -844,8 +840,7 @@ onMounted(loadGlossary);
             </div>
             <div>
               <Label class="mb-1 block">聊天模板</Label>
-              <Textarea v-model="promptTemplates.chat" class="min-h-28"
-                :placeholder="defaultTemplates.chat" />
+              <Textarea v-model="promptTemplates.chat" class="min-h-28" :placeholder="defaultTemplates.chat" />
             </div>
             <div>
               <Label class="mb-1 block">总结模板</Label>

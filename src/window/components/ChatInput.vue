@@ -115,6 +115,16 @@
         v-show="(innerValue || '').trim() && !sending">
         <Icon icon="ri:send-plane-2-fill" class="h-3 w-3" />
       </Button>
+      <!-- 停止按钮（发送后到 AI 响应结束期间显示） -->
+      <Button
+        variant="ghost"
+        size="icon"
+        class="absolute bottom-2 right-2 h-7 w-7 rounded-xl !bg-slate-800 !text-white"
+        @click="$emit('stop')"
+        v-show="sending"
+      >
+        <Icon icon="ri:stop-line" class="h-3 w-3" />
+      </Button>
     </div>
   </div>
 </template>
@@ -152,6 +162,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'update:modelValue', v: string): void
   (e: 'send'): void
+  (e: 'stop'): void
   (e: 'changeTask', task: 'translate' | 'summarize' | 'rewrite' | 'polish' | 'chat'): void
   (e: 'toggleStreaming', checked: boolean): void
   (e: 'toggleReasoning', checked: boolean): void
@@ -222,4 +233,3 @@ function adjustTextareaHeight(textarea: HTMLTextAreaElement, maxLines?: number) 
   textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden'
 }
 </script>
-
