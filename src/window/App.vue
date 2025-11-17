@@ -184,6 +184,7 @@
 
     <!-- 历史会话抽屉 -->
     <HistoryDrawer v-model:open="historyOpen" :sessions="sessions" :current-session-id="currentSessionId"
+      :bg-class="bgClass" :blur-class="blurClass"
       @switchSession="switchSession" @deleteSession="deleteSession" @newChatFromDrawer="startNewChatFromDrawer" />
   </div>
 </template>
