@@ -173,11 +173,12 @@
       <!-- 底部操作区 -->
       <footer ref="footerEl" class="p-3 absolute left-0 right-0 bottom-0">
         <ChatInput ref="chatInputRef" v-model="state.text" :sending="isBusy" :task="state.task" :enable-streaming="enableStreaming"
-          :enable-reasoning="enableReasoning" :enable-context="enableContext"
+          :enable-reasoning="enableReasoning" :enable-context="enableContext" :enable-file-upload="enableFileUpload"
           :auto-paste-global-assistant="autoPasteGlobalAssistant" :bg-class="bgClass" :blur-class="blurClass"
           @send="handleSend()" @stop="stopGenerating" @changeTask="changeTask" @toggleStreaming="toggleStreaming"
           @toggleReasoning="toggleReasoning" @toggleContext="toggleContext"
-          @toggleClipboardListening="toggleClipboardListening" @newChat="() => startNewChat(false)" />
+          @toggleClipboardListening="toggleClipboardListening" @toggleFileUpload="toggleFileUpload"
+          @newChat="() => startNewChat(false)" />
       </footer>
     </ScrollArea>
 
@@ -265,6 +266,7 @@ const aiMessageElements = ref<HTMLElement[]>([]);
 const enableStreaming = ref(false);
 const enableReasoning = ref(false); // 思考模式
 const enableContext = ref(false); // 上下文
+const enableFileUpload = ref(false); // 文件上传
 const reduceVisualEffects = ref(false); // 减弱视觉效果配置
 const autoPasteGlobalAssistant = ref(false); // 全局助手：是否自动粘贴剪贴板
 const footerEl = ref<HTMLElement | null>(null);
@@ -1601,6 +1603,16 @@ async function toggleContext(checked: boolean) {
   }
 }
 
+async function toggleFileUpload(checked: boolean) {
+  enableFileUpload.value = checked;
+  try {
+    await saveConfig({ enableFileUpload: checked });
+    console.log('文件上传设置已保存:', checked);
+  } catch (e) {
+    console.error('保存文件上传设置失败:', e);
+  }
+}
+
 async function toggleClipboardListening(checked: boolean) {
   autoPasteGlobalAssistant.value = checked;
   try {
@@ -1644,6 +1656,7 @@ onMounted(async () => {
   enableStreaming.value = globalConfig.enableStreaming || false;
   enableReasoning.value = globalConfig.enableReasoning || false;
   enableContext.value = globalConfig.enableContext || false;
+  enableFileUpload.value = globalConfig.enableFileUpload || false;
   reduceVisualEffects.value = globalConfig.reduceVisualEffects || false;
   autoPasteGlobalAssistant.value = !!globalConfig.autoPasteGlobalAssistant;
 
@@ -1660,6 +1673,9 @@ onMounted(async () => {
       }
       if (area === 'sync' && changes.enableContext) {
         enableContext.value = changes.enableContext.newValue || false;
+      }
+      if (area === 'sync' && changes.enableFileUpload) {
+        enableFileUpload.value = changes.enableFileUpload.newValue || false;
       }
       if (area === 'sync' && changes.reduceVisualEffects) {
         reduceVisualEffects.value = changes.reduceVisualEffects.newValue || false;

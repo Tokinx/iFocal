@@ -48,6 +48,9 @@ export const DEFAULT_CONFIG = {
   // 思考模式
   enableReasoning: false, // 启用思考模式
 
+  // 文件上传
+  enableFileUpload: false, // 启用文件上传（全局助手窗口）
+
   // 性能优化
   reduceVisualEffects: false, // 减弱视觉效果（关闭 backdrop-blur）
 
@@ -94,6 +97,7 @@ export const CONFIG_KEYS = [
   'contextMessagesCount',
   'enableStreaming',
   'enableReasoning',
+  'enableFileUpload',
   'reduceVisualEffects',
   'wrapperStyleName',
   'targetStylePresets'

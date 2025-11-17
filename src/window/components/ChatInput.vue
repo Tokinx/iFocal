@@ -65,6 +65,14 @@
               <Switch :model-value="autoPasteGlobalAssistant"
                 @update:modelValue="$emit('toggleClipboardListening', $event)" />
             </div>
+            <!-- 文件上传 -->
+            <div class="py-1 flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <Icon icon="ri:attachment-2" class="h-4 w-4" />
+                <span class="text-sm font-medium">文件上传</span>
+              </div>
+              <Switch :model-value="enableFileUpload" @update:modelValue="$emit('toggleFileUpload', $event)" />
+            </div>
             <!-- 网络搜索（占位） -->
             <div class="py-1 flex items-center justify-between">
               <div class="flex items-center gap-2">
@@ -95,46 +103,49 @@
     <div :class="['relative rounded-xl', bgClass, blurClass]">
       <Textarea v-model="innerValue" v-autosize="8" :rows="2" placeholder="输入你想了解到内容"
         class="resize-none rounded-xl pb-11" @keydown.enter.exact.prevent="$emit('send')" />
-      <div class="absolute bottom-2 left-2 right-2 flex items-center justify-between">
-        <!-- 附件预览区域 -->
-        <div v-if="attachments.length > 0" class="flex flex-wrap gap-2">
-          <div v-for="(file, idx) in attachments" :key="idx"
-            class="relative group flex items-center gap-2 py-1 px-2 bg-white/60 rounded-full border border-zinc-200">
-            <!-- 文件图标 -->
-            <Icon :icon="getFileIcon(file.type)" class="h-4 w-4 text-muted-foreground shrink-0" />
-            <!-- 文件名 -->
-            <span class="text-xs text-foreground truncate max-w-[150px]">{{ file.name }}</span>
-            <!-- 文件大小 -->
-            <span class="text-xs text-muted-foreground">{{ formatFileSize(file.size) }}</span>
-            <!-- 删除按钮 -->
-            <Button variant="ghost" size="icon"
-              class="h-4 w-4 absolute -top-1 -right-1 rounded-full !bg-red-500 !text-white opacity-0 group-hover:opacity-100 transition-opacity"
-              @click="removeAttachment(idx)">
-              <Icon icon="ri:close-line" class="h-3 w-3" />
-            </Button>
-          </div>
-        </div>
-        <!-- 左侧：附件按钮 -->
-        <TooltipProvider v-else>
-          <Tooltip>
-            <TooltipTrigger as-child>
-              <Button variant="ghost" size="icon" class="h-7 w-7 rounded-full hover:bg-zinc-200/80 relative"
-                @click="triggerFileInput">
-                <Icon icon="ri:attachment-2" class="h-4 w-4 text-muted-foreground" />
-                <input ref="fileInputRef" type="file" :accept="acceptedFileTypes" class="hidden"
-                  @change="handleFileSelect" />
+      <div class="absolute bottom-2 left-2 right-2 flex items-center justify-between pointer-events-none">
+        <!-- 输入框功能区 -->
+        <div class="flex items-center pointer-events-auto">
+          <!-- 附件预览区域 -->
+          <div v-if="attachments.length > 0" class="flex flex-wrap gap-2">
+            <div v-for="(file, idx) in attachments" :key="idx"
+              class="relative group flex items-center gap-2 py-1 px-2 bg-white/60 rounded-full border border-zinc-200">
+              <!-- 文件图标 -->
+              <Icon :icon="getFileIcon(file.type)" class="h-4 w-4 text-muted-foreground shrink-0" />
+              <!-- 文件名 -->
+              <span class="text-xs text-foreground truncate max-w-[150px]">{{ file.name }}</span>
+              <!-- 文件大小 -->
+              <span class="text-xs text-muted-foreground">{{ formatFileSize(file.size) }}</span>
+              <!-- 删除按钮 -->
+              <Button variant="ghost" size="icon"
+                class="h-4 w-4 absolute -top-1 -right-1 rounded-full !bg-red-500 !text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                @click="removeAttachment(idx)">
+                <Icon icon="ri:close-line" class="h-3 w-3" />
               </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>添加图片和文件</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+            </div>
+          </div>
+          <!-- 上传文件按钮 -->
+          <TooltipProvider v-else-if="enableFileUpload">
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <Button variant="ghost" size="icon" class="h-7 w-7 rounded-full hover:bg-zinc-200/80 relative"
+                  @click="triggerFileInput">
+                  <Icon icon="ri:attachment-2" class="h-4 w-4 text-muted-foreground" />
+                  <input ref="fileInputRef" type="file" :accept="acceptedFileTypes" class="hidden"
+                    @change="handleFileSelect" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>添加图片和文件</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
 
         <div class="flex-1"></div>
 
         <!-- 右侧：发送/停止按钮 -->
-        <div class="flex gap-1">
+        <div class="flex gap-1 pointer-events-auto">
           <!-- 发送按钮 -->
           <Button variant="ghost" size="icon" class="h-7 w-7 rounded-full !bg-slate-800 !text-white"
             @click="$emit('send')" v-show="(innerValue || '').trim() && !sending">
@@ -183,6 +194,7 @@ const props = defineProps<{
   enableReasoning: boolean
   enableContext: boolean
   autoPasteGlobalAssistant: boolean
+  enableFileUpload: boolean
   bgClass?: string
   blurClass?: string
   blurClassSm?: string
@@ -197,6 +209,7 @@ const emit = defineEmits<{
   (e: 'toggleReasoning', checked: boolean): void
   (e: 'toggleContext', checked: boolean): void
   (e: 'toggleClipboardListening', checked: boolean): void
+  (e: 'toggleFileUpload', checked: boolean): void
   (e: 'newChat'): void
   (e: 'attachmentsChange', files: FileAttachment[]): void
 }>()

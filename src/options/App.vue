@@ -161,7 +161,6 @@ async function saveBasics() {
       targetStylePresets: presetsToSave,
       enableSelectionTranslation: config.value.enableSelectionTranslation,
       maxSessionsCount: config.value.maxSessionsCount || 50,
-      enableContext: config.value.enableContext || false,
       contextMessagesCount: config.value.contextMessagesCount || 5,
       enableStreaming: config.value.enableStreaming || false,
       reduceVisualEffects: config.value.reduceVisualEffects || false
@@ -675,15 +674,6 @@ onMounted(loadGlossary);
                     </SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
-            </div>
-            <div class="flex items-center justify-between gap-4">
-              <div>
-                <label class="text-sm font-medium leading-none block mb-1">启用上下文</label>
-                <p class="text-xs text-muted-foreground">发送消息时包含最近的对话历史</p>
-              </div>
-              <div>
-                <Switch v-model="config.enableContext" />
               </div>
             </div>
 
