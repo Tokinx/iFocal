@@ -117,6 +117,7 @@ chrome.runtime.onConnect.addListener((port) => {
       const prevLang = message.prevLang || cfg.prevLanguage || 'en';
       const prompt = makePrompt(message.task, message.text || '', targetLang, cfg.promptTemplates || {}, prevLang);
       const context = message.context || undefined;
+      const attachments = message.attachments || undefined;
       const enableReasoning = !!message.enableReasoning;
 
       // 通知开始
@@ -132,7 +133,7 @@ chrome.runtime.onConnect.addListener((port) => {
         (chunk: string) => {
           if (!portDisconnected) safePost({ type: 'chunk', content: chunk });
         },
-        { enableReasoning, shouldStop: () => portDisconnected }
+        { enableReasoning, shouldStop: () => portDisconnected, attachments }
       );
 
       // 通知完成
@@ -156,6 +157,7 @@ async function handleLegacyAction(request: any) {
   const prevLang = request.prevLang || cfg.prevLanguage || 'en';
   const prompt = makePrompt(request.task, request.text || '', targetLang, cfg.promptTemplates || {}, prevLang);
   const context = request.context || undefined;
+  const attachments = request.attachments || undefined;
   const enableStreaming = request.enableStreaming || false;
   const enableReasoning = !!request.enableReasoning;
   const reqId = request.requestId ? String(request.requestId) : '';
@@ -168,7 +170,7 @@ async function handleLegacyAction(request: any) {
   } else {
     // 非流式响应
     try {
-      const resultText = await invokeModel(channel, pair.model, prompt, context, false, undefined, { enableReasoning, signal: controller.signal });
+      const resultText = await invokeModel(channel, pair.model, prompt, context, false, undefined, { enableReasoning, signal: controller.signal, attachments });
       return { ok: true, result: resultText, channel: pair.channel, model: pair.model };
     } finally {
       if (reqId && abortControllers[reqId]) delete abortControllers[reqId];
@@ -406,10 +408,10 @@ async function invokeModel(
   channel: any,
   model: string,
   prompt: string,
-  context?: Array<{ role: string; content: string }>,
+  context?: Array<{ role: string; content: string; attachments?: any[] }>,
   stream: boolean = false,
   onChunk?: (chunk: string) => void,
-  opts?: { enableReasoning?: boolean; shouldStop?: () => boolean; signal?: AbortSignal }
+  opts?: { enableReasoning?: boolean; shouldStop?: () => boolean; signal?: AbortSignal; attachments?: any[] }
 ) {
   if (!channel?.apiKey) throw new Error('Channel is missing API key');
   if (channel.type === 'openai' || channel.type === 'openai-compatible') {
@@ -453,15 +455,112 @@ async function callOpenAI(
   apiKey: string,
   model: string,
   prompt: string,
-  context?: Array<{ role: string; content: string }>,
+  context?: Array<{ role: string; content: string; attachments?: any[] }>,
   stream: boolean = false,
   onChunk?: (chunk: string) => void,
-  opts?: { enableReasoning?: boolean; shouldStop?: () => boolean; signal?: AbortSignal }
+  opts?: { enableReasoning?: boolean; shouldStop?: () => boolean; signal?: AbortSignal; attachments?: any[] }
 ) {
   const url = joinBasePath(baseUrl || 'https://api.openai.com/v1', '/chat/completions');
-  const body: any = { model, messages: makeMessage(model, prompt, 'You are a helpful assistant.', context), temperature: 0.2, stream };
-  // 注入“思考开关”相关参数（尽量兼容）
+
+  // 构造消息，支持多模态
+  let messages = makeMessage(model, prompt, 'You are a helpful assistant.', context);
+
+  // 处理历史消息中的附件（context）
+  if (context && Array.isArray(context)) {
+    for (let i = 0; i < context.length; i++) {
+      const ctxMsg = context[i];
+      if (ctxMsg.attachments && ctxMsg.attachments.length > 0) {
+        // 找到对应的消息（跳过 system 消息）
+        const msgIndex = messages.findIndex((m, idx) =>
+          idx > 0 && m.role === ctxMsg.role && m.content === ctxMsg.content
+        );
+        if (msgIndex >= 0) {
+          const msg = messages[msgIndex];
+          const content: any[] = [{ type: 'text', text: msg.content }];
+
+          // 添加附件（使用标准 image_url 格式）
+          for (const att of ctxMsg.attachments) {
+            if (att.type.startsWith('image/')) {
+              // 确保 base64 数据完整且格式正确
+              const imageUrl = att.data;
+              if (imageUrl && (imageUrl.startsWith('data:image/') || imageUrl.startsWith('http'))) {
+                content.push({
+                  type: 'image_url',
+                  image_url: {
+                    url: imageUrl,
+                    detail: 'auto' // 添加 detail 参数，让 API 自动选择分辨率
+                  }
+                });
+              }
+            }
+          }
+
+          msg.content = content as any;
+        }
+      }
+    }
+  }
+
+  // 处理当前消息的附件
+  if (opts?.attachments && opts.attachments.length > 0) {
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg && lastMsg.role === 'user') {
+      // 如果已经是数组格式（处理过历史附件），则追加
+      const content: any[] = Array.isArray(lastMsg.content)
+        ? [...lastMsg.content]
+        : [{ type: 'text', text: lastMsg.content }];
+
+      // 添加当前消息的附件（使用标准 image_url 格式）
+      for (const att of opts.attachments) {
+        if (att.type.startsWith('image/')) {
+          // 确保 base64 数据完整且格式正确
+          const imageUrl = att.data;
+          if (imageUrl && (imageUrl.startsWith('data:image/') || imageUrl.startsWith('http'))) {
+            content.push({
+              type: 'image_url',
+              image_url: {
+                url: imageUrl,
+                detail: 'auto' // 添加 detail 参数，让 API 自动选择分辨率
+              }
+            });
+          }
+        }
+        // 其他文件类型暂不支持，可以在这里扩展
+      }
+
+      lastMsg.content = content as any;
+    }
+  }
+
+  const body: any = { model, messages, temperature: 0.2, stream };
+  // 注入"思考开关"相关参数（尽量兼容）
   Object.assign(body, buildReasoningParams(model, opts?.enableReasoning));
+
+  // 调试日志：输出消息结构
+  console.log('[OpenAI] 发送请求，消息数量:', messages.length);
+  messages.forEach((msg, idx) => {
+    if (Array.isArray(msg.content)) {
+      console.log(`[OpenAI] 消息 ${idx} (${msg.role}): 多模态内容，包含 ${msg.content.length} 个部分`);
+      msg.content.forEach((part: any, partIdx: number) => {
+        if (part.type === 'image_url') {
+          const url = part.image_url?.url || '';
+          const detail = part.image_url?.detail || 'auto';
+          const prefix = url.substring(0, 50);
+          const isBase64 = url.startsWith('data:image/');
+          const isUrl = url.startsWith('http');
+          console.log(`  - 部分 ${partIdx}: 图片 [${detail}] (${isBase64 ? 'base64' : isUrl ? 'URL' : '未知格式'}) ${prefix}...`);
+          if (isBase64) {
+            // 显示 base64 数据长度
+            console.log(`    Base64 长度: ${url.length} 字符`);
+          }
+        } else if (part.type === 'text') {
+          console.log(`  - 部分 ${partIdx}: 文本 (${part.text.substring(0, 50)}...)`);
+        }
+      });
+    } else {
+      console.log(`[OpenAI] 消息 ${idx} (${msg.role}): 纯文本 (${String(msg.content).substring(0, 50)}...)`);
+    }
+  });
 
   return rateLimited(async () => {
     const res = await withBackoff(() => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: JSON.stringify(body), signal: opts?.signal as any }));

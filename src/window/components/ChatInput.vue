@@ -62,7 +62,8 @@
                 <Icon icon="ri:file-ai-line" class="h-4 w-4" />
                 <span class="text-sm font-medium">监听剪切板</span>
               </div>
-              <Switch :model-value="autoPasteGlobalAssistant" @update:modelValue="$emit('toggleClipboardListening', $event)" />
+              <Switch :model-value="autoPasteGlobalAssistant"
+                @update:modelValue="$emit('toggleClipboardListening', $event)" />
             </div>
             <!-- 网络搜索（占位） -->
             <div class="py-1 flex items-center justify-between">
@@ -71,14 +72,6 @@
                 <span class="text-sm font-medium">网络搜索</span>
               </div>
               <Switch disabled />
-            </div>
-            <DropdownMenuSeparator />
-            <!-- 添加图片和文件（占位） -->
-            <div class="py-2 flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <Icon icon="ri:attachment-2" class="h-4 w-4" />
-                <span class="text-sm font-medium">添加图片和文件</span>
-              </div>
             </div>
           </ScrollArea>
         </DropdownMenuContent>
@@ -100,37 +93,66 @@
 
     <!-- 输入框容器 -->
     <div :class="['relative rounded-xl', bgClass, blurClass]">
-      <Textarea
-        v-model="innerValue"
-        v-autosize="8"
-        :rows="3"
-        placeholder="输入你想了解到内容"
-        class="resize-none rounded-xl border-none"
-        @keydown.enter.exact.prevent="$emit('send')"
-      />
-      <!-- 发送按钮（右下角） -->
-      <Button variant="ghost" size="icon"
-        class="absolute bottom-2 right-2 h-7 w-7 rounded-xl !bg-slate-800 !text-white"
-        @click="$emit('send')"
-        v-show="(innerValue || '').trim() && !sending">
-        <Icon icon="ri:send-plane-2-fill" class="h-3 w-3" />
-      </Button>
-      <!-- 停止按钮（发送后到 AI 响应结束期间显示） -->
-      <Button
-        variant="ghost"
-        size="icon"
-        class="absolute bottom-2 right-2 h-7 w-7 rounded-xl !bg-slate-800 !text-white"
-        @click="$emit('stop')"
-        v-show="sending"
-      >
-        <Icon icon="ri:stop-line" class="h-3 w-3" />
-      </Button>
+      <Textarea v-model="innerValue" v-autosize="8" :rows="2" placeholder="输入你想了解到内容"
+        class="resize-none rounded-xl pb-11" @keydown.enter.exact.prevent="$emit('send')" />
+      <div class="absolute bottom-2 left-2 right-2 flex items-center justify-between">
+        <!-- 附件预览区域 -->
+        <div v-if="attachments.length > 0" class="flex flex-wrap gap-2">
+          <div v-for="(file, idx) in attachments" :key="idx"
+            class="relative group flex items-center gap-2 py-1 px-2 bg-white/60 rounded-full border border-zinc-200">
+            <!-- 文件图标 -->
+            <Icon :icon="getFileIcon(file.type)" class="h-4 w-4 text-muted-foreground shrink-0" />
+            <!-- 文件名 -->
+            <span class="text-xs text-foreground truncate max-w-[150px]">{{ file.name }}</span>
+            <!-- 文件大小 -->
+            <span class="text-xs text-muted-foreground">{{ formatFileSize(file.size) }}</span>
+            <!-- 删除按钮 -->
+            <Button variant="ghost" size="icon"
+              class="h-4 w-4 absolute -top-1 -right-1 rounded-full !bg-red-500 !text-white opacity-0 group-hover:opacity-100 transition-opacity"
+              @click="removeAttachment(idx)">
+              <Icon icon="ri:close-line" class="h-3 w-3" />
+            </Button>
+          </div>
+        </div>
+        <!-- 左侧：附件按钮 -->
+        <TooltipProvider v-else>
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <Button variant="ghost" size="icon" class="h-7 w-7 rounded-full hover:bg-zinc-200/80 relative"
+                @click="triggerFileInput">
+                <Icon icon="ri:attachment-2" class="h-4 w-4 text-muted-foreground" />
+                <input ref="fileInputRef" type="file" :accept="acceptedFileTypes" class="hidden"
+                  @change="handleFileSelect" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>添加图片和文件</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+
+        <div class="flex-1"></div>
+
+        <!-- 右侧：发送/停止按钮 -->
+        <div class="flex gap-1">
+          <!-- 发送按钮 -->
+          <Button variant="ghost" size="icon" class="h-7 w-7 rounded-full !bg-slate-800 !text-white"
+            @click="$emit('send')" v-show="(innerValue || '').trim() && !sending">
+            <Icon icon="ri:send-plane-2-fill" class="h-3 w-3" />
+          </Button>
+          <!-- 停止按钮 -->
+          <Button variant="ghost" size="icon" class="h-7 w-7 rounded-full !bg-slate-800 !text-white"
+            @click="$emit('stop')" v-show="sending">
+            <Icon icon="ri:stop-fill" class="h-3 w-3" />
+          </Button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, type Directive } from 'vue'
+import { computed, nextTick, ref, type Directive } from 'vue'
 import { Icon } from '@iconify/vue'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -145,6 +167,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+
+interface FileAttachment {
+  name: string
+  size: number
+  type: string
+  file: File
+}
 
 const props = defineProps<{
   modelValue: string
@@ -169,7 +198,106 @@ const emit = defineEmits<{
   (e: 'toggleContext', checked: boolean): void
   (e: 'toggleClipboardListening', checked: boolean): void
   (e: 'newChat'): void
+  (e: 'attachmentsChange', files: FileAttachment[]): void
 }>()
+
+// 暴露方法给父组件
+defineExpose({
+  getAttachments: () => attachments.value,
+  clearAttachments: () => {
+    attachments.value = []
+    emit('attachmentsChange', [])
+  }
+})
+
+// 文件上传相关
+const fileInputRef = ref<HTMLInputElement | null>(null)
+const attachments = ref<FileAttachment[]>([])
+
+// 支持的文件类型
+const acceptedFileTypes = [
+  // 图片
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  // 文档
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  // 文本
+  'text/plain',
+  'text/csv',
+  'text/markdown',
+].join(',')
+
+// 最大文件大小（10MB）
+const MAX_FILE_SIZE = 10 * 1024 * 1024
+
+function triggerFileInput() {
+  fileInputRef.value?.click()
+}
+
+function handleFileSelect(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = input.files
+  if (!files || files.length === 0) return
+
+  const file = files[0] // 只取第一个文件
+
+  // 验证文件大小
+  if (file.size > MAX_FILE_SIZE) {
+    alert(`文件 "${file.name}" 超过 10MB 限制`)
+    input.value = ''
+    return
+  }
+
+  // 验证文件类型
+  if (!acceptedFileTypes.includes(file.type)) {
+    alert(`不支持的文件类型: ${file.type}`)
+    input.value = ''
+    return
+  }
+
+  // 只保留一个文件
+  attachments.value = [{
+    name: file.name,
+    size: file.size,
+    type: file.type,
+    file: file
+  }]
+
+  // 清空 input，允许重复选择同一文件
+  input.value = ''
+
+  // 通知父组件
+  emit('attachmentsChange', attachments.value)
+}
+
+function removeAttachment(index: number) {
+  attachments.value.splice(index, 1)
+  emit('attachmentsChange', attachments.value)
+}
+
+function getFileIcon(type: string): string {
+  if (type.startsWith('image/')) return 'ri:image-line'
+  if (type === 'application/pdf') return 'ri:file-pdf-line'
+  if (type.includes('word')) return 'ri:file-word-line'
+  if (type.includes('excel') || type.includes('spreadsheet')) return 'ri:file-excel-line'
+  if (type.includes('powerpoint') || type.includes('presentation')) return 'ri:file-ppt-line'
+  if (type.startsWith('text/')) return 'ri:file-text-line'
+  return 'ri:file-line'
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
+}
 
 const blurClassSm = computed(() => props.blurClass ? 'backdrop-blur-sm' : '')
 const innerValue = computed({
@@ -186,7 +314,7 @@ const vAutosize: Directive<HTMLElement, number | undefined> = {
     textarea.style.overflowY = 'hidden'
     textarea.addEventListener('input', onInput)
     void nextTick(() => adjustTextareaHeight(textarea, binding.value))
-    ;(el as any).__autosizeCleanup__ = () => textarea.removeEventListener('input', onInput)
+      ; (el as any).__autosizeCleanup__ = () => textarea.removeEventListener('input', onInput)
   },
   updated(el, binding) {
     const textarea = resolveTextarea(el)

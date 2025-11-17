@@ -1,5 +1,5 @@
 <template>
-  <div ref="rootEl" class="flex h-screen w-full flex-col bg-[#f3f3f3] text-foreground">
+  <div ref="rootEl" class="flex h-screen w-full flex-col bg-[#f3f3f3] bg-gradient-to-b from-[#f3f3f3] to-white text-foreground">
     <ScrollArea ref="messagesContainer" class="ifocal-scroll-style flex-1 px-4">
       <!-- 顶部工具栏 -->
       <header class="flex items-center gap-2 absolute top-0 left-0 right-0 p-3 z-10">
@@ -34,6 +34,27 @@
           <!-- 用户消息 -->
           <div v-if="message.role === 'user'" class="flex justify-end">
             <div class="group relative max-w-[80%]">
+              <!-- 附件预览 -->
+              <div v-if="message.attachments && message.attachments.length > 0" class="mb-2 space-y-2">
+                <div v-for="(att, attIdx) in message.attachments" :key="attIdx">
+                  <!-- 图片附件 -->
+                  <img v-if="att.type.startsWith('image/')" :src="att.data" :alt="att.name"
+                    class="max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+                    @click="viewAttachment(att)" />
+                  <!-- 其他文件附件 -->
+                  <div v-else
+                    class="flex items-center gap-2 px-3 py-2 bg-white/60 rounded-lg border border-zinc-300 cursor-pointer hover:bg-white/80 transition-colors"
+                    @click="downloadAttachment(att)">
+                    <Icon :icon="getFileIcon(att.type)" class="h-5 w-5 text-muted-foreground shrink-0" />
+                    <div class="flex-1 min-w-0">
+                      <div class="text-sm font-medium truncate">{{ att.name }}</div>
+                      <div class="text-xs text-muted-foreground">{{ formatFileSize(att.size) }}</div>
+                    </div>
+                    <Icon icon="ri:download-line" class="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </div>
+              </div>
+              <!-- 消息内容 -->
               <div class="rounded-xl !rounded-tr-none bg-zinc-200 px-4 py-3 text-foreground prose prose-sm max-w-none"
                 v-html="renderMarkdownSafe(message.content)">
               </div>
@@ -151,7 +172,7 @@
 
       <!-- 底部操作区 -->
       <footer ref="footerEl" class="p-3 absolute left-0 right-0 bottom-0">
-        <ChatInput v-model="state.text" :sending="isBusy" :task="state.task" :enable-streaming="enableStreaming"
+        <ChatInput ref="chatInputRef" v-model="state.text" :sending="isBusy" :task="state.task" :enable-streaming="enableStreaming"
           :enable-reasoning="enableReasoning" :enable-context="enableContext"
           :auto-paste-global-assistant="autoPasteGlobalAssistant" :bg-class="bgClass" :blur-class="blurClass"
           @send="handleSend()" @stop="stopGenerating" @changeTask="changeTask" @toggleStreaming="toggleStreaming"
@@ -202,6 +223,12 @@ interface Message {
   reasoningStartedAt?: number; // 思考开始（检测到起始标签）
   reasoningEndedAt?: number;   // 思考结束（检测到闭合标签或完成）
   reasoningCollapsed?: boolean; // 思考过程是否折叠（仅 assistant 消息）
+  attachments?: Array<{
+    name: string;
+    type: string;
+    size: number;
+    data: string; // base64 编码的数据
+  }>; // 附件（仅 user 消息）
 }
 
 interface Session {
@@ -241,6 +268,7 @@ const enableContext = ref(false); // 上下文
 const reduceVisualEffects = ref(false); // 减弱视觉效果配置
 const autoPasteGlobalAssistant = ref(false); // 全局助手：是否自动粘贴剪贴板
 const footerEl = ref<HTMLElement | null>(null);
+const chatInputRef = ref<InstanceType<typeof ChatInput> | null>(null);
 let footerResizeObserver: ResizeObserver | null = null;
 // 当前流式端口（用于停止）
 let currentStreamingPort: chrome.runtime.Port | null = null;
@@ -954,6 +982,16 @@ async function readClipboardToInput() {
   await pollClipboardOnce(true);
 }
 
+// 文件转 base64
+async function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
 async function handleSend() {
   const text = state.text.trim();
   if (!text || isBusy.value) return;
@@ -961,6 +999,27 @@ async function handleSend() {
   const requestId = `${requestStartAt}-${Math.random().toString(36).slice(2)}`;
 
   const pair = parseKey(selectedPairKey.value);
+
+  // 获取附件并转换为 base64
+  const attachmentFiles = chatInputRef.value?.getAttachments() || [];
+  console.log('发送消息，附件数量:', attachmentFiles.length);
+
+  const attachments: Message['attachments'] = [];
+  for (const att of attachmentFiles) {
+    try {
+      const base64Data = await fileToBase64(att.file);
+      attachments.push({
+        name: att.name,
+        type: att.type,
+        size: att.size,
+        data: base64Data
+      });
+    } catch (error) {
+      console.error('文件转换失败:', error);
+      alert(`文件 "${att.name}" 转换失败`);
+      return;
+    }
+  }
 
   // 加载配置
   const globalConfig = await loadConfig();
@@ -971,7 +1030,8 @@ async function handleSend() {
   // 添加用户消息到当前会话
   const userMessage: Message = {
     role: 'user',
-    content: text
+    content: text,
+    attachments: attachments.length > 0 ? attachments : undefined
   };
 
   const session = sessions.value.find(s => s.id === currentSessionId.value);
@@ -991,8 +1051,11 @@ async function handleSend() {
   }
 
   state.text = '';
+  // 清空附件
+  chatInputRef.value?.clearAttachments();
+
   // 防止发送后因当前剪贴板未变化导致被再次回填
-  // 将“最后一次自动填充”的标记设置为当前已知的剪贴板值
+  // 将"最后一次自动填充"的标记设置为当前已知的剪贴板值
   // 这样在剪贴板未发生变化的情况下，轮询不会再次写回输入框
   lastAutoFilledClipboard = latestClipboardSnapshot;
   sending.value = true;
@@ -1006,10 +1069,10 @@ async function handleSend() {
 
   // 如果启用流式，使用流式调用
   if (enableStreaming.value) {
-    await handleStreamingSend(text, pair, session, currentModelNameSnapshot, enableContext, contextCount, enableReasoning, requestStartAt, requestId);
+    await handleStreamingSend(text, pair, session, currentModelNameSnapshot, enableContext, contextCount, enableReasoning, requestStartAt, requestId, attachments);
   } else {
     inflightRequestId = requestId;
-    await handleNonStreamingSend(text, pair, session, currentModelNameSnapshot, enableContext, contextCount, enableReasoning, requestStartAt, requestId);
+    await handleNonStreamingSend(text, pair, session, currentModelNameSnapshot, enableContext, contextCount, enableReasoning, requestStartAt, requestId, attachments);
   }
 }
 
@@ -1023,10 +1086,16 @@ async function handleNonStreamingSend(
   contextCount: number,
   enableReasoning: boolean,
   requestStartAt: number,
-  requestId: string
+  requestId: string,
+  attachments?: Message['attachments']
 ) {
   const msg: any = { action: 'performAiAction', task: state.task, text, targetLang: state.targetLang, prevLang: state.prevLang, enableReasoning, requestId };
   if (pair) { msg.channel = pair.channel; msg.model = pair.model; }
+
+  // 添加附件
+  if (attachments && attachments.length > 0) {
+    msg.attachments = attachments;
+  }
 
   // 如果启用上下文，添加历史消息
   if (enableContext && session && session.messages.length > 1) {
@@ -1036,7 +1105,8 @@ async function handleNonStreamingSend(
     const contextMessages = historyMessages.slice(-contextCount);
     msg.context = contextMessages.map(m => ({
       role: m.role,
-      content: m.content
+      content: m.content,
+      attachments: m.attachments
     }));
   }
 
@@ -1124,10 +1194,16 @@ async function handleStreamingSend(
   contextCount: number,
   enableReasoning: boolean,
   requestStartAt: number,
-  requestId: string
+  requestId: string,
+  attachments?: Message['attachments']
 ) {
   const msg: any = { action: 'performAiAction', task: state.task, text, targetLang: state.targetLang, prevLang: state.prevLang, enableReasoning };
   if (pair) { msg.channel = pair.channel; msg.model = pair.model; }
+
+  // 添加附件
+  if (attachments && attachments.length > 0) {
+    msg.attachments = attachments;
+  }
 
   // 如果启用上下文,添加历史消息
   if (enableContext && session && session.messages.length > 1) {
@@ -1135,7 +1211,8 @@ async function handleStreamingSend(
     const contextMessages = historyMessages.slice(-contextCount);
     msg.context = contextMessages.map(m => ({
       role: m.role,
-      content: m.content
+      content: m.content,
+      attachments: m.attachments
     }));
   }
 
@@ -1449,6 +1526,48 @@ async function copyMessage(content: string) {
   } catch (e) {
     console.error('复制失败:', e);
   }
+}
+
+// 查看附件（图片）
+function viewAttachment(att: any) {
+  // 在新窗口打开图片
+  const win = window.open('', '_blank');
+  if (win) {
+    win.document.write(`
+      <html>
+        <head><title>${att.name}</title></head>
+        <body style="margin:0;display:flex;align-items:center;justify-content:center;background:#000;">
+          <img src="${att.data}" style="max-width:100%;max-height:100vh;" />
+        </body>
+      </html>
+    `);
+  }
+}
+
+// 下载附件
+function downloadAttachment(att: any) {
+  const link = document.createElement('a');
+  link.href = att.data;
+  link.download = att.name;
+  link.click();
+}
+
+// 获取文件图标
+function getFileIcon(type: string): string {
+  if (type.startsWith('image/')) return 'ri:image-line';
+  if (type === 'application/pdf') return 'ri:file-pdf-line';
+  if (type.includes('word')) return 'ri:file-word-line';
+  if (type.includes('excel') || type.includes('spreadsheet')) return 'ri:file-excel-line';
+  if (type.includes('powerpoint') || type.includes('presentation')) return 'ri:file-ppt-line';
+  if (type.startsWith('text/')) return 'ri:file-text-line';
+  return 'ri:file-line';
+}
+
+// 格式化文件大小
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
 async function toggleStreaming(checked: boolean) {
