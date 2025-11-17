@@ -5,7 +5,7 @@ import { iconOfNav, iconOfChannelType, iconOfAction } from '@/shared/icons';
 import { useChannels } from '@/options/composables/useChannels';
 import { promptTemplates, defaultTemplates, initTemplates, saveTemplates as saveTpls, resetTemplates as resetTpls } from '@/options/composables/useTemplates';
 import { useToast } from '@/options/composables/useToast';
-import { SUPPORTED_LANGUAGES, SUPPORTED_TASKS, DEFAULT_CONFIG, loadConfig, saveConfig, CONFIG_KEYS } from '@/shared/config';
+import { SUPPORTED_LANGUAGES, SUPPORTED_TASKS, DEFAULT_CONFIG, loadConfig, saveConfig, CONFIG_KEYS, getTaskSettings, updateTaskSettings } from '@/shared/config';
 
 type ModelPair = { channel: string; model: string } | null;
 
@@ -162,7 +162,6 @@ async function saveBasics() {
       enableSelectionTranslation: config.value.enableSelectionTranslation,
       maxSessionsCount: config.value.maxSessionsCount || 50,
       contextMessagesCount: config.value.contextMessagesCount || 5,
-      enableStreaming: config.value.enableStreaming || false,
       reduceVisualEffects: config.value.reduceVisualEffects || false
     });
 

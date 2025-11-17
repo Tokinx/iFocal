@@ -207,7 +207,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Switch } from '@/components/ui/switch';
-import { SUPPORTED_LANGUAGES, SUPPORTED_TASKS, loadConfig, saveConfig } from '@/shared/config';
+import { SUPPORTED_LANGUAGES, SUPPORTED_TASKS, loadConfig, saveConfig, getTaskSettings, updateTaskSettings } from '@/shared/config';
 import ModelSelect from './components/ModelSelect.vue';
 import LanguageSelect from './components/LanguageSelect.vue';
 import ChatInput from './components/ChatInput.vue';
@@ -1460,7 +1460,7 @@ function retryMessage(messageIndex: number) {
   handleSend();
 }
 
-function changeTask(newTask: 'translate' | 'summarize' | 'rewrite' | 'polish' | 'chat') {
+async function changeTask(newTask: 'translate' | 'summarize' | 'rewrite' | 'polish' | 'chat') {
   if (state.task === newTask) return;
 
   state.task = newTask;
@@ -1473,6 +1473,19 @@ function changeTask(newTask: 'translate' | 'summarize' | 'rewrite' | 'polish' | 
     chrome.storage.local.set({
       selectedModelByTask: selectedModelByTask.value
     });
+  }
+
+  // 加载新任务的功能开关
+  try {
+    const globalConfig = await loadConfig();
+    const taskSettings = getTaskSettings(globalConfig, newTask);
+    enableStreaming.value = taskSettings.enableStreaming;
+    enableReasoning.value = taskSettings.enableReasoning;
+    enableContext.value = taskSettings.enableContext;
+    enableFileUpload.value = taskSettings.enableFileUpload;
+    console.log(`切换到任务 ${newTask}，功能开关已更新:`, taskSettings);
+  } catch (e) {
+    console.error('加载任务设置失败:', e);
   }
 
   // 保存当前选择的任务到配置（记忆功能）
@@ -1576,8 +1589,8 @@ function formatFileSize(bytes: number): string {
 async function toggleStreaming(checked: boolean) {
   enableStreaming.value = checked;
   try {
-    await saveConfig({ enableStreaming: checked });
-    console.log('流式响应设置已保存:', checked);
+    await updateTaskSettings(state.task, { enableStreaming: checked });
+    console.log(`任务 ${state.task} 的流式响应设置已保存:`, checked);
   } catch (e) {
     console.error('保存流式响应设置失败:', e);
   }
@@ -1586,8 +1599,8 @@ async function toggleStreaming(checked: boolean) {
 async function toggleReasoning(checked: boolean) {
   enableReasoning.value = checked;
   try {
-    await saveConfig({ enableReasoning: checked });
-    console.log('思考模式设置已保存:', checked);
+    await updateTaskSettings(state.task, { enableReasoning: checked });
+    console.log(`任务 ${state.task} 的思考模式设置已保存:`, checked);
   } catch (e) {
     console.error('保存思考模式设置失败:', e);
   }
@@ -1597,8 +1610,8 @@ async function toggleReasoning(checked: boolean) {
 async function toggleContext(checked: boolean) {
   enableContext.value = checked;
   try {
-    await saveConfig({ enableContext: checked });
-    console.log('上下文设置已保存:', checked);
+    await updateTaskSettings(state.task, { enableContext: checked });
+    console.log(`任务 ${state.task} 的上下文设置已保存:`, checked);
   } catch (e) {
     console.error('保存上下文设置失败:', e);
   }
@@ -1607,8 +1620,8 @@ async function toggleContext(checked: boolean) {
 async function toggleFileUpload(checked: boolean) {
   enableFileUpload.value = checked;
   try {
-    await saveConfig({ enableFileUpload: checked });
-    console.log('文件上传设置已保存:', checked);
+    await updateTaskSettings(state.task, { enableFileUpload: checked });
+    console.log(`任务 ${state.task} 的文件上传设置已保存:`, checked);
   } catch (e) {
     console.error('保存文件上传设置失败:', e);
   }
@@ -1654,10 +1667,14 @@ onMounted(async () => {
 
   // 加载全局配置
   const globalConfig = await loadConfig();
-  enableStreaming.value = globalConfig.enableStreaming || false;
-  enableReasoning.value = globalConfig.enableReasoning || false;
-  enableContext.value = globalConfig.enableContext || false;
-  enableFileUpload.value = globalConfig.enableFileUpload || false;
+
+  // 根据当前任务加载对应的功能开关
+  const taskSettings = getTaskSettings(globalConfig, state.task);
+  enableStreaming.value = taskSettings.enableStreaming;
+  enableReasoning.value = taskSettings.enableReasoning;
+  enableContext.value = taskSettings.enableContext;
+  enableFileUpload.value = taskSettings.enableFileUpload;
+
   reduceVisualEffects.value = globalConfig.reduceVisualEffects || false;
   autoPasteGlobalAssistant.value = !!globalConfig.autoPasteGlobalAssistant;
 
@@ -1666,17 +1683,17 @@ onMounted(async () => {
       if (area === 'sync' && changes.translateTargetLang) {
         state.targetLang = changes.translateTargetLang.newValue || 'zh-CN';
       }
-      if (area === 'sync' && changes.enableStreaming) {
-        enableStreaming.value = changes.enableStreaming.newValue || false;
-      }
-      if (area === 'sync' && changes.enableReasoning) {
-        enableReasoning.value = changes.enableReasoning.newValue || false;
-      }
-      if (area === 'sync' && changes.enableContext) {
-        enableContext.value = changes.enableContext.newValue || false;
-      }
-      if (area === 'sync' && changes.enableFileUpload) {
-        enableFileUpload.value = changes.enableFileUpload.newValue || false;
+      // 监听任务设置变化，更新当前任务的功能开关
+      if (area === 'sync' && changes.taskSettings) {
+        const newTaskSettings = changes.taskSettings.newValue;
+        if (newTaskSettings && newTaskSettings[state.task]) {
+          const currentTaskSettings = newTaskSettings[state.task];
+          enableStreaming.value = currentTaskSettings.enableStreaming ?? false;
+          enableReasoning.value = currentTaskSettings.enableReasoning ?? false;
+          enableContext.value = currentTaskSettings.enableContext ?? false;
+          enableFileUpload.value = currentTaskSettings.enableFileUpload ?? false;
+          console.log(`检测到任务 ${state.task} 的设置变化，已更新功能开关`);
+        }
       }
       if (area === 'sync' && changes.reduceVisualEffects) {
         reduceVisualEffects.value = changes.reduceVisualEffects.newValue || false;

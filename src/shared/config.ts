@@ -18,6 +18,36 @@ export const SUPPORTED_TASKS = [
   { value: 'summarize', label: '总结' }
 ];
 
+// 任务专属设置类型
+export interface TaskSettings {
+  enableContext: boolean;      // 启用上下文
+  enableStreaming: boolean;     // 启用流式响应
+  enableReasoning: boolean;     // 启用思考模式
+  enableFileUpload: boolean;    // 启用文件上传
+}
+
+// 默认任务设置（按任务类型）
+export const DEFAULT_TASK_SETTINGS: Record<string, TaskSettings> = {
+  translate: {
+    enableContext: false,
+    enableStreaming: false,
+    enableReasoning: false,
+    enableFileUpload: false
+  },
+  chat: {
+    enableContext: true,
+    enableStreaming: true,
+    enableReasoning: false,
+    enableFileUpload: true
+  },
+  summarize: {
+    enableContext: false,
+    enableStreaming: false,
+    enableReasoning: true,
+    enableFileUpload: false
+  }
+};
+
 // 默认配置
 export const DEFAULT_CONFIG = {
   // 语言设置
@@ -41,15 +71,10 @@ export const DEFAULT_CONFIG = {
 
   // 会话管理
   maxSessionsCount: 50, // 最大会话保存数量
-  enableContext: false, // 启用上下文
   contextMessagesCount: 5, // 上下文消息数量
-  enableStreaming: false, // 启用流式响应
 
-  // 思考模式
-  enableReasoning: false, // 启用思考模式
-
-  // 文件上传
-  enableFileUpload: false, // 启用文件上传（全局助手窗口）
+  // 按任务分离的功能开关
+  taskSettings: DEFAULT_TASK_SETTINGS,
 
   // 性能优化
   reduceVisualEffects: false, // 减弱视觉效果（关闭 backdrop-blur）
@@ -93,11 +118,8 @@ export const CONFIG_KEYS = [
   'actionKey',
   'autoPasteGlobalAssistant',
   'maxSessionsCount',
-  'enableContext',
   'contextMessagesCount',
-  'enableStreaming',
-  'enableReasoning',
-  'enableFileUpload',
+  'taskSettings',
   'reduceVisualEffects',
   'wrapperStyleName',
   'targetStylePresets'
@@ -107,7 +129,9 @@ export const CONFIG_KEYS = [
 export async function loadConfig(): Promise<typeof DEFAULT_CONFIG> {
   return new Promise((resolve) => {
     try {
-      chrome.storage.sync.get(CONFIG_KEYS, (items: any) => {
+      // 加载所有可能的键（包括旧的全局开关）
+      const allKeys = [...CONFIG_KEYS, 'enableContext', 'enableStreaming', 'enableReasoning', 'enableFileUpload'];
+      chrome.storage.sync.get(allKeys, (items: any) => {
         const config = { ...DEFAULT_CONFIG };
 
         // 更新配置值
@@ -116,11 +140,45 @@ export async function loadConfig(): Promise<typeof DEFAULT_CONFIG> {
             // 特殊处理：确保 targetStylePresets 为数组
             if (key === 'targetStylePresets') {
               (config as any)[key] = Array.isArray(items[key]) ? items[key] : DEFAULT_CONFIG.targetStylePresets;
-            } else {
+            }
+            // 特殊处理：确保 taskSettings 为对象
+            else if (key === 'taskSettings') {
+              (config as any)[key] = typeof items[key] === 'object' && items[key] !== null
+                ? { ...DEFAULT_TASK_SETTINGS, ...items[key] }
+                : DEFAULT_TASK_SETTINGS;
+            }
+            else {
               (config as any)[key] = items[key];
             }
           }
         });
+
+        // 兼容性迁移：如果存在旧的全局开关，迁移到新结构
+        const hasOldSettings = items.enableContext !== undefined ||
+                               items.enableStreaming !== undefined ||
+                               items.enableReasoning !== undefined ||
+                               items.enableFileUpload !== undefined;
+
+        if (hasOldSettings && items.taskSettings === undefined) {
+          console.log('检测到旧配置格式，正在迁移到新结构...');
+          // 将旧的全局开关应用到所有任务
+          const migratedSettings: Record<string, TaskSettings> = {};
+          for (const task of ['translate', 'chat', 'summarize']) {
+            migratedSettings[task] = {
+              enableContext: items.enableContext ?? DEFAULT_TASK_SETTINGS[task].enableContext,
+              enableStreaming: items.enableStreaming ?? DEFAULT_TASK_SETTINGS[task].enableStreaming,
+              enableReasoning: items.enableReasoning ?? DEFAULT_TASK_SETTINGS[task].enableReasoning,
+              enableFileUpload: items.enableFileUpload ?? DEFAULT_TASK_SETTINGS[task].enableFileUpload
+            };
+          }
+          config.taskSettings = migratedSettings;
+
+          // 异步保存迁移后的配置并清理旧键
+          chrome.storage.sync.set({ taskSettings: migratedSettings }, () => {
+            chrome.storage.sync.remove(['enableContext', 'enableStreaming', 'enableReasoning', 'enableFileUpload']);
+            console.log('配置迁移完成');
+          });
+        }
 
         resolve(config);
       });
@@ -152,4 +210,23 @@ export async function saveConfig(config: Partial<typeof DEFAULT_CONFIG>): Promis
 // 重置配置为默认值
 export async function resetConfig(): Promise<void> {
   return saveConfig(DEFAULT_CONFIG);
+}
+
+// 获取特定任务的设置
+export function getTaskSettings(config: typeof DEFAULT_CONFIG, task: string): TaskSettings {
+  return config.taskSettings[task] || DEFAULT_TASK_SETTINGS[task] || DEFAULT_TASK_SETTINGS.translate;
+}
+
+// 更新特定任务的设置
+export async function updateTaskSettings(task: string, settings: Partial<TaskSettings>): Promise<void> {
+  const config = await loadConfig();
+  const currentTaskSettings = config.taskSettings[task] || DEFAULT_TASK_SETTINGS[task] || DEFAULT_TASK_SETTINGS.translate;
+  const updatedTaskSettings = { ...currentTaskSettings, ...settings };
+
+  return saveConfig({
+    taskSettings: {
+      ...config.taskSettings,
+      [task]: updatedTaskSettings
+    }
+  });
 }
