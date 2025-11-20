@@ -851,7 +851,15 @@ async function loadModels() {
   const localData: any = await new Promise(resolve => chrome.storage.local.get(['selectedModelByTask'], resolve));
 
   const channels: Channel[] = Array.isArray(cfg.channels) ? cfg.channels : [];
-  const pairs = channels.flatMap(ch => (ch.models || []).map(m => ({ key: keyOf({ channel: ch.name, model: m }), channel: ch.name, model: m })));
+  const pairs = channels.flatMap(ch => (ch.models || []).map(m => {
+    // 支持 id#name 格式：id 用于 API 调用和 key 生成，name 用于显示
+    const [modelId, displayName] = m.includes('#') ? m.split('#', 2) : [m, m];
+    return {
+      key: keyOf({ channel: ch.name, model: modelId.trim() }),
+      channel: ch.name,
+      model: displayName.trim() // 显示名称
+    };
+  }));
   modelPairs.value = pairs;
   state.targetLang = globalConfig.translateTargetLang;
   state.prevLang = globalConfig.prevLanguage || 'en';

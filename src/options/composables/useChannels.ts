@@ -20,14 +20,21 @@ export function useChannels() {
   const channels = ref<Channel[]>([]);
   const modelPairs = computed(() => {
     const pairs: { value: string; label: string }[] = [];
-    channels.value.forEach(ch => (ch.models || []).forEach(m => pairs.push({ value: `${ch.name}|${m}`, label: `${m} (${ch.name})` })));
+    channels.value.forEach(ch => (ch.models || []).forEach(m => {
+      // 支持 id#name 格式：id 用于 API 调用，name 用于显示
+      const [modelId, displayName] = m.includes('#') ? m.split('#', 2) : [m, m];
+      pairs.push({
+        value: `${ch.name}|${modelId.trim()}`,
+        label: `${displayName.trim()} (${ch.name})`
+      });
+    }));
     return pairs;
   });
 
   // 通道新增
   const addForm = reactive({ type: 'openai', name: '', apiUrl: '', apiKey: '', modelsText: '' });
   function splitModels(input: string) { return (input || '').split(/\r?\n|,/).map(s=>s.trim()).filter(Boolean); }
-  function addChannel() {
+  function addChannel(onSuccess?: () => void) {
     const name = (addForm.name || '').trim();
     const type = addForm.type;
     const apiUrl = withDefaultApiUrl(type, addForm.apiUrl);
@@ -43,6 +50,7 @@ export function useChannels() {
       chrome.storage.sync.set({ channels: next }, () => {
         addForm.name = ''; addForm.apiUrl = ''; addForm.apiKey = ''; addForm.modelsText = '';
         channels.value = next;
+        if (onSuccess) onSuccess();
       });
     });
   }

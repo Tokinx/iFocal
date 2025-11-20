@@ -70,6 +70,12 @@ const version = ref('-');
 const showApiKeyByIndex = reactive<boolean[]>([]);
 const modelsTextByIndex = reactive<string[]>([]);
 const originalNames = reactive<string[]>([]);
+// 渠道展开/收起状态
+const channelExpanded = reactive<boolean[]>([]);
+// 拖拽状态
+const draggedIndex = ref<number | null>(null);
+const dragOverIndex = ref<number | null>(null);
+const isDraggable = ref<boolean[]>([]); // 控制是否可拖拽
 watch(defaultModel, (val) => { defaultModelValue.value = joinPair(val); }, { immediate: true });
 watch(translateModel, (val) => { translateModelValue.value = joinPair(val); }, { immediate: true });
 
@@ -98,11 +104,14 @@ async function loadAll() {
         chrome.storage.sync.get(['channels', 'defaultModel', 'translateModel', 'promptTemplates', 'activeModel'], (items: any) => {
           channels.value = Array.isArray(items.channels) ? items.channels : [];
           // 初始化每项编辑辅助状态
-          originalNames.length = 0; modelsTextByIndex.length = 0; showApiKeyByIndex.length = 0;
+          originalNames.length = 0; modelsTextByIndex.length = 0; showApiKeyByIndex.length = 0; channelExpanded.length = 0; fetchingModels.length = 0; isDraggable.value.length = 0;
           channels.value.forEach((c, i) => {
             originalNames[i] = c.name;
             modelsTextByIndex[i] = (c.models || []).join('\n');
             showApiKeyByIndex[i] = false;
+            channelExpanded[i] = false; // 默认收起
+            fetchingModels[i] = false;
+            isDraggable.value[i] = false; // 默认不可拖拽
           });
           defaultModel.value = items.defaultModel || null;
           translateModel.value = items.translateModel || null;
@@ -292,7 +301,27 @@ function triggerImport() { importerRef.value?.click(); }
 function onImportChange(e: Event) { const input = e.target as HTMLInputElement; const file = input && input.files && input.files[0]; if (!file) return; try { const reader = new FileReader(); reader.onload = () => { try { const data = JSON.parse(String(reader.result || '{}')); const toSet: any = {}; STORAGE_KEYS.forEach(k => { if (k in (data || {})) toSet[k] = (data as any)[k]; }); chrome.storage.sync.set(toSet, () => { toast.success('导入成功，正在刷新'); window.location.reload(); }); } catch { toast.error('导入失败：JSON 解析错误'); } }; reader.readAsText(file); } catch { } }
 
 // 表单交互包装：校验 + Toast
-function handleAddChannel() { try { addChannel(); toast.success('已添加渠道'); } catch (e: any) { toast.error(String(e?.message || e || '保存失败')); } }
+function handleAddChannel() {
+  try {
+    addChannel(() => {
+      // 添加成功后，重新初始化辅助数组
+      const newIdx = channels.value.length - 1;
+      if (newIdx >= 0) {
+        const newChannel = channels.value[newIdx];
+        originalNames[newIdx] = newChannel.name;
+        modelsTextByIndex[newIdx] = (newChannel.models || []).join('\n');
+        showApiKeyByIndex[newIdx] = false;
+        channelExpanded[newIdx] = false;
+        fetchingModels[newIdx] = false;
+        isDraggable.value[newIdx] = false;
+        initTestModels();
+      }
+    });
+    toast.success('已添加渠道');
+  } catch (e: any) {
+    toast.error(String(e?.message || e || '保存失败'));
+  }
+}
 const editStatus = ref('');
 function handleSaveEdit(original: string) { editStatus.value = ''; try { saveEdit(original, () => toast.success('渠道已保存')); } catch (e: any) { editStatus.value = String(e?.message || e || '保存失败'); toast.error(editStatus.value); } }
 function handleTestChannel(name: string) { const model = testModel[name] || undefined; try { chrome.runtime.sendMessage({ action: 'testChannel', channel: name, model }, (resp: any) => { if (!resp) { toast.error('测试失败：无响应'); return; } if (resp.ok) toast.success('测试成功'); else toast.error(`测试失败：${resp.error || '未知错误'}`); }); } catch { toast.error('测试调用失败'); } }
@@ -393,6 +422,165 @@ async function saveGlossary() {
   } catch { toast.error('保存失败'); }
 }
 onMounted(loadGlossary);
+
+// 拖拽排序函数
+function enableDrag(idx: number) {
+  isDraggable.value[idx] = true;
+}
+function disableDrag(idx: number) {
+  isDraggable.value[idx] = false;
+}
+function handleDragStart(idx: number) {
+  draggedIndex.value = idx;
+}
+function handleDragOver(e: DragEvent, idx: number) {
+  e.preventDefault();
+  dragOverIndex.value = idx;
+}
+function handleDragEnd() {
+  if (draggedIndex.value !== null && dragOverIndex.value !== null && draggedIndex.value !== dragOverIndex.value) {
+    const from = draggedIndex.value;
+    const to = dragOverIndex.value;
+
+    // 先从 modelsTextByIndex 同步最新的模型列表到 channels
+    const updatedChannels = channels.value.map((ch, i) => ({
+      ...ch,
+      models: modelsTextByIndex[i] ? modelsTextByIndex[i].split(/\r?\n/).map(s => s.trim()).filter(Boolean) : ch.models
+    }));
+
+    const newChannels = [...updatedChannels];
+    const [movedItem] = newChannels.splice(from, 1);
+    newChannels.splice(to, 0, movedItem);
+
+    // 同步更新辅助数组
+    const newOriginalNames = [...originalNames];
+    const newModelsText = [...modelsTextByIndex];
+    const newShowApiKey = [...showApiKeyByIndex];
+    const newExpanded = [...channelExpanded];
+    const newIsDraggable = [...isDraggable.value];
+
+    const [movedOriginalName] = newOriginalNames.splice(from, 1);
+    const [movedModelsText] = newModelsText.splice(from, 1);
+    const [movedShowApiKey] = newShowApiKey.splice(from, 1);
+    const [movedExpanded] = newExpanded.splice(from, 1);
+    const [movedDraggable] = newIsDraggable.splice(from, 1);
+
+    newOriginalNames.splice(to, 0, movedOriginalName);
+    newModelsText.splice(to, 0, movedModelsText);
+    newShowApiKey.splice(to, 0, movedShowApiKey);
+    newExpanded.splice(to, 0, movedExpanded);
+    newIsDraggable.splice(to, 0, movedDraggable);
+
+    // 保存到存储
+    chrome.storage.sync.set({ channels: newChannels }, () => {
+      channels.value = newChannels;
+      originalNames.length = 0;
+      modelsTextByIndex.length = 0;
+      showApiKeyByIndex.length = 0;
+      channelExpanded.length = 0;
+      isDraggable.value.length = 0;
+      newOriginalNames.forEach((v, i) => originalNames[i] = v);
+      newModelsText.forEach((v, i) => modelsTextByIndex[i] = v);
+      newShowApiKey.forEach((v, i) => showApiKeyByIndex[i] = v);
+      newExpanded.forEach((v, i) => channelExpanded[i] = v);
+      newIsDraggable.forEach((v, i) => isDraggable.value[i] = v);
+      toast.success('渠道顺序已更新');
+    });
+  }
+  draggedIndex.value = null;
+  dragOverIndex.value = null;
+  // 拖拽结束后重置所有可拖拽状态
+  isDraggable.value.forEach((_, i) => isDraggable.value[i] = false);
+}
+function handleDragLeave() {
+  dragOverIndex.value = null;
+}
+
+// 获取模型列表
+const fetchingModels = reactive<boolean[]>([]);
+const fetchingAddFormModels = ref(false);
+
+// 通用获取模型函数
+async function fetchModelsFromApi(type: string, apiUrl: string, apiKey: string): Promise<string[]> {
+  const url = apiUrl || (type === 'openai' ? 'https://api.openai.com/v1' : type === 'gemini' ? 'https://generativelanguage.googleapis.com/v1beta' : '');
+
+  if (!url) {
+    throw new Error('API URL 未配置');
+  }
+
+  if (!apiKey) {
+    throw new Error('API KEY 未配置');
+  }
+
+  let models: string[] = [];
+
+  if (type === 'openai' || type === 'openai-compatible') {
+    // OpenAI 格式：GET /v1/models
+    const response = await fetch(`${url}/models`, {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    models = (data.data || []).map((m: any) => m.id).filter(Boolean);
+  } else if (type === 'gemini') {
+    // Gemini 格式：GET /v1beta/models
+    const response = await fetch(`${url}/models?key=${apiKey}`);
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    models = (data.models || []).map((m: any) => {
+      // Gemini 返回的是 models/gemini-pro 格式，需要提取模型名
+      const name = m.name || '';
+      return name.startsWith('models/') ? name.substring(7) : name;
+    }).filter(Boolean);
+  }
+
+  if (models.length === 0) {
+    throw new Error('未获取到模型列表');
+  }
+
+  return models;
+}
+
+// 为已有渠道获取模型
+async function fetchModels(idx: number) {
+  const ch = channels.value[idx];
+  if (!ch) return;
+
+  fetchingModels[idx] = true;
+  try {
+    const models = await fetchModelsFromApi(ch.type, ch.apiUrl || '', ch.apiKey || '');
+    modelsTextByIndex[idx] = models.join('\n');
+    toast.success(`成功获取 ${models.length} 个模型`);
+  } catch (error: any) {
+    toast.error(`获取失败：${error.message || '未知错误'}`);
+  } finally {
+    fetchingModels[idx] = false;
+  }
+}
+
+// 为添加表单获取模型
+async function fetchAddFormModels() {
+  fetchingAddFormModels.value = true;
+  try {
+    const models = await fetchModelsFromApi(addForm.type, addForm.apiUrl, addForm.apiKey);
+    addForm.modelsText = models.join('\n');
+    toast.success(`成功获取 ${models.length} 个模型`);
+  } catch (error: any) {
+    toast.error(`获取失败：${error.message || '未知错误'}`);
+  } finally {
+    fetchingAddFormModels.value = false;
+  }
+}
 </script>
 
 <template>
@@ -430,15 +618,35 @@ onMounted(loadGlossary);
 
         <div v-if="!channels.length" class="text-sm text-muted-foreground">暂无渠道，请先添加。</div>
         <div v-else class="space-y-3">
-          <div v-for="(ch, idx) in channels" :key="idx + ch.apiKey" class="space-y-3">
-            <!-- 顶部：名称/类型/测试模型 -->
+          <div v-for="(ch, idx) in channels" :key="idx + ch.apiKey"
+            class="border rounded-lg p-4 space-y-3 transition-all"
+            :class="{ 'opacity-50': draggedIndex === idx, 'border-primary border-2': dragOverIndex === idx }"
+            :draggable="isDraggable[idx]"
+            @dragstart="handleDragStart(idx)"
+            @dragover="handleDragOver($event, idx)"
+            @dragend="handleDragEnd"
+            @dragleave="handleDragLeave">
+            <!-- 顶部：名称/类型/测试模型 + 展开/收起按钮 -->
             <div class="flex items-center justify-between gap-2">
-              <div class="text-sm">
-                <div class="font-medium inline-flex items-center gap-2">
-                  <Icon :icon="iconOfChannelType(ch.type)" width="16" />
-                  {{ ch.name || '未命名' }}
+              <div class="text-sm flex items-center gap-2 flex-1">
+                <!-- 拖拽手柄 -->
+                <Button variant="ghost" size="icon" class="h-6 w-6 shrink-0 cursor-grab active:cursor-grabbing"
+                  @mousedown="enableDrag(idx)"
+                  @mouseup="disableDrag(idx)"
+                  @mouseleave="disableDrag(idx)"
+                  title="拖拽排序">
+                  <Icon icon="lucide:grip-vertical" width="16" class="text-muted-foreground" />
+                </Button>
+                <Button variant="ghost" size="icon" class="h-6 w-6 shrink-0" @click="channelExpanded[idx] = !channelExpanded[idx]" :title="channelExpanded[idx] ? '收起' : '展开'">
+                  <Icon :icon="channelExpanded[idx] ? 'lucide:chevron-down' : 'lucide:chevron-right'" width="16" />
+                </Button>
+                <div class="flex-1">
+                  <div class="font-medium inline-flex items-center gap-2">
+                    <Icon :icon="iconOfChannelType(ch.type)" width="16" />
+                    {{ ch.name || '未命名' }}
+                  </div>
+                  <div class="text-muted-foreground">{{ ch.type }} · {{ ch.apiUrl || '-' }}</div>
                 </div>
-                <div class="text-muted-foreground">{{ ch.type }} · {{ ch.apiUrl || '-' }}</div>
               </div>
               <div class="flex items-center gap-2 w-64">
                 <div class="w-full">
@@ -458,8 +666,8 @@ onMounted(loadGlossary);
               </div>
             </div>
 
-            <!-- 表单：统一左右布局 -->
-            <div class="space-y-3">
+            <!-- 表单：统一左右布局（展开时显示） -->
+            <div v-if="channelExpanded[idx]" class="space-y-3">
               <div class="flex items-center justify-between gap-4">
                 <div>
                   <label class="text-sm font-medium leading-none block mb-1">类型</label>
@@ -516,15 +724,20 @@ onMounted(loadGlossary);
               <div class="flex items-start justify-between gap-4">
                 <div>
                   <label class="text-sm font-medium leading-none block mb-1">Models</label>
-                  <p class="text-xs text-muted-foreground">每行一个</p>
+                  <p class="text-xs text-muted-foreground">每行一个，支持 id#name 格式自定义显示名称</p>
                 </div>
-                <div class="w-[32rem]">
-                  <Textarea v-model="modelsTextByIndex[idx]" class="min-h-28" />
+                <div class="w-[32rem] space-y-2">
+                  <Textarea v-model="modelsTextByIndex[idx]" class="min-h-28" placeholder="gpt-4o&#10;gpt-4o-mini#GPT-4o Mini" />
+                  <Button variant="outline" size="sm" class="flex items-center gap-1" @click="fetchModels(idx)" :disabled="fetchingModels[idx]">
+                    <Icon v-if="!fetchingModels[idx]" icon="lucide:download" width="14" />
+                    <Icon v-else icon="line-md:loading-twotone-loop" width="14" class="animate-spin" />
+                    {{ fetchingModels[idx] ? '获取中...' : '获取模型列表' }}
+                  </Button>
                 </div>
               </div>
             </div>
 
-            <div class="flex items-center gap-2">
+            <div v-if="channelExpanded[idx]" class="flex items-center gap-2">
               <Button variant="outline" class="flex items-center gap-1 text-red-600" @click="confirmRemoveChannel(ch)">
                 <Icon :icon="iconOfAction('delete')" width="16" /> 删除
               </Button>
@@ -632,15 +845,6 @@ onMounted(loadGlossary);
             </div>
             <div class="flex items-center justify-between gap-4">
               <div>
-                <label class="text-sm font-medium leading-none block mb-1">全局助手 - 监听剪切板</label>
-                <p class="text-xs text-muted-foreground">自动粘贴剪贴板到助手输入框</p>
-              </div>
-              <div>
-                <Switch v-model="config.autoPasteGlobalAssistant" />
-              </div>
-            </div>
-            <div class="flex items-center justify-between gap-4">
-              <div>
                 <label class="text-sm font-medium leading-none block mb-1">划词翻译</label>
                 <p class="text-xs text-muted-foreground">选中文本后显示小圆点触发翻译</p>
               </div>
@@ -668,7 +872,7 @@ onMounted(loadGlossary);
                     <SelectValue placeholder="选择数量" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem v-for="n in [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]" :key="n" :value="n">
+                    <SelectItem v-for="n in [10, 25, 50, 100]" :key="n" :value="n">
                       {{ n }} 个
                     </SelectItem>
                   </SelectContent>
@@ -918,10 +1122,15 @@ onMounted(loadGlossary);
         <div class="flex items-start justify-between gap-4">
           <div>
             <label class="text-sm font-medium leading-none block mb-1">Models</label>
-            <p class="text-xs text-muted-foreground">每行一个</p>
+            <p class="text-xs text-muted-foreground">每行一个，支持 id#name 格式自定义显示名称</p>
           </div>
-          <div class="w-[32rem]">
-            <Textarea v-model="addForm.modelsText" class="min-h-28" placeholder="gpt-5-mini&#10;gpt-4o" />
+          <div class="w-[32rem] space-y-2">
+            <Textarea v-model="addForm.modelsText" class="min-h-28" placeholder="gpt-4o&#10;gpt-4o-mini#GPT-4o Mini" />
+            <Button variant="outline" size="sm" class="flex items-center gap-1" @click="fetchAddFormModels" :disabled="fetchingAddFormModels">
+              <Icon v-if="!fetchingAddFormModels" icon="lucide:download" width="14" />
+              <Icon v-else icon="line-md:loading-twotone-loop" width="14" class="animate-spin" />
+              {{ fetchingAddFormModels ? '获取中...' : '获取模型列表' }}
+            </Button>
           </div>
         </div>
         <div class="flex items-center gap-2">
