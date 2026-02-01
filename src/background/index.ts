@@ -425,24 +425,31 @@ async function invokeModel(
 
 // 基于模型名和开关注入“思考”相关参数（尽量兼容常见 OpenAI 兼容生态）
 function buildReasoningParams(model: string, enabled: boolean | undefined) {
-  if (!enabled) return {} as any;
   const m = (model || '').toLowerCase();
-  const params: any = {};
   // 常见别名，未被识别的字段通常会被服务端忽略（OpenAI 兼容行为）
-  params.enable_thinking = true;   // 通用开关（如部分聚合服务/Qwen/DeepSeek 代理）
-  params.enable_reasoning = true;  // 别名
-  params.enable_thoughts = true;   // Qwen/DashScope 常见命名
-  // OpenAI o3 系列在 Responses API 支持 reasoning.effort，这里仅作为兼容字段透传
-  params.reasoning = { effort: 'medium' };
-
+  const params: any = {
+    enable_thinking: false,         // 通用开关
+    enable_reasoning: false,        // 别名
+    enable_thoughts: false,         // Qwen/DashScope 常见命名
+    reasoning: { effort: 'low' },   // 对支持 reasoning.effort 的服务尽量降到最低（禁用与否取决于服务实现）
+  };
   // DeepSeek 特殊：通常 deepseek-reasoner 会默认返回 reasoning_content，这里显式开启亦可被忽略
-  if (m.includes('deepseek')) {
+  // Qwen：部分兼容端要求 enable_thoughts/enable_thinking
+  if (m.includes('deepseek') || m.includes('qwen')) {
     params.model = model; // 不改模型，仅确保所有别名传递
   }
-  // Qwen：部分兼容端要求 enable_thoughts/enable_thinking
-  if (m.includes('qwen')) {
-    params.model = model;
-  }
+  // 显式关闭：部分模型默认开启思考，需要传 false 才能关闭
+  if (!enabled) {
+    if (m.includes('glm')) {
+      params.thinking = { type: 'disabled' };
+    }
+    return params;
+  } 
+  params.enable_thinking = true;   // 通用开关（如部分聚合服务/Qwen/DeepSeek 代理）
+  params.enable_reasoning = true;  // 别名 
+  params.enable_thoughts = true;   // Qwen/DashScope 常见命名
+  // OpenAI o3 系列在 Responses API 支持 reasoning.effort，这里仅作为兼容字段透传
+  params.reasoning = { effort: 'high' };
   // GLM（智谱/ChatGLM）思考开关：官方文档为 thinking: { type: 'enabled' }
   if (m.includes('glm')) {
     params.thinking = { type: 'enabled' };
@@ -705,8 +712,8 @@ async function callGemini(
               }
             }
           } catch (e) {
-              console.warn('Failed to parse Gemini stream chunk:', e);
-            }
+            console.warn('Failed to parse Gemini stream chunk:', e);
+          }
         }
       }
 
