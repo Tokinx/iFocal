@@ -101,8 +101,9 @@
 
     <!-- 输入框容器 -->
     <div :class="['relative rounded-xl', bgClass, blurClass]">
-      <Textarea v-model="innerValue" v-autosize="8" :rows="2" placeholder="输入你想了解到内容"
-        class="resize-none rounded-xl pb-11" @keydown.enter.exact.prevent="$emit('send')" />
+    <Textarea v-model="innerValue" v-autosize="8" :rows="2" placeholder="输入你想了解到内容"
+      class="resize-none rounded-xl pb-11" @keydown.enter.exact.prevent="$emit('send')"
+      @paste="handlePaste" />
       <div class="absolute bottom-2 left-2 right-2 flex items-center justify-between pointer-events-none">
         <!-- 输入框功能区 -->
         <div class="flex items-center pointer-events-auto">
@@ -228,7 +229,7 @@ const fileInputRef = ref<HTMLInputElement | null>(null)
 const attachments = ref<FileAttachment[]>([])
 
 // 支持的文件类型
-const acceptedFileTypes = [
+const acceptedFileTypeList = [
   // 图片
   'image/jpeg',
   'image/png',
@@ -246,7 +247,8 @@ const acceptedFileTypes = [
   'text/plain',
   'text/csv',
   'text/markdown',
-].join(',')
+]
+const acceptedFileTypes = acceptedFileTypeList.join(',')
 
 // 最大文件大小（10MB）
 const MAX_FILE_SIZE = 10 * 1024 * 1024
@@ -261,19 +263,48 @@ function handleFileSelect(event: Event) {
   if (!files || files.length === 0) return
 
   const file = files[0] // 只取第一个文件
-
-  // 验证文件大小
-  if (file.size > MAX_FILE_SIZE) {
-    alert(`文件 "${file.name}" 超过 10MB 限制`)
+  if (!addAttachmentFromFile(file)) {
     input.value = ''
     return
   }
 
+  // 清空 input，允许重复选择同一文件
+  input.value = ''
+
+  // 通知父组件
+  emit('attachmentsChange', attachments.value)
+}
+
+function handlePaste(event: ClipboardEvent) {
+  if (!props.enableFileUpload) return
+  const items = event.clipboardData?.items
+  if (!items || items.length === 0) return
+
+  let file: File | null = null
+  for (const item of items) {
+    if (item.kind === 'file' && item.type.startsWith('image/')) {
+      file = item.getAsFile()
+      if (file) break
+    }
+  }
+  if (!file) return
+
+  if (!addAttachmentFromFile(file)) return
+  event.preventDefault()
+  emit('attachmentsChange', attachments.value)
+}
+
+function addAttachmentFromFile(file: File): boolean {
+  // 验证文件大小
+  if (file.size > MAX_FILE_SIZE) {
+    alert(`文件 "${file.name}" 超过 10MB 限制`)
+    return false
+  }
+
   // 验证文件类型
-  if (!acceptedFileTypes.includes(file.type)) {
+  if (!acceptedFileTypeList.includes(file.type)) {
     alert(`不支持的文件类型: ${file.type}`)
-    input.value = ''
-    return
+    return false
   }
 
   // 只保留一个文件
@@ -283,12 +314,7 @@ function handleFileSelect(event: Event) {
     type: file.type,
     file: file
   }]
-
-  // 清空 input，允许重复选择同一文件
-  input.value = ''
-
-  // 通知父组件
-  emit('attachmentsChange', attachments.value)
+  return true
 }
 
 function removeAttachment(index: number) {
