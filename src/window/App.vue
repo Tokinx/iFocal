@@ -1,5 +1,6 @@
 <template>
-  <div ref="rootEl" class="flex h-screen w-full flex-col bg-[#f3f3f3] bg-gradient-to-b from-[#f3f3f3] to-white text-foreground">
+  <div ref="rootEl"
+    class="flex h-screen w-full flex-col bg-[#f3f3f3] bg-gradient-to-b from-[#f3f3f3] to-white text-foreground">
     <ScrollArea ref="messagesContainer" class="ifocal-scroll-style flex-1 px-4">
       <!-- 顶部工具栏 -->
       <header class="flex items-center gap-2 absolute top-0 left-0 right-0 p-3 z-10">
@@ -35,7 +36,8 @@
           <div v-if="message.role === 'user'" class="flex justify-end">
             <div class="group relative max-w-[80%]">
               <!-- 附件预览 -->
-              <div v-if="message.attachments && message.attachments.length > 0" class="mb-2 space-y-2">
+              <div v-if="message.attachments && message.attachments.length > 0"
+                :class="['space-y-2', { 'mb-2': message.content }]">
                 <div v-for="(att, attIdx) in message.attachments" :key="attIdx">
                   <!-- 图片附件 -->
                   <img v-if="att.type.startsWith('image/')" :src="att.data" :alt="att.name"
@@ -55,8 +57,8 @@
                 </div>
               </div>
               <!-- 消息内容 -->
-              <div class="rounded-xl !rounded-tr-none bg-zinc-200 px-4 py-3 text-foreground prose prose-sm max-w-none"
-                v-html="renderMarkdownSafe(message.content)">
+              <div v-if="message.content" v-html="renderMarkdownSafe(message.content)"
+                class="rounded-xl !rounded-tr-none bg-zinc-200 px-4 py-3 text-foreground prose prose-sm max-w-none">
               </div>
               <!-- 重试按钮 - 左下角 -->
               <Button variant="ghost" size="icon"
@@ -172,20 +174,20 @@
 
       <!-- 底部操作区 -->
       <footer ref="footerEl" class="p-3 absolute left-0 right-0 bottom-0">
-        <ChatInput ref="chatInputRef" v-model="state.text" :sending="isBusy" :task="state.task" :enable-streaming="enableStreaming"
-          :enable-reasoning="enableReasoning" :enable-context="enableContext" :enable-file-upload="enableFileUpload"
-          :auto-paste-global-assistant="autoPasteGlobalAssistant" :bg-class="bgClass" :blur-class="blurClass"
-          @send="handleSend()" @stop="stopGenerating" @changeTask="changeTask" @toggleStreaming="toggleStreaming"
-          @toggleReasoning="toggleReasoning" @toggleContext="toggleContext"
-          @toggleClipboardListening="toggleClipboardListening" @toggleFileUpload="toggleFileUpload"
-          @newChat="() => startNewChat(false)" />
+        <ChatInput ref="chatInputRef" v-model="state.text" :sending="isBusy" :task="state.task"
+          :enable-streaming="enableStreaming" :enable-reasoning="enableReasoning" :enable-context="enableContext"
+          :enable-file-upload="enableFileUpload" :auto-paste-global-assistant="autoPasteGlobalAssistant"
+          :bg-class="bgClass" :blur-class="blurClass" @send="handleSend()" @stop="stopGenerating"
+          @changeTask="changeTask" @toggleStreaming="toggleStreaming" @toggleReasoning="toggleReasoning"
+          @toggleContext="toggleContext" @toggleClipboardListening="toggleClipboardListening"
+          @toggleFileUpload="toggleFileUpload" @newChat="() => startNewChat(false)" />
       </footer>
     </ScrollArea>
 
     <!-- 历史会话抽屉 -->
     <HistoryDrawer v-model:open="historyOpen" :sessions="sessions" :current-session-id="currentSessionId"
-      :bg-class="bgClass" :blur-class="blurClass"
-      @switchSession="switchSession" @deleteSession="deleteSession" @newChatFromDrawer="startNewChatFromDrawer" />
+      :bg-class="bgClass" :blur-class="blurClass" @switchSession="switchSession" @deleteSession="deleteSession"
+      @newChatFromDrawer="startNewChatFromDrawer" />
   </div>
 </template>
 
@@ -1801,7 +1803,7 @@ onBeforeUnmount(() => {
 });
 </script>
 
-<style scoped>
+<style>
 .prose {
   color: inherit;
 }
@@ -1818,6 +1820,7 @@ onBeforeUnmount(() => {
 .prose p {
   margin-top: 0.5em;
   margin-bottom: 0.5em;
+  white-space: break-spaces;
 }
 
 /* 确保第一个段落没有上边距 */
@@ -1889,8 +1892,7 @@ onBeforeUnmount(() => {
   color: inherit;
   background-color: rgba(255, 255, 255, 0.12);
 }
-</style>
-<style>
+
 .shimmer-text {
   position: relative;
   display: inline-block;
