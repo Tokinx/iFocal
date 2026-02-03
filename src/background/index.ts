@@ -415,7 +415,7 @@ async function invokeModel(
 ) {
   if (!channel?.apiKey) throw new Error('Channel is missing API key');
   if (channel.type === 'openai' || channel.type === 'openai-compatible') {
-    return callOpenAI(channel.apiUrl, channel.apiKey, model, prompt, context, stream, onChunk, opts);
+    return callOpenAI(channel.apiUrl, channel.apiKey, model, prompt, context, stream, onChunk, opts, channel.type);
   }
   if (channel.type === 'gemini') {
     return callGemini(channel.apiUrl, channel.apiKey, model, prompt, context, stream, onChunk, opts);
@@ -465,7 +465,8 @@ async function callOpenAI(
   context?: Array<{ role: string; content: string; attachments?: any[] }>,
   stream: boolean = false,
   onChunk?: (chunk: string) => void,
-  opts?: { enableReasoning?: boolean; shouldStop?: () => boolean; signal?: AbortSignal; attachments?: any[] }
+  opts?: { enableReasoning?: boolean; shouldStop?: () => boolean; signal?: AbortSignal; attachments?: any[] },
+  channelType: string = 'openai'
 ) {
   const url = joinBasePath(baseUrl || 'https://api.openai.com/v1', '/chat/completions');
 
@@ -540,8 +541,12 @@ async function callOpenAI(
   }
 
   const body: any = { model, messages, temperature: 0.2, stream };
-  // 注入"思考开关"相关参数（尽量兼容）
-  Object.assign(body, buildReasoningParams(model, opts?.enableReasoning));
+  // 注入"思考开关"相关参数（尽量兼容 OpenAI 兼容端）；OpenAI 官方 Chat Completions 会拒绝未知字段
+  if (channelType !== 'openai') {
+    Object.assign(body, buildReasoningParams(model, opts?.enableReasoning));
+  } else if (opts?.enableReasoning) {
+    console.warn('[OpenAI] Chat Completions 不支持 reasoning 参数，已忽略 enableReasoning。');
+  }
 
   // 调试日志：输出消息结构
   console.log('[OpenAI] 发送请求，消息数量:', messages.length);
@@ -571,7 +576,22 @@ async function callOpenAI(
 
   return rateLimited(async () => {
     const res = await withBackoff(() => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: JSON.stringify(body), signal: opts?.signal as any }));
-    if (!res.ok) throw new Error(`OpenAI HTTP ${res.status}`);
+    if (!res.ok) {
+      let detail = '';
+      try {
+        const text = await res.text();
+        if (text) {
+          try {
+            const json = JSON.parse(text);
+            const msg = json?.error?.message || json?.message || '';
+            detail = msg ? `: ${msg}` : `: ${text.slice(0, 200)}`;
+          } catch {
+            detail = `: ${text.slice(0, 200)}`;
+          }
+        }
+      } catch { }
+      throw new Error(`OpenAI HTTP ${res.status}${detail}`);
+    }
 
     if (stream) {
       // 流式响应
