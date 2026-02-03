@@ -241,6 +241,7 @@ type StorageConfig = {
 };
 
 let hoveredElement: HTMLElement | null = null;
+let hoverInInputArea = false;
 let actionKey = 'Alt';
 let displayMode: 'insert' | 'overlay' = 'insert';
 let enableSelectionTranslation = true;
@@ -406,9 +407,36 @@ function isIfocalElement(target: EventTarget | Node | null): boolean {
   return false;
 }
 
+function isInputArea(target: EventTarget | Node | null): boolean {
+  try {
+    const n = target as any;
+    const el: HTMLElement | null = n instanceof HTMLElement ? n : (n?.parentElement || null);
+    if (!el) return false;
+    if (isIfocalElement(el)) return false;
+    if (el.isContentEditable) return true;
+    if (el.closest('[contenteditable=""],[contenteditable="true"]')) return true;
+    if (el.closest('input, textarea, select')) return true;
+    if (el.closest('[role="textbox"]')) return true;
+  } catch {}
+  return false;
+}
+
+function getDeepActiveElement(): Element | null {
+  try {
+    let active: Element | null = document.activeElement;
+    while (active && (active as any).shadowRoot?.activeElement) {
+      active = (active as any).shadowRoot.activeElement as Element | null;
+    }
+    return active;
+  } catch {
+    return document.activeElement;
+  }
+}
+
 function findTextBlockElement(target: EventTarget | null): HTMLElement | null {
   const element = target instanceof HTMLElement ? target : null;
   if (!element) return null;
+  if (isInputArea(element)) return null;
   if (isIfocalElement(element)) return null;
   const BLOCK_TAGS = new Set(['P', 'DIV', 'ARTICLE', 'SECTION', 'LI', 'TD', 'A', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6']);
   const INVALID_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT']);
@@ -424,11 +452,17 @@ function findTextBlockElement(target: EventTarget | null): HTMLElement | null {
 }
 
 document.addEventListener('mouseover', (event) => {
+  hoverInInputArea = isInputArea(event.target);
+  if (hoverInInputArea) {
+    hoveredElement = null;
+    return;
+  }
   hoveredElement = findTextBlockElement(event.target);
 });
 
 document.addEventListener('mouseout', () => {
   hoveredElement = null;
+  hoverInInputArea = false;
 });
 
 document.addEventListener('mouseup', (ev) => {
@@ -498,6 +532,9 @@ document.addEventListener('keydown', (event) => {
   window.setTimeout(() => {
     keydownCooldown = false;
   }, 800);
+  const activeEl = getDeepActiveElement();
+  if (isInputArea(activeEl)) return;
+  if (hoverInInputArea) return;
   if (hoveredElement) {
     toggleHoverTranslate(hoveredElement);
   }
