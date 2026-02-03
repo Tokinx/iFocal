@@ -1005,14 +1005,15 @@ async function fileToBase64(file: File): Promise<string> {
 
 async function handleSend() {
   const text = state.text.trim();
-  if (!text || isBusy.value) return;
+  const attachmentFiles = chatInputRef.value?.getAttachments() || [];
+  const hasAttachments = attachmentFiles.length > 0;
+  if ((!text && !hasAttachments) || isBusy.value) return;
   const requestStartAt = Date.now();
   const requestId = `${requestStartAt}-${Math.random().toString(36).slice(2)}`;
 
   const pair = parseKey(selectedPairKey.value);
 
   // 获取附件并转换为 base64
-  const attachmentFiles = chatInputRef.value?.getAttachments() || [];
   console.log('发送消息，附件数量:', attachmentFiles.length);
 
   const attachments: Message['attachments'] = [];
@@ -1051,7 +1052,8 @@ async function handleSend() {
 
     // 如果是第一条消息，更新会话标题
     if (session.messages.length === 1) {
-      session.title = generateSessionTitle(text);
+      const titleBase = text || attachmentFiles[0]?.name || '图片消息';
+      session.title = generateSessionTitle(titleBase);
     }
 
     session.updatedAt = Date.now();

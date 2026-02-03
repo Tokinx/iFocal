@@ -102,7 +102,7 @@
     <!-- 输入框容器 -->
     <div :class="['relative rounded-xl', bgClass, blurClass]">
     <Textarea v-model="innerValue" v-autosize="8" :rows="2" placeholder="输入你想了解到内容"
-      class="resize-none rounded-xl pb-11" @keydown.enter.exact.prevent="$emit('send')"
+      class="resize-none rounded-xl pb-11" @keydown.enter.exact.prevent="trySend"
       @paste="handlePaste" />
       <div class="absolute bottom-2 left-2 right-2 flex items-center justify-between pointer-events-none">
         <!-- 输入框功能区 -->
@@ -149,7 +149,7 @@
         <div class="flex gap-1 pointer-events-auto">
           <!-- 发送按钮 -->
           <Button variant="ghost" size="icon" class="h-7 w-7 rounded-full !bg-slate-800 !text-white"
-            @click="$emit('send')" v-show="(innerValue || '').trim() && !sending">
+            @click="trySend" v-show="canSend && !sending">
             <Icon icon="ri:send-plane-2-fill" class="h-3 w-3" />
           </Button>
           <!-- 停止按钮 -->
@@ -343,6 +343,16 @@ const innerValue = computed({
   get: () => props.modelValue,
   set: v => emit('update:modelValue', v)
 })
+const canSend = computed(() => {
+  const text = (innerValue.value || '').trim()
+  return text.length > 0 || attachments.value.length > 0
+})
+
+function trySend() {
+  if (props.sending) return
+  if (!canSend.value) return
+  emit('send')
+}
 
 // 本地 v-autosize 指令
 const vAutosize: Directive<HTMLElement, number | undefined> = {
