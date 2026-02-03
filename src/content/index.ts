@@ -527,14 +527,14 @@ document.addEventListener('touchend', (ev) => {
 
 document.addEventListener('keydown', (event) => {
   if (event.key !== actionKey || keydownCooldown) return;
+  const activeEl = getDeepActiveElement();
+  if (isInputArea(activeEl)) return;
+  if (hoverInInputArea) return;
   event.preventDefault();
   keydownCooldown = true;
   window.setTimeout(() => {
     keydownCooldown = false;
   }, 800);
-  const activeEl = getDeepActiveElement();
-  if (isInputArea(activeEl)) return;
-  if (hoverInInputArea) return;
   if (hoveredElement) {
     toggleHoverTranslate(hoveredElement);
   }
