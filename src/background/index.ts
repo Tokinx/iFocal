@@ -444,7 +444,7 @@ function buildReasoningParams(model: string, enabled: boolean | undefined) {
       params.thinking = { type: 'disabled' };
     }
     return params;
-  } 
+  }
   params.enable_thinking = true;   // 通用开关（如部分聚合服务/Qwen/DeepSeek 代理）
   params.enable_reasoning = true;  // 别名 
   params.enable_thoughts = true;   // Qwen/DashScope 常见命名
@@ -542,7 +542,7 @@ async function callOpenAI(
 
   const body: any = { model, messages, temperature: 0.2, stream };
   // 注入"思考开关"相关参数（尽量兼容 OpenAI 兼容端）；OpenAI 官方 Chat Completions 会拒绝未知字段
-  if (channelType !== 'openai') {
+  if (!model.includes("gpt")) { // channelType !== 'openai'
     Object.assign(body, buildReasoningParams(model, opts?.enableReasoning));
   } else if (opts?.enableReasoning) {
     console.warn('[OpenAI] Chat Completions 不支持 reasoning 参数，已忽略 enableReasoning。');
