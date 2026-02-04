@@ -1010,10 +1010,6 @@ async function handleSend() {
   const attachmentFiles = chatInputRef.value?.getAttachments() || [];
   const hasAttachments = attachmentFiles.length > 0;
   if ((!text && !hasAttachments) || isBusy.value) return;
-  const requestStartAt = Date.now();
-  const requestId = `${requestStartAt}-${Math.random().toString(36).slice(2)}`;
-
-  const pair = parseKey(selectedPairKey.value);
 
   // 获取附件并转换为 base64
   console.log('发送消息，附件数量:', attachmentFiles.length);
@@ -1035,6 +1031,17 @@ async function handleSend() {
     }
   }
 
+  await sendPreparedMessage(text, attachments);
+}
+
+async function sendPreparedMessage(text: string, attachments?: Message['attachments']) {
+  const hasAttachments = !!attachments && attachments.length > 0;
+  if ((!text && !hasAttachments) || isBusy.value) return;
+  const requestStartAt = Date.now();
+  const requestId = `${requestStartAt}-${Math.random().toString(36).slice(2)}`;
+
+  const pair = parseKey(selectedPairKey.value);
+
   // 加载配置
   const globalConfig = await loadConfig();
   const enableContext = globalConfig.enableContext || false;
@@ -1054,7 +1061,7 @@ async function handleSend() {
 
     // 如果是第一条消息，更新会话标题
     if (session.messages.length === 1) {
-      const titleBase = text || attachmentFiles[0]?.name || '图片消息';
+      const titleBase = text || (attachments && attachments.length > 0 ? attachments[0].name : '') || '图片消息';
       session.title = generateSessionTitle(titleBase);
     }
 
@@ -1464,12 +1471,15 @@ function retryMessage(messageIndex: number) {
   const userMessage = session.messages[messageIndex];
   if (!userMessage || userMessage.role !== 'user') return;
 
+  const retryText = userMessage.content || '';
+  const retryAttachments = userMessage.attachments ? [...userMessage.attachments] : undefined;
+
   // 删除该消息及之后的所有消息
   session.messages.splice(messageIndex);
 
   // 重新发送
-  state.text = userMessage.content;
-  handleSend();
+  state.text = retryText;
+  void sendPreparedMessage(retryText, retryAttachments);
 }
 
 async function changeTask(newTask: 'translate' | 'summarize' | 'rewrite' | 'polish' | 'chat') {
@@ -1856,14 +1866,19 @@ onBeforeUnmount(() => {
   /* rounded-md */
 }
 
+.prose code::before,
+.prose code::after {
+  display: none;
+}
+
 /* 代码块：增加字号、行高、内边距与边框，保证可读性 */
 .prose pre {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: 0.93rem;
   line-height: 1.55;
-  background-color: #f6f8fa;
+  /* background-color: #f6f8fa; */
   /* 与 GitHub 接近的浅灰 */
-  border: 1px solid #e5e7eb;
+  /* border: 1px solid #e5e7eb; */
   /* zinc-200 边框 */
   border-radius: 0.5rem;
   padding: 0.85rem 1rem;
