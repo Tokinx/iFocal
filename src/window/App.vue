@@ -1034,9 +1034,14 @@ async function handleSend() {
   await sendPreparedMessage(text, attachments);
 }
 
-async function sendPreparedMessage(text: string, attachments?: Message['attachments']) {
+async function sendPreparedMessage(
+  text: string,
+  attachments?: Message['attachments'],
+  options?: { ignoreBusy?: boolean }
+) {
+  const hasText = text.trim().length > 0;
   const hasAttachments = !!attachments && attachments.length > 0;
-  if ((!text && !hasAttachments) || isBusy.value) return;
+  if ((!hasText && !hasAttachments) || (isBusy.value && !options?.ignoreBusy)) return;
   const requestStartAt = Date.now();
   const requestId = `${requestStartAt}-${Math.random().toString(36).slice(2)}`;
 
@@ -1049,10 +1054,11 @@ async function sendPreparedMessage(text: string, attachments?: Message['attachme
   const enableReasoning = globalConfig.enableReasoning || false;
 
   // 添加用户消息到当前会话
+  const safeAttachments = hasAttachments ? attachments : undefined;
   const userMessage: Message = {
     role: 'user',
     content: text,
-    attachments: attachments.length > 0 ? attachments : undefined
+    attachments: safeAttachments
   };
 
   const session = sessions.value.find(s => s.id === currentSessionId.value);
