@@ -70,8 +70,8 @@ export const DEFAULT_CONFIG = {
   autoPasteGlobalAssistant: false,
 
   // 会话管理
-  maxSessionsCount: 50, // 最大会话保存数量
-  contextMessagesCount: 5, // 上下文消息数量
+  maxSessionsCount: 10, // 最大会话保存数量
+  contextMessagesCount: 1, // 上下文消息数量
 
   // 按任务分离的功能开关
   taskSettings: DEFAULT_TASK_SETTINGS,

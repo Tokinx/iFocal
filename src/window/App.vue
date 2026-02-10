@@ -1049,7 +1049,7 @@ async function sendPreparedMessage(
 
   // 加载配置
   const globalConfig = await loadConfig();
-  const contextCount = globalConfig.contextMessagesCount || 5;
+  const contextCount = globalConfig.contextMessagesCount || 1;
   const enableContextFlag = enableContext.value;
   const enableReasoningFlag = enableReasoning.value;
 

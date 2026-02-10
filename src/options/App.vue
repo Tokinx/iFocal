@@ -169,8 +169,8 @@ async function saveBasics() {
       wrapperStyleName: wrapperStyleNameToSave,
       targetStylePresets: presetsToSave,
       enableSelectionTranslation: config.value.enableSelectionTranslation,
-      maxSessionsCount: config.value.maxSessionsCount || 50,
-      contextMessagesCount: config.value.contextMessagesCount || 5,
+      maxSessionsCount: config.value.maxSessionsCount || 10,
+      contextMessagesCount: config.value.contextMessagesCount || 1,
       reduceVisualEffects: config.value.reduceVisualEffects || false
     });
 
@@ -872,8 +872,26 @@ async function fetchAddFormModels() {
                     <SelectValue placeholder="选择数量" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem v-for="n in [10, 25, 50, 100]" :key="n" :value="n">
+                    <SelectItem v-for="n in [10, 25, 50]" :key="n" :value="n">
                       {{ n }} 个
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <label class="text-sm font-medium leading-none block mb-1">上下文消息数量</label>
+                <p class="text-xs text-muted-foreground">开启上下文时，携带最近 N 条历史消息</p>
+              </div>
+              <div class="w-36">
+                <Select v-model="config.contextMessagesCount">
+                  <SelectTrigger>
+                    <SelectValue placeholder="选择数量" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem v-for="n in [1, 5, 10]" :key="n" :value="n">
+                      {{ n }} 条
                     </SelectItem>
                   </SelectContent>
                 </Select>

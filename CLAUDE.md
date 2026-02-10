@@ -344,8 +344,8 @@ src/
 
 - **减弱视觉效果**: 启用 `reduceVisualEffects` 配置可关闭 `backdrop-blur`，提升低端设备性能
 - **限流配置**: 根据 API 限制调整 `txQps`/`txQpm`/`txMaxConcurrent`，避免触发 429 错误
-- **会话管理**: 合理设置 `maxSessionsCount`（默认 50），避免存储空间占用过大
-- **上下文控制**: `contextMessagesCount` 默认 5 条，过多会增加 token 消耗
+- **会话管理**: 合理设置 `maxSessionsCount`（默认 10），避免存储空间占用过大
+- **上下文控制**: `contextMessagesCount` 默认 1 条，过多会增加 token 消耗
 - **流式响应**: 长对话建议启用 `enableStreaming`，提升用户体验
 
 ## 扩展权限说明（manifest.json:6-9）
