@@ -1049,9 +1049,9 @@ async function sendPreparedMessage(
 
   // 加载配置
   const globalConfig = await loadConfig();
-  const enableContext = globalConfig.enableContext || false;
   const contextCount = globalConfig.contextMessagesCount || 5;
-  const enableReasoning = globalConfig.enableReasoning || false;
+  const enableContextFlag = enableContext.value;
+  const enableReasoningFlag = enableReasoning.value;
 
   // 添加用户消息到当前会话
   const safeAttachments = hasAttachments ? attachments : undefined;
@@ -1097,10 +1097,10 @@ async function sendPreparedMessage(
 
   // 如果启用流式，使用流式调用
   if (enableStreaming.value) {
-    await handleStreamingSend(text, pair, session, currentModelNameSnapshot, enableContext, contextCount, enableReasoning, requestStartAt, requestId, attachments);
+    await handleStreamingSend(text, pair, session, currentModelNameSnapshot, enableContextFlag, contextCount, enableReasoningFlag, requestStartAt, requestId, attachments);
   } else {
     inflightRequestId = requestId;
-    await handleNonStreamingSend(text, pair, session, currentModelNameSnapshot, enableContext, contextCount, enableReasoning, requestStartAt, requestId, attachments);
+    await handleNonStreamingSend(text, pair, session, currentModelNameSnapshot, enableContextFlag, contextCount, enableReasoningFlag, requestStartAt, requestId, attachments);
   }
 }
 
