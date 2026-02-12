@@ -1,12 +1,12 @@
 <template>
   <Sheet v-model:open="innerOpen">
-    <SheetContent side="left" :class="['w-80 flex flex-col border-none rounded-r-2xl', bgClass, blurClass]">
+    <SheetContent side="left" :class="['w-80 flex flex-col rounded-md left-2 top-2 bottom-2 border !h-auto !p-3', bgClass, blurClass]">
       <SheetHeader>
         <SheetTitle class="text-lg font-medium">历史会话 ({{ sessions.length }})</SheetTitle>
       </SheetHeader>
 
-      <ScrollArea class="flex-1 -mx-6 px-6">
-        <div class="space-y-1 pr-3">
+      <ScrollArea class="flex-1">
+        <div class="space-y-1">
           <!-- 会话列表 -->
           <button v-for="(session, idx) in sessions" :key="session.id" @click="$emit('switchSession', session.id)"
             class="w-full rounded-lg p-3 text-left transition-colors hover:bg-white/60"

@@ -1,5 +1,5 @@
 <template>
-  <div class="mx-auto max-w-3xl space-y-2">
+  <div class="mx-auto max-w-[50rem] space-y-2">
     <!-- 快捷操作按钮 -->
     <div class="flex items-center gap-2">
       <Button variant="ghost" size="sm" class="gap-1"
@@ -47,7 +47,6 @@
               </div>
               <Switch :model-value="enableReasoning" @update:modelValue="$emit('toggleReasoning', $event)" />
             </div>
-
             <!-- 启用上下文 -->
             <div class="py-1 flex items-center justify-between">
               <div class="flex items-center gap-2">
@@ -56,6 +55,7 @@
               </div>
               <Switch :model-value="enableContext" @update:modelValue="$emit('toggleContext', $event)" />
             </div>
+            <hr class="my-2 border-t border-gray-300 dark:border-gray-700" />
             <!-- 监听剪切板 -->
             <div class="py-1 flex items-center justify-between">
               <div class="flex items-center gap-2">
