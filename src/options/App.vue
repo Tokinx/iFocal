@@ -6,6 +6,7 @@ import { useChannels } from '@/options/composables/useChannels';
 import { promptTemplates, defaultTemplates, initTemplates, saveTemplates as saveTpls, resetTemplates as resetTpls } from '@/options/composables/useTemplates';
 import { useToast } from '@/options/composables/useToast';
 import { SUPPORTED_LANGUAGES, SUPPORTED_TASKS, DEFAULT_CONFIG, loadConfig, saveConfig, CONFIG_KEYS, getTaskSettings, updateTaskSettings } from '@/shared/config';
+import { modelIdFromSpec, parseModelSpec } from '@/shared/model-utils';
 
 type ModelPair = { channel: string; model: string } | null;
 
@@ -76,7 +77,6 @@ const version = ref('-');
 // 渠道编辑：每项独立的显示/输入状态
 const showApiKeyByIndex = reactive<boolean[]>([]);
 const modelsTextByIndex = reactive<string[]>([]);
-const originalNames = reactive<string[]>([]);
 // 渠道展开/收起状态
 const channelExpanded = reactive<boolean[]>([]);
 // 拖拽状态
@@ -86,8 +86,19 @@ const isDraggable = ref<boolean[]>([]); // 控制是否可拖拽
 watch(defaultModel, (val) => { defaultModelValue.value = joinPair(val); }, { immediate: true });
 watch(translateModel, (val) => { translateModelValue.value = joinPair(val); }, { immediate: true });
 
-function joinPair(pair: ModelPair) { return pair && (pair as any).channel && (pair as any).model ? `${(pair as any).channel}|${(pair as any).model}` : ''; }
+function joinPair(pair: ModelPair) {
+  if (!pair || !(pair as any).channel || !(pair as any).model) return '';
+  const modelId = modelIdFromSpec((pair as any).model);
+  if (!modelId) return '';
+  return `${(pair as any).channel}|${modelId}`;
+}
 function parsePair(value: string): ModelPair { if (!value || value === '__unset__') return null; const [channel, model] = value.split('|'); if (!channel || !model) return null; return { channel, model }; }
+function modelOptionsOf(models: string[] | undefined) {
+  return (models || []).map((m) => {
+    const { modelId, displayName } = parseModelSpec(m);
+    return { modelId, displayName: displayName || modelId };
+  }).filter((m) => !!m.modelId);
+}
 
 async function loadAll() {
   try {
@@ -112,18 +123,17 @@ async function loadAll() {
         chrome.storage.sync.get(['channels', 'defaultModel', 'translateModel', 'promptTemplates', 'activeModel'], (items: any) => {
           channels.value = Array.isArray(items.channels) ? items.channels : [];
           // 初始化每项编辑辅助状态
-          originalNames.length = 0; modelsTextByIndex.length = 0; showApiKeyByIndex.length = 0; channelExpanded.length = 0; fetchingModels.length = 0; isDraggable.value.length = 0;
+          modelsTextByIndex.length = 0; showApiKeyByIndex.length = 0; channelExpanded.length = 0; fetchingModels.length = 0; isDraggable.value.length = 0;
           channels.value.forEach((c, i) => {
-            originalNames[i] = c.name;
             modelsTextByIndex[i] = (c.models || []).join('\n');
             showApiKeyByIndex[i] = false;
             channelExpanded[i] = false; // 默认收起
             fetchingModels[i] = false;
             isDraggable.value[i] = false; // 默认不可拖拽
           });
-          defaultModel.value = items.defaultModel || null;
-          translateModel.value = items.translateModel || null;
-          activeModel.value = items.activeModel || null;
+          defaultModel.value = parsePair(joinPair(items.defaultModel)) || null;
+          translateModel.value = parsePair(joinPair(items.translateModel)) || null;
+          activeModel.value = parsePair(joinPair(items.activeModel)) || null;
           initTemplates(items.promptTemplates || {});
           initTestModels();
           resolve();
@@ -209,14 +219,16 @@ async function saveStyleOnly() {
 }
 
 // 删除渠道：二次确认 + 撤回
-function confirmRemoveChannel(ch: any) {
-  const name = ch?.name || '';
+function confirmRemoveChannel(idx: number) {
+  const ch = channels.value[idx];
+  if (!ch) return;
+  const name = ch.name || '未命名';
   toast.action(`确认删除渠道 ${name} ?`, {
     label: '删除',
     type: 'error',
     onClick: () => {
       try {
-        removeChannel(name, (snapshot) => {
+        removeChannel(idx, (snapshot) => {
           toast.action(`已删除渠道 ${name}`, {
             label: '撤回',
             onClick: () => restoreChannelsSnapshot(snapshot)
@@ -232,15 +244,13 @@ function handleSaveChannelInline(idx: number) {
   try {
     const ch = channels.value[idx];
     if (!ch) return;
-    const original = originalNames[idx] || ch.name;
     editForm.type = ch.type as any;
     editForm.name = ch.name || '';
     editForm.apiUrl = ch.apiUrl || '';
     editForm.apiKey = ch.apiKey || '';
     editForm.modelsText = modelsTextByIndex[idx] || (Array.isArray(ch.models) ? ch.models.join('\n') : '');
-    saveEdit(original, () => {
-      // 更新原始名称映射，处理重命名
-      originalNames[idx] = editForm.name;
+    saveEdit(idx, () => {
+      initTestModels();
       toast.success('渠道已保存');
     });
   } catch (e: any) {
@@ -316,7 +326,6 @@ function handleAddChannel() {
       const newIdx = channels.value.length - 1;
       if (newIdx >= 0) {
         const newChannel = channels.value[newIdx];
-        originalNames[newIdx] = newChannel.name;
         modelsTextByIndex[newIdx] = (newChannel.models || []).join('\n');
         showApiKeyByIndex[newIdx] = false;
         channelExpanded[newIdx] = false;
@@ -331,8 +340,19 @@ function handleAddChannel() {
   }
 }
 const editStatus = ref('');
-function handleSaveEdit(original: string) { editStatus.value = ''; try { saveEdit(original, () => toast.success('渠道已保存')); } catch (e: any) { editStatus.value = String(e?.message || e || '保存失败'); toast.error(editStatus.value); } }
-function handleTestChannel(name: string) { const model = testModel[name] || undefined; try { chrome.runtime.sendMessage({ action: 'testChannel', channel: name, model }, (resp: any) => { if (!resp) { toast.error('测试失败：无响应'); return; } if (resp.ok) toast.success('测试成功'); else toast.error(`测试失败：${resp.error || '未知错误'}`); }); } catch { toast.error('测试调用失败'); } }
+function handleSaveEdit(idx: number) { editStatus.value = ''; try { saveEdit(idx, () => toast.success('渠道已保存')); } catch (e: any) { editStatus.value = String(e?.message || e || '保存失败'); toast.error(editStatus.value); } }
+function handleTestChannel(idx: number) {
+  const ch = channels.value[idx];
+  if (!ch) return;
+  const model = modelIdFromSpec(testModel[idx]) || undefined;
+  try {
+    chrome.runtime.sendMessage({ action: 'testChannel', channel: ch.name, model }, (resp: any) => {
+      if (!resp) { toast.error('测试失败：无响应'); return; }
+      if (resp.ok) toast.success('测试成功');
+      else toast.error(`测试失败：${resp.error || '未知错误'}`);
+    });
+  } catch { toast.error('测试调用失败'); }
+}
 
 onMounted(loadAll);
 
@@ -461,37 +481,37 @@ function handleDragEnd() {
     newChannels.splice(to, 0, movedItem);
 
     // 同步更新辅助数组
-    const newOriginalNames = [...originalNames];
     const newModelsText = [...modelsTextByIndex];
     const newShowApiKey = [...showApiKeyByIndex];
     const newExpanded = [...channelExpanded];
     const newIsDraggable = [...isDraggable.value];
+    const newTestModels = [...testModel];
 
-    const [movedOriginalName] = newOriginalNames.splice(from, 1);
     const [movedModelsText] = newModelsText.splice(from, 1);
     const [movedShowApiKey] = newShowApiKey.splice(from, 1);
     const [movedExpanded] = newExpanded.splice(from, 1);
     const [movedDraggable] = newIsDraggable.splice(from, 1);
+    const [movedTestModel] = newTestModels.splice(from, 1);
 
-    newOriginalNames.splice(to, 0, movedOriginalName);
     newModelsText.splice(to, 0, movedModelsText);
     newShowApiKey.splice(to, 0, movedShowApiKey);
     newExpanded.splice(to, 0, movedExpanded);
     newIsDraggable.splice(to, 0, movedDraggable);
+    newTestModels.splice(to, 0, movedTestModel);
 
     // 保存到存储
     chrome.storage.sync.set({ channels: newChannels }, () => {
       channels.value = newChannels;
-      originalNames.length = 0;
       modelsTextByIndex.length = 0;
       showApiKeyByIndex.length = 0;
       channelExpanded.length = 0;
       isDraggable.value.length = 0;
-      newOriginalNames.forEach((v, i) => originalNames[i] = v);
+      testModel.length = 0;
       newModelsText.forEach((v, i) => modelsTextByIndex[i] = v);
       newShowApiKey.forEach((v, i) => showApiKeyByIndex[i] = v);
       newExpanded.forEach((v, i) => channelExpanded[i] = v);
       newIsDraggable.forEach((v, i) => isDraggable.value[i] = v);
+      newTestModels.forEach((v, i) => testModel[i] = v);
       toast.success('渠道顺序已更新');
     });
   }
@@ -626,7 +646,7 @@ async function fetchAddFormModels() {
 
         <div v-if="!channels.length" class="text-sm text-muted-foreground">暂无渠道，请先添加。</div>
         <div v-else class="space-y-3">
-          <div v-for="(ch, idx) in channels" :key="idx + ch.apiKey"
+          <div v-for="(ch, idx) in channels" :key="idx"
             class="border rounded-lg p-4 space-y-3 transition-all"
             :class="{ 'opacity-50': draggedIndex === idx, 'border-primary border-2': dragOverIndex === idx }"
             :draggable="isDraggable[idx]"
@@ -658,17 +678,17 @@ async function fetchAddFormModels() {
               </div>
               <div class="flex items-center gap-2 w-64">
                 <div class="w-full">
-                  <Select v-model="testModel[ch.name]">
+                  <Select v-model="testModel[idx]">
                     <SelectTrigger>
                       <SelectValue placeholder="选择模型" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem v-for="m in (ch.models || [])" :key="m" :value="m">{{ m }}</SelectItem>
+                      <SelectItem v-for="m in modelOptionsOf(ch.models || [])" :key="m.modelId" :value="m.modelId">{{ m.displayName }}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <Button variant="outline" size="icon" class="flex items-center gap-1 shrink-0"
-                  @click="handleTestChannel(ch.name)" title="测试">
+                  @click="handleTestChannel(idx)" title="测试">
                   <Icon icon="proicons:bug" width="16" />
                 </Button>
               </div>
@@ -746,7 +766,7 @@ async function fetchAddFormModels() {
             </div>
 
             <div v-if="channelExpanded[idx]" class="flex items-center gap-2">
-              <Button variant="outline" class="flex items-center gap-1 text-red-600" @click="confirmRemoveChannel(ch)">
+              <Button variant="outline" class="flex items-center gap-1 text-red-600" @click="confirmRemoveChannel(idx)">
                 <Icon :icon="iconOfAction('delete')" width="16" /> 删除
               </Button>
               <div class="w-full"></div>

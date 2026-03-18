@@ -210,6 +210,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Switch } from '@/components/ui/switch';
 import { SUPPORTED_LANGUAGES, SUPPORTED_TASKS, loadConfig, saveConfig, getTaskSettings, updateTaskSettings } from '@/shared/config';
+import { modelIdFromSpec, parseModelSpec } from '@/shared/model-utils';
 import ModelSelect from './components/ModelSelect.vue';
 import LanguageSelect from './components/LanguageSelect.vue';
 import ChatInput from './components/ChatInput.vue';
@@ -854,26 +855,43 @@ async function loadModels() {
 
   const channels: Channel[] = Array.isArray(cfg.channels) ? cfg.channels : [];
   const pairs = channels.flatMap(ch => (ch.models || []).map(m => {
-    // 支持 id#name 格式：id 用于 API 调用和 key 生成，name 用于显示
-    const [modelId, displayName] = m.includes('#') ? m.split('#', 2) : [m, m];
+    const { modelId, displayName } = parseModelSpec(m);
+    if (!modelId) return null;
     return {
-      key: keyOf({ channel: ch.name, model: modelId.trim() }),
+      key: keyOf({ channel: ch.name, model: modelId }),
       channel: ch.name,
-      model: displayName.trim() // 显示名称
+      model: displayName || modelId // 显示名称
     };
-  }));
+  }).filter((p): p is { key: string; channel: string; model: string } => !!p));
   modelPairs.value = pairs;
   state.targetLang = globalConfig.translateTargetLang;
   state.prevLang = globalConfig.prevLanguage || 'en';
 
   // 加载每个任务的模型选择
   if (localData.selectedModelByTask) {
-    selectedModelByTask.value = { ...selectedModelByTask.value, ...localData.selectedModelByTask };
+    const normalizedByTask: Record<string, string> = { ...selectedModelByTask.value };
+    Object.entries(localData.selectedModelByTask as Record<string, string>).forEach(([task, rawKey]) => {
+      const parsed = parseKey(String(rawKey || ''));
+      if (!parsed) return;
+      const modelId = modelIdFromSpec(parsed.model);
+      if (!modelId) return;
+      const normalizedKey = keyOf({ channel: parsed.channel, model: modelId });
+      if (pairs.some((p) => p.key === normalizedKey)) {
+        normalizedByTask[task] = normalizedKey;
+      }
+    });
+    selectedModelByTask.value = normalizedByTask;
   }
 
   // 为所有任务类型预设默认模型（如果尚未设置）
   if (pairs.length > 0) {
-    const prefer: Pair | null = cfg.activeModel || cfg.defaultModel || null;
+    const normalizeStoredPair = (pair: any): Pair | null => {
+      if (!pair || !pair.channel || !pair.model) return null;
+      const modelId = modelIdFromSpec(pair.model);
+      if (!modelId) return null;
+      return { channel: String(pair.channel), model: modelId };
+    };
+    const prefer: Pair | null = normalizeStoredPair(cfg.activeModel) || normalizeStoredPair(cfg.defaultModel) || null;
     const defaultKey = prefer && pairs.some(p => p.key === keyOf(prefer)) ? keyOf(prefer) : pairs[0].key;
 
     // 为每个任务类型设置默认模型（如果该任务还没有选择模型）

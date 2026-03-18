@@ -1,4 +1,5 @@
 import { computed, reactive, ref } from 'vue';
+import { firstModelIdFromChannel, modelIdFromSpec, parseModelSpec } from '@/shared/model-utils';
 
 export type Channel = {
   name: string;
@@ -21,11 +22,11 @@ export function useChannels() {
   const modelPairs = computed(() => {
     const pairs: { value: string; label: string }[] = [];
     channels.value.forEach(ch => (ch.models || []).forEach(m => {
-      // 支持 id#name 格式：id 用于 API 调用，name 用于显示
-      const [modelId, displayName] = m.includes('#') ? m.split('#', 2) : [m, m];
+      const { modelId, displayName } = parseModelSpec(m);
+      if (!modelId) return;
       pairs.push({
-        value: `${ch.name}|${modelId.trim()}`,
-        label: `${displayName.trim()} (${ch.name})`
+        value: `${ch.name}|${modelId}`,
+        label: displayName || modelId
       });
     }));
     return pairs;
@@ -50,23 +51,32 @@ export function useChannels() {
       chrome.storage.sync.set({ channels: next }, () => {
         addForm.name = ''; addForm.apiUrl = ''; addForm.apiKey = ''; addForm.modelsText = '';
         channels.value = next;
+        initTestModels();
         if (onSuccess) onSuccess();
       });
     });
   }
 
   // 测试模型选择
-  const testModel: Record<string, string> = reactive({});
+  const testModel: string[] = reactive([]);
   function initTestModels() {
-    for (const ch of channels.value) {
-      const first = (ch.models && ch.models[0]) || '';
-      if (!(ch.name in testModel)) testModel[ch.name] = first;
+    channels.value.forEach((ch, idx) => {
+      const selected = String(testModel[idx] || '');
+      const isSelectedValid = !!selected && (ch.models || []).some((m) => modelIdFromSpec(m) === selected);
+      if (!isSelectedValid) {
+        testModel[idx] = firstModelIdFromChannel(ch) || '';
+      }
+    });
+    if (testModel.length > channels.value.length) {
+      testModel.splice(channels.value.length);
     }
   }
 
-  function testChannel(name: string) {
-    const model = testModel[name] || undefined;
-    chrome.runtime.sendMessage({ action: 'testChannel', channel: name, model }, () => {});
+  function testChannel(index: number) {
+    const ch = channels.value[index];
+    if (!ch) return;
+    const model = testModel[index] || firstModelIdFromChannel(ch) || undefined;
+    chrome.runtime.sendMessage({ action: 'testChannel', channel: ch.name, model }, () => {});
   }
 
   // 编辑
@@ -82,7 +92,7 @@ export function useChannels() {
     editForm.modelsText = (ch.models || []).join('\n');
   }
   function cancelEdit() { editingName.value = null; }
-  function saveEdit(original: string, onSaved?: () => void) {
+  function saveEdit(index: number, onSaved?: () => void) {
     const type = editForm.type;
     const name = (editForm.name || '').trim();
     const apiUrl = withDefaultApiUrl(type, editForm.apiUrl);
@@ -94,9 +104,10 @@ export function useChannels() {
 
     chrome.storage.sync.get(['channels','defaultModel','translateModel','activeModel'], (items) => {
       const list: Channel[] = Array.isArray((items as any).channels) ? (items as any).channels : [];
-      const idx = list.findIndex(c => c.name === original);
-      if (idx < 0) throw new Error('原渠道不存在');
-      if (name !== original && list.some(c => c.name === name)) throw new Error('同名渠道已存在');
+      const idx = Number(index);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= list.length) throw new Error('原渠道不存在');
+      const originalName = list[idx]?.name || '';
+      if (name !== originalName && list.some((c, i) => i !== idx && c.name === name)) throw new Error('同名渠道已存在');
       const updated: Channel = { ...list[idx], type, name, apiUrl, models } as any;
       if (apiKeyMaybe) (updated as any).apiKey = apiKeyMaybe;
       const nextList = list.slice();
@@ -104,29 +115,32 @@ export function useChannels() {
       const next: any = { channels: nextList };
       ['defaultModel','translateModel','activeModel'].forEach(k => {
         const pair = (items as any)[k];
-        if (pair && pair.channel === original) next[k] = { channel: name, model: pair.model };
+        if (pair && pair.channel === originalName) next[k] = { channel: name, model: pair.model };
       });
-      chrome.storage.sync.set(next, () => { channels.value = nextList; editingName.value = null; onSaved && onSaved(); });
+      chrome.storage.sync.set(next, () => { channels.value = nextList; initTestModels(); editingName.value = null; onSaved && onSaved(); });
     });
   }
 
   type ChannelsSnapshot = { list: Channel[]; defaultModel: any; translateModel: any; activeModel: any };
 
-  function removeChannel(name: string, onRemoved?: (snapshot: ChannelsSnapshot) => void) {
+  function removeChannel(index: number, onRemoved?: (snapshot: ChannelsSnapshot) => void) {
     chrome.storage.sync.get(['channels','defaultModel','translateModel','activeModel'], (items) => {
       const list: Channel[] = Array.isArray((items as any).channels) ? (items as any).channels : [];
+      const idx = Number(index);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= list.length) throw new Error('渠道不存在');
+      const removed = list[idx];
       const snapshot: ChannelsSnapshot = {
         list,
         defaultModel: (items as any).defaultModel ?? null,
         translateModel: (items as any).translateModel ?? null,
         activeModel: (items as any).activeModel ?? null
       };
-      const filtered = list.filter(c => c.name !== name);
+      const filtered = list.filter((_, i) => i !== idx);
       const next: any = { channels: filtered };
-      if ((items as any).defaultModel?.channel === name) next.defaultModel = null;
-      if ((items as any).translateModel?.channel === name) next.translateModel = null;
-      if ((items as any).activeModel?.channel === name) next.activeModel = null;
-      chrome.storage.sync.set(next, () => { channels.value = filtered; onRemoved && onRemoved(snapshot); });
+      if ((items as any).defaultModel?.channel === removed.name) next.defaultModel = null;
+      if ((items as any).translateModel?.channel === removed.name) next.translateModel = null;
+      if ((items as any).activeModel?.channel === removed.name) next.activeModel = null;
+      chrome.storage.sync.set(next, () => { channels.value = filtered; initTestModels(); onRemoved && onRemoved(snapshot); });
     });
   }
 
@@ -137,7 +151,7 @@ export function useChannels() {
       translateModel: snapshot.translateModel ?? null,
       activeModel: snapshot.activeModel ?? null
     };
-    chrome.storage.sync.set(next, () => { channels.value = snapshot.list; onRestored && onRestored(); });
+    chrome.storage.sync.set(next, () => { channels.value = snapshot.list; initTestModels(); onRestored && onRestored(); });
   }
 
   return {

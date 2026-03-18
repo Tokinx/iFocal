@@ -240,6 +240,43 @@ type StorageConfig = {
   prevLanguage?: string;
 };
 
+function parseModelSpec(spec: string | null | undefined): { modelId: string; displayName: string } {
+  const raw = String(spec || '').trim();
+  if (!raw) return { modelId: '', displayName: '' };
+  const [idPart, namePart] = raw.split('#', 2);
+  const modelId = (idPart || '').trim();
+  const displayName = (namePart || idPart || '').trim();
+  return { modelId, displayName };
+}
+
+function channelHasModelId(channel: { models?: string[] } | null | undefined, modelId: string): boolean {
+  const id = String(modelId || '').trim();
+  if (!id) return false;
+  const models = Array.isArray(channel?.models) ? channel!.models! : [];
+  return models.some((m) => parseModelSpec(m).modelId === id);
+}
+
+function firstModelIdFromChannel(channel: { models?: string[] } | null | undefined): string | null {
+  const models = Array.isArray(channel?.models) ? channel!.models! : [];
+  for (const model of models) {
+    const id = parseModelSpec(model).modelId;
+    if (id) return id;
+  }
+  return null;
+}
+
+function resolveModelDisplayName(cfg: StorageConfig, pair: ChannelPair): string {
+  if (!pair) return '';
+  const channels = Array.isArray(cfg.channels) ? cfg.channels : [];
+  const channel = channels.find((c) => c.name === pair.channel);
+  if (!channel || !Array.isArray(channel.models)) return pair.model;
+  for (const spec of channel.models) {
+    const parsed = parseModelSpec(spec);
+    if (parsed.modelId === pair.model) return parsed.displayName || parsed.modelId;
+  }
+  return pair.model;
+}
+
 let hoveredElement: HTMLElement | null = null;
 let hoverInInputArea = false;
 let actionKey = 'Alt';
@@ -705,17 +742,25 @@ function toggleHoverTranslate(blockEl: HTMLElement) {
 
 function pickPair(cfg: StorageConfig, task: string, reqPair: ChannelPair): ChannelPair {
   const channels = Array.isArray(cfg.channels) ? cfg.channels : [];
-  const isValid = (pair?: ChannelPair) => {
-    if (!pair?.channel || !pair.model) return false;
-    const channel = channels.find((c) => c.name === pair.channel);
-    return !!(channel && Array.isArray(channel.models) && channel.models.includes(pair.model));
+  const normalizePair = (pair?: ChannelPair) => {
+    if (!pair?.channel || !pair.model) return null;
+    const modelId = parseModelSpec(pair.model).modelId;
+    if (!modelId) return null;
+    return { channel: pair.channel, model: modelId };
   };
-  if (isValid(reqPair)) return reqPair;
-  if (task === 'translate' && isValid(cfg.translateModel)) return cfg.translateModel!;
-  if (isValid(cfg.defaultModel)) return cfg.defaultModel!;
-  if (isValid(cfg.activeModel)) return cfg.activeModel!;
+  const isValid = (pair?: ChannelPair) => {
+    const normalized = normalizePair(pair);
+    if (!normalized) return false;
+    const channel = channels.find((c) => c.name === normalized.channel);
+    return !!(channel && channelHasModelId(channel, normalized.model));
+  };
+  if (isValid(reqPair)) return normalizePair(reqPair)!;
+  if (task === 'translate' && isValid(cfg.translateModel)) return normalizePair(cfg.translateModel)!;
+  if (isValid(cfg.defaultModel)) return normalizePair(cfg.defaultModel)!;
+  if (isValid(cfg.activeModel)) return normalizePair(cfg.activeModel)!;
   for (const ch of channels) {
-    if (Array.isArray(ch.models) && ch.models.length) return { channel: ch.name, model: ch.models[0]! };
+    const firstModelId = firstModelIdFromChannel(ch);
+    if (firstModelId) return { channel: ch.name, model: firstModelId };
   }
   return null;
 }
@@ -759,6 +804,9 @@ function startStreamForOverlay(overlay: OverlayHandle, task: string, text: strin
 function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair: ChannelPair, lang: string, prevLang: string, text: string) {
   const header = document.createElement('div');
   header.className = 'ifocal-overlay-header';
+  let currentPair: ChannelPair = pair ? { ...pair } : null;
+  let currentLangValue = lang;
+  let currentPrevLangValue = prevLang;
 
   // 左侧：Models + Language（自定义下拉）
   const left = document.createElement('div');
@@ -771,20 +819,28 @@ function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair
   modelWrap.className = 'ifocal-dd-wrap';
   const modelBtn = document.createElement('button');
   modelBtn.className = 'ifocal-dd-btn';
-  modelBtn.textContent = pair ? `${pair.model}` : 'Models';
+  modelBtn.textContent = currentPair ? resolveModelDisplayName(cfg, currentPair) : 'Models';
   const modelMenu = document.createElement('div');
   modelMenu.className = 'ifocal-dd-menu hidden';
-  const pairs: ChannelPair[] = [];
+  const pairs: Array<{ channel: string; model: string; displayName: string }> = [];
   const list = Array.isArray(cfg.channels) ? cfg.channels : [];
-  list.forEach((ch) => (ch.models || []).forEach((m) => pairs.push({ channel: ch.name, model: m })));
+  list.forEach((ch) => (ch.models || []).forEach((m) => {
+    const parsed = parseModelSpec(m);
+    if (!parsed.modelId) return;
+    pairs.push({ channel: ch.name, model: parsed.modelId, displayName: parsed.displayName || parsed.modelId });
+  }));
   pairs.forEach((p) => {
     const item = document.createElement('div');
     item.className = 'ifocal-dd-item';
-    item.innerHTML = `<div class="title">${p.model}</div><div class="sub">${p.channel}</div>`;
+    const title = document.createElement('div');
+    title.className = 'title';
+    title.textContent = p.displayName;
+    item.appendChild(title);
     item.addEventListener('click', (ev) => {
       ev.stopPropagation(); ev.preventDefault();
-      modelBtn.textContent = `${p.model}`;
-      startStreamForOverlay(overlay, 'translate', text, p, lang);
+      currentPair = { channel: p.channel, model: p.model };
+      modelBtn.textContent = p.displayName;
+      startStreamForOverlay(overlay, 'translate', text, currentPair, currentLangValue, currentPrevLangValue);
       modelMenu.classList.add('hidden');
     });
     modelMenu.appendChild(item);
@@ -798,8 +854,8 @@ function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair
   langWrap.className = 'ifocal-dd-wrap';
   const langBtn = document.createElement('button');
   langBtn.className = 'ifocal-dd-btn';
-  const currentLang = SUPPORTED_LANGUAGES.find(l => l.value === lang)?.label || lang;
-  langBtn.textContent = currentLang || 'Language';
+  const currentLangLabel = SUPPORTED_LANGUAGES.find(l => l.value === currentLangValue)?.label || currentLangValue;
+  langBtn.textContent = currentLangLabel || 'Language';
   const langMenu = document.createElement('div');
   langMenu.className = 'ifocal-dd-menu hidden';
   SUPPORTED_LANGUAGES.forEach((L) => {
@@ -809,10 +865,12 @@ function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair
     item.addEventListener('click', (ev) => {
       ev.stopPropagation(); ev.preventDefault();
       // 智能语言切换：将当前语言保存为 prevLanguage
-      const oldLang = lang;
+      const oldLang = currentLangValue;
       chrome.storage.sync.set({ translateTargetLang: L.value, prevLanguage: oldLang }, () => {
+        currentPrevLangValue = oldLang;
+        currentLangValue = L.value;
         langBtn.textContent = L.label;
-        startStreamForOverlay(overlay, 'translate', text, parsePair(modelBtn.textContent || ''), L.value, oldLang);
+        startStreamForOverlay(overlay, 'translate', text, currentPair, currentLangValue, currentPrevLangValue);
       });
       langMenu.classList.add('hidden');
     });
@@ -898,13 +956,6 @@ function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair
     const el = ev.target as HTMLElement;
     if (!el.closest('button')) closeMenus();
   }, true);
-}
-
-function parsePair(value: string | null | undefined): ChannelPair {
-  if (!value) return null;
-  const [channel, model] = String(value).split('|');
-  if (!channel || !model) return null;
-  return { channel, model };
 }
 
 document.addEventListener('keydown', (event) => {

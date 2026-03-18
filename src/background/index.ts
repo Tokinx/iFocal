@@ -184,7 +184,8 @@ async function handleTestChannel(request: any) {
   const channels = Array.isArray(cfg.channels) ? cfg.channels : [];
   const channel = channels.find((c: any) => c.name === name);
   if (!channel) throw new Error('Channel not found');
-  const model = request.model || (channel.models && channel.models[0]);
+  const requestedModel = modelIdFromSpec(request.model);
+  const model = requestedModel || firstModelIdFromChannel(channel);
   if (!model) throw new Error('Channel has no models configured');
   const prompt = makePrompt('summarize', 'Connection test. Respond with OK.', cfg.translateTargetLang || 'zh-CN', cfg.promptTemplates || {});
   const sample = await invokeModel(channel, model, prompt);
@@ -385,24 +386,32 @@ async function readConfig(keys: string[]) {
 
 function pickModelFromConfig(task: string, requestPair: any, cfg: any) {
   const channels = Array.isArray(cfg.channels) ? cfg.channels : [];
-  const isValid = (pair: any) => {
-    if (!pair || !pair.channel || !pair.model) return false;
-    const ch = channels.find((c: any) => c.name === pair.channel);
-    return !!(ch && Array.isArray(ch.models) && ch.models.includes(pair.model));
+  const normalizePair = (pair: any) => {
+    if (!pair || !pair.channel || !pair.model) return null;
+    const channel = String(pair.channel || '').trim();
+    const model = modelIdFromSpec(pair.model);
+    if (!channel || !model) return null;
+    return { channel, model };
   };
-  if (isValid(requestPair)) return requestPair;
-  if (task === 'translate' && isValid(cfg.translateModel)) return cfg.translateModel;
-  if (isValid(cfg.defaultModel)) return cfg.defaultModel;
-  if (isValid(cfg.activeModel)) return cfg.activeModel;
+  const isValid = (pair: any) => {
+    const normalized = normalizePair(pair);
+    if (!normalized) return false;
+    const ch = channels.find((c: any) => c.name === normalized.channel);
+    return !!(ch && channelContainsModelId(ch, normalized.model));
+  };
+  if (isValid(requestPair)) return normalizePair(requestPair);
+  if (task === 'translate' && isValid(cfg.translateModel)) return normalizePair(cfg.translateModel);
+  if (isValid(cfg.defaultModel)) return normalizePair(cfg.defaultModel);
+  if (isValid(cfg.activeModel)) return normalizePair(cfg.activeModel);
   for (const ch of channels) {
-    if (Array.isArray(ch.models) && ch.models.length) {
-      return { channel: ch.name, model: ch.models[0] };
-    }
+    const firstModelId = firstModelIdFromChannel(ch);
+    if (firstModelId) return { channel: ch.name, model: firstModelId };
   }
   return null;
 }
 
 import { makePrompt, makeMessage } from '@/shared/ai';
+import { channelContainsModelId, firstModelIdFromChannel, modelIdFromSpec } from '@/shared/model-utils';
 
 async function invokeModel(
   channel: any,
