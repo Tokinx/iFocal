@@ -141,7 +141,8 @@ const SHADOW_STYLE = `
 .ifocal-header-left{display:flex;align-items:center;gap:8px}
 .ifocal-dd-wrap{position:relative}
 .ifocal-dd-btn{height:28px;padding:0 10px;font-size:12px;border:none;border-radius:24px;background:rgba(0,0,0,0.05);color:#0f172a;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
-.ifocal-dd-menu{position:absolute;top:110%;left:0;min-width:200px;max-height:600px;overflow:auto;background:#fff;border-radius:10px;box-shadow:0 8px 24px rgba(15,23,42,.12);font-size:12px;padding:6px;z-index:3}
+.ifocal-dd-btn::after{content:'▾';font-size: 14px;line-height: 1;opacity: .25;transform: scaleX(2);}
+.ifocal-dd-menu{position:absolute;top:110%;left:0;min-width:200px;max-height:300px;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;background:#fff;border-radius:10px;box-shadow:0 8px 24px rgba(15,23,42,.12);font-size:12px;padding:6px;z-index:3}
 .ifocal-dd-item{padding:8px 10px;border-radius:8px;cursor:pointer}
 .ifocal-dd-item:hover{background:rgba(15,23,42,.06)}
 .ifocal-dd-item .title{font-weight:600;line-height:1.1}
@@ -151,6 +152,9 @@ const SHADOW_STYLE = `
 .copy-btn{position:absolute;top:4px;right:4px;height:24px;width:28px;border:1px solid rgba(15,23,42,0.15);border-radius:6px;background:rgba(255,255,255,0.9);cursor:pointer;opacity:0;transition:opacity .15s ease}
 .ifocal-overlay:hover .copy-btn{opacity:1}
 .ifocal-dot{position:absolute;width:10px;height:10px;border-radius:50%;background:#0f172a;opacity:.9;cursor:pointer;box-shadow:0 0 0 2px rgba(255,255,255,.9);z-index:2147483647;pointer-events:auto}
+@keyframes ifocal-shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
+.ifocal-skeleton-wrap{padding-top:6px}
+.ifocal-skeleton-line{height:12px;border-radius:6px;margin:10px 0;background:linear-gradient(90deg, rgba(15,23,42,0.08) 25%, rgba(15,23,42,0.14) 37%, rgba(15,23,42,0.08) 63%);background-size:400% 100%;animation:ifocal-shimmer 1.2s ease-in-out infinite}
 .hidden{display:none}
 ${DOC_STYLE}
 `;
@@ -320,7 +324,9 @@ let currentScrollHandler: ((ev?: Event) => void) | null = null;
 // overlay 是否跟随选区移动（点圆点创建的 overlay 默认跟随；用户拖拽后取消跟随）
 let overlayAutoFollow = false;
 
-function createOverlayAt(left: number, top: number) {
+type OverlayLoadingStyle = 'spinner' | 'skeleton';
+
+function createOverlayAt(left: number, top: number, loadingStyle: OverlayLoadingStyle = 'spinner') {
   const shadow = ensureUiRoot();
   const root = document.createElement('div');
   root.className = 'ifocal-overlay';
@@ -332,7 +338,7 @@ function createOverlayAt(left: number, top: number) {
   (shadow as unknown as HTMLElement).appendChild(root);
   root.appendChild(body);
 
-  let spinner: HTMLElement | null = null;
+  let loadingNode: HTMLElement | null = null;
   const overlay: OverlayHandle = {
     root,
     setText(text) {
@@ -343,20 +349,34 @@ function createOverlayAt(left: number, top: number) {
     },
     setLoading(flag) {
       if (flag) {
-        if (!spinner) {
+        if (!loadingNode) {
           body.innerHTML = '';
-          const loadingWrap = document.createElement('div');
-          loadingWrap.className = 'ifocal-loading-wrap';
-          const spin = document.createElement('span');
-          spin.className = 'ifocal-loading';
-          spin.setAttribute('aria-label', 'Loading translation');
-          loadingWrap.appendChild(spin);
-          body.appendChild(loadingWrap);
-          spinner = loadingWrap;
+          if (loadingStyle === 'skeleton') {
+            const skeletonWrap = document.createElement('div');
+            skeletonWrap.className = 'ifocal-skeleton-wrap';
+            const widths = ['72%', '96%', '64%'];
+            widths.forEach((w) => {
+              const line = document.createElement('div');
+              line.className = 'ifocal-skeleton-line';
+              line.style.width = w;
+              skeletonWrap.appendChild(line);
+            });
+            body.appendChild(skeletonWrap);
+            loadingNode = skeletonWrap;
+          } else {
+            const loadingWrap = document.createElement('div');
+            loadingWrap.className = 'ifocal-loading-wrap';
+            const spin = document.createElement('span');
+            spin.className = 'ifocal-loading';
+            spin.setAttribute('aria-label', 'Loading translation');
+            loadingWrap.appendChild(spin);
+            body.appendChild(loadingWrap);
+            loadingNode = loadingWrap;
+          }
         }
-      } else if (spinner) {
+      } else if (loadingNode) {
         body.innerHTML = '';
-        spinner = null;
+        loadingNode = null;
       }
     }
   };
@@ -540,7 +560,9 @@ document.addEventListener('mouseup', (ev) => {
   const selectedText = selection ? selection.toString().trim() : '';
   const anchor = getSelectionAnchorNode();
   if (isIfocalElement(ev.target as any) || isIfocalElement(anchor)) {
+    overlayAutoFollow = false;
     hideSelectionDot();
+    maybeDetachScrollListener();
     return;
   }
   if (selectedText) {
@@ -561,6 +583,10 @@ document.addEventListener('selectionchange', () => {
   const text = selection ? selection.toString().trim() : '';
   const anchor = getSelectionAnchorNode();
   if (!text || isIfocalElement(anchor)) {
+    if (text && isIfocalElement(anchor)) {
+      overlayAutoFollow = false;
+      maybeDetachScrollListener();
+    }
     hideSelectionDot();
   } else {
     if (selectionUpdateTimer) window.clearTimeout(selectionUpdateTimer);
@@ -578,7 +604,9 @@ document.addEventListener('touchend', (ev) => {
     const selectedText = selection ? selection.toString().trim() : '';
     const anchor = getSelectionAnchorNode();
     if (isIfocalElement(ev.target as any) || isIfocalElement(anchor)) {
+      overlayAutoFollow = false;
       hideSelectionDot();
+      maybeDetachScrollListener();
       return;
     }
     if (selectedText) {
@@ -675,7 +703,7 @@ function showSelectionDot(rect: DOMRect) {
   dot.style.top = `${top}px`;
   const trigger = (ev: Event) => {
     ev.preventDefault(); ev.stopPropagation();
-    const overlay = createOverlayAt(left - 8, top + 16);
+    const overlay = createOverlayAt(left - 8, top + 16, 'skeleton');
     overlayAutoFollow = true;
     overlay.setLoading(true);
     chrome.storage.sync.get(['channels', 'defaultModel', 'translateModel', 'activeModel', 'translateTargetLang'], (cfg: StorageConfig) => {
@@ -805,7 +833,7 @@ function pickPair(cfg: StorageConfig, task: string, reqPair: ChannelPair): Chann
 function triggerSelectionTranslate() {
   if (!lastSelectionText) return;
   const rect = lastSelectionRect || getSelectionRect();
-  const overlay = rect ? createOverlayAt(rect.left + window.scrollX, rect.bottom + window.scrollY + 8) : createOverlayAt(80, 80);
+  const overlay = rect ? createOverlayAt(rect.left + window.scrollX, rect.bottom + window.scrollY + 8, 'skeleton') : createOverlayAt(80, 80, 'skeleton');
   overlay.setLoading(true);
   chrome.storage.sync.get(['channels', 'defaultModel', 'translateModel', 'activeModel', 'translateTargetLang', 'prevLanguage'], (cfg: StorageConfig) => {
     const reqPair = cfg.activeModel || null;
@@ -818,7 +846,6 @@ function triggerSelectionTranslate() {
 }
 
 function startStreamForOverlay(overlay: OverlayHandle, task: string, text: string, pair: ChannelPair, lang: string, prevLang?: string) {
-  overlay.setText('');
   overlay.setLoading(true);
   const payload: any = { action: 'performAiAction', task, text };
   if (pair?.channel && pair.model) { payload.channel = pair.channel; payload.model = pair.model; }
@@ -967,6 +994,14 @@ function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair
     document.addEventListener('mousemove', handleMove);
     document.addEventListener('mouseup', handleUp);
   });
+
+  // 在面板内选择文字/交互时，停止“跟随选区”模式，避免面板追随自身内容漂移
+  overlay.root.addEventListener('mousedown', () => {
+    overlayAutoFollow = false;
+  }, true);
+  overlay.root.addEventListener('touchstart', () => {
+    overlayAutoFollow = false;
+  }, { passive: true, capture: true });
 
   const outsideClick = (event: MouseEvent) => {
     const path = (event as any).composedPath ? (event as any).composedPath() : [];
