@@ -55,7 +55,7 @@
               </div>
               <Switch :model-value="enableContext" @update:modelValue="$emit('toggleContext', $event)" />
             </div>
-            <hr class="my-2 border-t border-gray-300 dark:border-gray-700" />
+            <DropdownMenuSeparator/>
             <!-- 监听剪切板 -->
             <div class="py-1 flex items-center justify-between">
               <div class="flex items-center gap-2">

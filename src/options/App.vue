@@ -24,6 +24,13 @@ const config = ref({ ...DEFAULT_CONFIG });
 const styleSelection = ref<string>('ifocal-target-style-dotted');
 const customCss = ref<string>('');
 const activeStyleName = computed(() => styleSelection.value === '__custom__' ? (parseStyleNameFromCss(customCss.value) || 'ifocal-target-style-custom') : styleSelection.value);
+const ALLOWED_CONTEXT_MESSAGE_COUNTS: readonly number[] = [2, 6, 10];
+
+function normalizeContextMessagesCount(value: unknown): number {
+  const num = Number(value);
+  return ALLOWED_CONTEXT_MESSAGE_COUNTS.includes(num) ? num : 2;
+}
+
 const activePreviewCss = computed(() => {
   if (styleSelection.value === '__custom__') return (customCss.value || '').trim();
   const list = Array.isArray((config.value as any).targetStylePresets) ? (config.value as any).targetStylePresets : [];
@@ -87,6 +94,7 @@ async function loadAll() {
     // 加载全局配置
     const globalConfig = await loadConfig();
     config.value = { ...globalConfig };
+    config.value.contextMessagesCount = normalizeContextMessagesCount(config.value.contextMessagesCount);
     styleSelection.value = (config.value as any).wrapperStyleName || 'ifocal-target-style-dotted';
     ensureOptionPresetStyles((config.value as any).targetStylePresets);
     // 若当前选择在预设中，预填其 CSS；否则给出自定义模板
@@ -170,7 +178,7 @@ async function saveBasics() {
       targetStylePresets: presetsToSave,
       enableSelectionTranslation: config.value.enableSelectionTranslation,
       maxSessionsCount: config.value.maxSessionsCount || 10,
-      contextMessagesCount: config.value.contextMessagesCount || 1,
+      contextMessagesCount: normalizeContextMessagesCount(config.value.contextMessagesCount),
       reduceVisualEffects: config.value.reduceVisualEffects || false
     });
 
@@ -890,7 +898,7 @@ async function fetchAddFormModels() {
                     <SelectValue placeholder="选择数量" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem v-for="n in [1, 5, 10]" :key="n" :value="n">
+                    <SelectItem v-for="n in ALLOWED_CONTEXT_MESSAGE_COUNTS" :key="n" :value="n">
                       {{ n }} 条
                     </SelectItem>
                   </SelectContent>
