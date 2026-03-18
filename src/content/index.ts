@@ -6,10 +6,8 @@ const DOC_STYLE = `
 .ifocal-target-inline-wrapper{}
 .ifocal-tx{display:inline;overflow-wrap:anywhere;word-break:break-word;hyphens:auto}
 @keyframes ifocal-spin{to{transform:rotate(360deg)}}
-.ifocal-loading{width:16px;height:16px;border:2px solid rgba(15,23,42,0.18);margin-left:5px;border-top-color:#0f172a;border-radius:50%;animation:ifocal-spin 1s linear infinite;display:inline-block;vertical-align:middle;line-height:1}
-@keyframes ifocal-shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
-.ifocal-skeleton-line{height:12px;border-radius:6px;margin:10px 0;background:linear-gradient(90deg, rgba(15,23,42,0.08) 25%, rgba(15,23,42,0.14) 37%, rgba(15,23,42,0.08) 63%);background-size:400% 100%;animation:ifocal-shimmer 1.2s ease-in-out infinite}
-.ifocal-skeleton-inline{display:inline-block;height:0.9em;margin:0 6px;vertical-align:middle;width:7em;border-radius:0.3em;background:linear-gradient(90deg, rgba(15,23,42,0.10) 25%, rgba(15,23,42,0.18) 37%, rgba(15,23,42,0.10) 63%);background-size:400% 100%;animation:ifocal-shimmer 1.2s ease-in-out infinite}
+.ifocal-loading{width:16px;height:16px;border:2px solid rgba(15,23,42,0.18);border-top-color:#0f172a;border-radius:50%;animation:ifocal-spin .8s linear infinite;display:inline-block;vertical-align:middle;line-height:1;flex:0 0 auto}
+.ifocal-loading-wrap{display:flex;align-items:center;justify-content:center;min-height:56px}
 `;
 
 // 复制共享 DOM 工具到内容脚本（避免 import 引发 ESM 报错）
@@ -61,11 +59,35 @@ function sharedCreateWrapper(id: string, targetLang: string): HTMLElement {
   wrapper.setAttribute('data-tx-id', id);
   try { wrapper.setAttribute('data-tx-done', '0'); } catch {}
   if (targetLang) wrapper.setAttribute('lang', targetLang);
-  // Skeleton for inline waiting state
-  const sk = document.createElement('span');
-  sk.className = 'ifocal-skeleton-inline';
-  wrapper.appendChild(sk);
   return wrapper as unknown as HTMLElement;
+}
+function sharedApplyWrapperLoading(wrapper: HTMLElement, sourceText?: string) {
+  try {
+    wrapper.innerHTML = '';
+    const block = wrapper.closest('p,div,section,article,li,td,a,h1,h2,h3,h4,h5,h6') as HTMLElement | null;
+    let needBr = false;
+    if (block && sourceText) {
+      const tag = (block.tagName || 'div').toLowerCase();
+      needBr = needsLineBreak(tag) && shouldInsertBreakFromSource(sourceText);
+    }
+    if (needBr && block && sourceText) {
+      updateBreakForTranslated(block, sourceText);
+    } else {
+      const spacer = document.createElement('font');
+      spacer.className = 'notranslate';
+      spacer.innerHTML = '&nbsp;&nbsp;';
+      wrapper.appendChild(spacer);
+    }
+    const styleName = (wrapper.getAttribute('data-tx-style') || '').trim() || 'ifocal-target-style-dotted';
+    const typeClass = needBr ? 'ifocal-target-block-wrapper' : 'ifocal-target-inline-wrapper';
+    const loadingWrapper = document.createElement('font');
+    loadingWrapper.className = `notranslate ${typeClass} ${styleName}`.trim();
+    const spin = document.createElement('span');
+    spin.className = 'ifocal-loading';
+    spin.setAttribute('aria-label', 'Loading translation');
+    loadingWrapper.appendChild(spin);
+    wrapper.appendChild(loadingWrapper);
+  } catch {}
 }
 function sharedApplyWrapperResult(wrapper: HTMLElement, text: string, targetLang?: string, _wrapperStyle?: string, sourceText?: string) {
   try {
@@ -323,17 +345,14 @@ function createOverlayAt(left: number, top: number) {
       if (flag) {
         if (!spinner) {
           body.innerHTML = '';
-          const container = document.createElement('div');
-          // skeleton block: 3 lines with varied widths
-          const widths = ['70%','95%'];
-          widths.forEach(w => {
-            const line = document.createElement('div');
-            line.className = 'ifocal-skeleton-line';
-            line.style.width = w;
-            container.appendChild(line);
-          });
-          body.appendChild(container);
-          spinner = container;
+          const loadingWrap = document.createElement('div');
+          loadingWrap.className = 'ifocal-loading-wrap';
+          const spin = document.createElement('span');
+          spin.className = 'ifocal-loading';
+          spin.setAttribute('aria-label', 'Loading translation');
+          loadingWrap.appendChild(spin);
+          body.appendChild(loadingWrap);
+          spinner = loadingWrap;
         }
       } else if (spinner) {
         body.innerHTML = '';
@@ -451,7 +470,11 @@ function isInputArea(target: EventTarget | Node | null): boolean {
     if (!el) return false;
     if (isIfocalElement(el)) return false;
     if (el.isContentEditable) return true;
-    if (el.closest('[contenteditable=""],[contenteditable="true"]')) return true;
+    const editableHost = el.closest('[contenteditable]');
+    if (editableHost) {
+      const editableValue = String(editableHost.getAttribute('contenteditable') || '').toLowerCase();
+      if (editableValue !== 'false') return true;
+    }
     if (el.closest('input, textarea, select')) return true;
     if (el.closest('[role="textbox"]')) return true;
   } catch {}
@@ -497,7 +520,17 @@ document.addEventListener('mouseover', (event) => {
   hoveredElement = findTextBlockElement(event.target);
 });
 
-document.addEventListener('mouseout', () => {
+document.addEventListener('mouseout', (event) => {
+  const nextTarget = (event as MouseEvent).relatedTarget;
+  if (nextTarget) {
+    hoverInInputArea = isInputArea(nextTarget);
+    if (hoverInInputArea) {
+      hoveredElement = null;
+      return;
+    }
+    hoveredElement = findTextBlockElement(nextTarget as EventTarget);
+    return;
+  }
   hoveredElement = null;
   hoverInInputArea = false;
 });
@@ -564,8 +597,10 @@ document.addEventListener('touchend', (ev) => {
 
 document.addEventListener('keydown', (event) => {
   if (event.key !== actionKey || keydownCooldown) return;
+  if (event.repeat || event.isComposing) return;
   const activeEl = getDeepActiveElement();
   if (isInputArea(activeEl)) return;
+  if (isInputArea(event.target)) return;
   if (hoverInInputArea) return;
   event.preventDefault();
   keydownCooldown = true;
@@ -718,6 +753,7 @@ function toggleHoverTranslate(blockEl: HTMLElement) {
     }
 
     chrome.storage.sync.get(['translateTargetLang', 'wrapperStyleName', 'targetStylePresets'], (cfg: StorageConfig & any) => {
+      const sourceText = (blockEl.innerText || '').trim();
       const langCode = (cfg.translateTargetLang || 'zh-CN').trim();
       const styleName = (cfg.wrapperStyleName || 'ifocal-target-style-dotted').trim();
       ensureDocLoadingStyle();
@@ -726,8 +762,9 @@ function toggleHoverTranslate(blockEl: HTMLElement) {
       const wrapper = sharedCreateWrapper(`inline_${Date.now()}`, langCode);
       try { wrapper.setAttribute('data-tx-style', styleName); } catch {}
       blockEl.appendChild(wrapper);
+      sharedApplyWrapperLoading(wrapper, sourceText);
+      try { blockEl.setAttribute('aria-busy', 'true'); } catch {}
 
-      const sourceText = (blockEl.innerText || '').trim();
       chrome.runtime.sendMessage({ action: 'performAiAction', task: 'translate', text: sourceText }, (response: { ok?: boolean; result?: string; error?: string } | undefined) => {
         try { void chrome.runtime.lastError; } catch { }
         blockEl.dataset.fcTranslated = '1';

@@ -52,11 +52,39 @@ export function createWrapper(id: string, targetLang: string): HTMLElement {
   wrapper.setAttribute('data-tx-id', id);
   try { wrapper.setAttribute('data-tx-done', '0'); } catch {}
   if (targetLang) wrapper.setAttribute('lang', targetLang);
-  // 初始显示加载动效
-  const spin = document.createElement('div');
-  spin.className = 'ifocal-loading';
-  wrapper.appendChild(spin);
   return wrapper as unknown as HTMLElement;
+}
+
+export function applyWrapperLoading(wrapper: HTMLElement, sourceText?: string) {
+  try {
+    wrapper.innerHTML = '';
+
+    const block = wrapper.closest('p,div,section,article,li,td,a,h1,h2,h3,h4,h5,h6') as HTMLElement | null;
+    let needBr = false;
+    if (block && sourceText) {
+      const tag = (block.tagName || 'div').toLowerCase();
+      needBr = needsLineBreak(tag) && shouldInsertBreakFromSource(sourceText);
+    }
+
+    if (needBr && block && sourceText) {
+      updateBreakForTranslated(block, sourceText);
+    } else {
+      const spacer = document.createElement('font');
+      spacer.className = 'notranslate';
+      spacer.innerHTML = '&nbsp;&nbsp;';
+      wrapper.appendChild(spacer);
+    }
+
+    const styleName = (wrapper.getAttribute('data-tx-style') || '').trim() || 'ifocal-target-style-dotted';
+    const typeClass = needBr ? 'ifocal-target-block-wrapper' : 'ifocal-target-inline-wrapper';
+    const loadingWrapper = document.createElement('font');
+    loadingWrapper.className = `notranslate ${typeClass} ${styleName}`.trim();
+    const spin = document.createElement('span');
+    spin.className = 'ifocal-loading';
+    spin.setAttribute('aria-label', 'Loading translation');
+    loadingWrapper.appendChild(spin);
+    wrapper.appendChild(loadingWrapper);
+  } catch {}
 }
 
 export function applyWrapperResult(wrapper: HTMLElement, text: string, targetLang?: string, _wrapperStyle?: string, sourceText?: string) {
@@ -89,10 +117,11 @@ export function applyWrapperResult(wrapper: HTMLElement, text: string, targetLan
       wrapper.appendChild(spacer);
     }
 
-    // B) 译文结构：inline-wrapper + inner
+    // B) 译文结构：inline/block wrapper + inner
     const styleName = (wrapper.getAttribute('data-tx-style') || '').trim() || 'ifocal-target-style-dotted';
+    const typeClass = needBr ? 'ifocal-target-block-wrapper' : 'ifocal-target-inline-wrapper';
     const inlineWrapper = document.createElement('font');
-    inlineWrapper.className = `notranslate ifocal-target-inline-wrapper ${styleName}`.trim();
+    inlineWrapper.className = `notranslate ${typeClass} ${styleName}`.trim();
     const inner = document.createElement('font');
     inner.className = 'notranslate ifocal-target-inner';
     inner.textContent = text;
