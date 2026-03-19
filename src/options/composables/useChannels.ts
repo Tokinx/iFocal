@@ -6,6 +6,7 @@ export type Channel = {
   type: 'openai' | 'gemini' | 'openai-compatible' | string;
   apiUrl?: string;
   apiKey?: string;
+  systemPromptCompatMode?: boolean;
   models: string[];
 };
 
@@ -33,7 +34,7 @@ export function useChannels() {
   });
 
   // 通道新增
-  const addForm = reactive({ type: 'openai', name: '', apiUrl: '', apiKey: '', modelsText: '' });
+  const addForm = reactive({ type: 'openai', name: '', apiUrl: '', apiKey: '', modelsText: '', systemPromptCompatMode: false });
   function splitModels(input: string) { return (input || '').split(/\r?\n|,/).map(s=>s.trim()).filter(Boolean); }
   function addChannel(onSuccess?: () => void) {
     const name = (addForm.name || '').trim();
@@ -47,9 +48,9 @@ export function useChannels() {
     chrome.storage.sync.get(['channels'], (items) => {
       const list: Channel[] = Array.isArray((items as any).channels) ? (items as any).channels : [];
       if (list.some(c => c.name === name)) throw new Error('渠道名称已存在');
-      const next = [...list, { name, type, apiUrl, apiKey, models }];
+      const next = [...list, { name, type, apiUrl, apiKey, models, systemPromptCompatMode: !!addForm.systemPromptCompatMode }];
       chrome.storage.sync.set({ channels: next }, () => {
-        addForm.name = ''; addForm.apiUrl = ''; addForm.apiKey = ''; addForm.modelsText = '';
+        addForm.name = ''; addForm.apiUrl = ''; addForm.apiKey = ''; addForm.modelsText = ''; addForm.systemPromptCompatMode = false;
         channels.value = next;
         initTestModels();
         if (onSuccess) onSuccess();
@@ -81,7 +82,7 @@ export function useChannels() {
 
   // 编辑
   const editingName = ref<string|null>(null);
-  const editForm = reactive({ type: 'openai', name: '', apiUrl: '', apiKey: '', modelsText: '' });
+  const editForm = reactive({ type: 'openai', name: '', apiUrl: '', apiKey: '', modelsText: '', systemPromptCompatMode: false });
   function openEdit(ch: Channel) {
     editingName.value = ch.name;
     editForm.type = ch.type as any;
@@ -90,6 +91,7 @@ export function useChannels() {
     // 编辑时显示已保存的 API KEY（与设置页的显示/隐藏切换配合，默认密码态）
     editForm.apiKey = ch.apiKey || '';
     editForm.modelsText = (ch.models || []).join('\n');
+    editForm.systemPromptCompatMode = !!ch.systemPromptCompatMode;
   }
   function cancelEdit() { editingName.value = null; }
   function saveEdit(index: number, onSaved?: () => void) {
@@ -108,7 +110,7 @@ export function useChannels() {
       if (!Number.isInteger(idx) || idx < 0 || idx >= list.length) throw new Error('原渠道不存在');
       const originalName = list[idx]?.name || '';
       if (name !== originalName && list.some((c, i) => i !== idx && c.name === name)) throw new Error('同名渠道已存在');
-      const updated: Channel = { ...list[idx], type, name, apiUrl, models } as any;
+      const updated: Channel = { ...list[idx], type, name, apiUrl, models, systemPromptCompatMode: !!editForm.systemPromptCompatMode } as any;
       if (apiKeyMaybe) (updated as any).apiKey = apiKeyMaybe;
       const nextList = list.slice();
       nextList[idx] = updated;

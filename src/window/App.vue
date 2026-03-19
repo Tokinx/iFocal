@@ -217,7 +217,7 @@ import ChatInput from './components/ChatInput.vue';
 import HistoryDrawer from './components/HistoryDrawer.vue';
 
 type Pair = { channel: string; model: string };
-type Channel = { name: string; type: string; apiKey?: string; apiUrl?: string; models?: string[] };
+type Channel = { name: string; type: string; apiKey?: string; apiUrl?: string; models?: string[]; systemPromptCompatMode?: boolean };
 
 interface Message {
   role: 'user' | 'assistant';

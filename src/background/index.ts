@@ -109,16 +109,20 @@ chrome.runtime.onConnect.addListener((port) => {
     if (message.action !== 'performAiAction') return;
 
     try {
-      const cfg = await readConfig(['channels', 'defaultModel', 'translateModel', 'translateTargetLang', 'prevLanguage', 'promptTemplates']);
+      const cfg = await readConfig(['channels', 'defaultModel', 'translateModel', 'translateTargetLang', 'prevLanguage', 'promptTemplates', 'systemPrompt']);
       const pair = pickModelFromConfig(message.task, message.channel && message.model ? { channel: message.channel, model: message.model } : null, cfg);
       if (!pair) throw new Error('No available model');
       const channel = ensureChannel(cfg.channels, pair.channel);
       const targetLang = message.targetLang || cfg.translateTargetLang || 'zh-CN';
       const prevLang = message.prevLang || cfg.prevLanguage || 'en';
-      const prompt = makePrompt(message.task, message.text || '', targetLang, cfg.promptTemplates || {}, prevLang);
+      const { systemPrompt: taskSystemPrompt, userPrompt } = makePromptParts(message.task, message.text || '', targetLang, cfg.promptTemplates || {}, prevLang);
+      const prompt = userPrompt;
       const context = message.context || undefined;
       const attachments = message.attachments || undefined;
       const enableReasoning = !!message.enableReasoning;
+      const requestSystemPrompt = typeof message.systemPrompt === 'string' ? message.systemPrompt.trim() : '';
+      const configSystemPrompt = typeof cfg.systemPrompt === 'string' ? cfg.systemPrompt.trim() : '';
+      const systemPrompt = requestSystemPrompt || configSystemPrompt || taskSystemPrompt;
 
       // 通知开始
       safePost({ type: 'start', channel: pair.channel, model: pair.model });
@@ -133,7 +137,7 @@ chrome.runtime.onConnect.addListener((port) => {
         (chunk: string) => {
           if (!portDisconnected) safePost({ type: 'chunk', content: chunk });
         },
-        { enableReasoning, shouldStop: () => portDisconnected, attachments }
+        { enableReasoning, shouldStop: () => portDisconnected, attachments, systemPrompt }
       );
 
       // 通知完成
@@ -149,17 +153,21 @@ chrome.runtime.onConnect.addListener((port) => {
 // 非流式：已移除 handleStreamRequest
 
 async function handleLegacyAction(request: any) {
-  const cfg = await readConfig(['channels', 'defaultModel', 'translateModel', 'translateTargetLang', 'prevLanguage', 'promptTemplates']);
+  const cfg = await readConfig(['channels', 'defaultModel', 'translateModel', 'translateTargetLang', 'prevLanguage', 'promptTemplates', 'systemPrompt']);
   const pair = pickModelFromConfig(request.task, request.channel && request.model ? { channel: request.channel, model: request.model } : null, cfg);
   if (!pair) throw new Error('No available model');
   const channel = ensureChannel(cfg.channels, pair.channel);
   const targetLang = request.targetLang || cfg.translateTargetLang || 'zh-CN';
   const prevLang = request.prevLang || cfg.prevLanguage || 'en';
-  const prompt = makePrompt(request.task, request.text || '', targetLang, cfg.promptTemplates || {}, prevLang);
+  const { systemPrompt: taskSystemPrompt, userPrompt } = makePromptParts(request.task, request.text || '', targetLang, cfg.promptTemplates || {}, prevLang);
+  const prompt = userPrompt;
   const context = request.context || undefined;
   const attachments = request.attachments || undefined;
   const enableStreaming = request.enableStreaming || false;
   const enableReasoning = !!request.enableReasoning;
+  const requestSystemPrompt = typeof request.systemPrompt === 'string' ? request.systemPrompt.trim() : '';
+  const configSystemPrompt = typeof cfg.systemPrompt === 'string' ? cfg.systemPrompt.trim() : '';
+  const systemPrompt = requestSystemPrompt || configSystemPrompt || taskSystemPrompt;
   const reqId = request.requestId ? String(request.requestId) : '';
   const controller = new AbortController();
   if (!enableStreaming && reqId) abortControllers[reqId] = controller;
@@ -170,7 +178,7 @@ async function handleLegacyAction(request: any) {
   } else {
     // 非流式响应
     try {
-      const resultText = await invokeModel(channel, pair.model, prompt, context, false, undefined, { enableReasoning, signal: controller.signal, attachments });
+      const resultText = await invokeModel(channel, pair.model, prompt, context, false, undefined, { enableReasoning, signal: controller.signal, attachments, systemPrompt });
       return { ok: true, result: resultText, channel: pair.channel, model: pair.model };
     } finally {
       if (reqId && abortControllers[reqId]) delete abortControllers[reqId];
@@ -187,8 +195,8 @@ async function handleTestChannel(request: any) {
   const requestedModel = modelIdFromSpec(request.model);
   const model = requestedModel || firstModelIdFromChannel(channel);
   if (!model) throw new Error('Channel has no models configured');
-  const prompt = makePrompt('summarize', 'Connection test. Respond with OK.', cfg.translateTargetLang || 'zh-CN', cfg.promptTemplates || {});
-  const sample = await invokeModel(channel, model, prompt);
+  const { systemPrompt, userPrompt } = makePromptParts('summarize', 'Connection test. Respond with OK.', cfg.translateTargetLang || 'zh-CN', cfg.promptTemplates || {});
+  const sample = await invokeModel(channel, model, userPrompt, undefined, false, undefined, { systemPrompt });
   return { ok: true, sample };
 }
 
@@ -410,7 +418,7 @@ function pickModelFromConfig(task: string, requestPair: any, cfg: any) {
   return null;
 }
 
-import { makePrompt, makeMessage } from '@/shared/ai';
+import { makeMessage, makePromptParts } from '@/shared/ai';
 import { channelContainsModelId, firstModelIdFromChannel, modelIdFromSpec } from '@/shared/model-utils';
 
 async function invokeModel(
@@ -420,14 +428,15 @@ async function invokeModel(
   context?: Array<{ role: string; content: string; attachments?: any[] }>,
   stream: boolean = false,
   onChunk?: (chunk: string) => void,
-  opts?: { enableReasoning?: boolean; shouldStop?: () => boolean; signal?: AbortSignal; attachments?: any[] }
+  opts?: { enableReasoning?: boolean; shouldStop?: () => boolean; signal?: AbortSignal; attachments?: any[]; systemPrompt?: string }
 ) {
   if (!channel?.apiKey) throw new Error('Channel is missing API key');
+  const systemPromptCompatMode = !!channel?.systemPromptCompatMode;
   if (channel.type === 'openai' || channel.type === 'openai-compatible') {
-    return callOpenAI(channel.apiUrl, channel.apiKey, model, prompt, context, stream, onChunk, opts, channel.type);
+    return callOpenAI(channel.apiUrl, channel.apiKey, model, prompt, context, stream, onChunk, opts, systemPromptCompatMode);
   }
   if (channel.type === 'gemini') {
-    return callGemini(channel.apiUrl, channel.apiKey, model, prompt, context, stream, onChunk, opts);
+    return callGemini(channel.apiUrl, channel.apiKey, model, prompt, context, stream, onChunk, { ...opts, systemPromptCompatMode });
   }
   throw new Error(`Unsupported channel type: ${channel.type}`);
 }
@@ -474,25 +483,24 @@ async function callOpenAI(
   context?: Array<{ role: string; content: string; attachments?: any[] }>,
   stream: boolean = false,
   onChunk?: (chunk: string) => void,
-  opts?: { enableReasoning?: boolean; shouldStop?: () => boolean; signal?: AbortSignal; attachments?: any[] },
-  channelType: string = 'openai'
+  opts?: { enableReasoning?: boolean; shouldStop?: () => boolean; signal?: AbortSignal; attachments?: any[]; systemPrompt?: string },
+  systemPromptCompatMode: boolean = false
 ) {
   const url = joinBasePath(baseUrl || 'https://api.openai.com/v1', '/chat/completions');
 
-  // 构造消息，支持多模态
-  let messages = makeMessage(model, prompt, 'You are a helpful assistant.', context);
+  // 默认用 system role 发送 systemPrompt；兼容模式下合并进 user prompt
+  const messages = makeMessage(model, prompt, opts?.systemPrompt || '', context, systemPromptCompatMode);
 
   // 处理历史消息中的附件（context）
   if (context && Array.isArray(context)) {
+    const contextStartIndex = Math.max(0, messages.length - context.length - 1);
     for (let i = 0; i < context.length; i++) {
       const ctxMsg = context[i];
       if (ctxMsg.attachments && ctxMsg.attachments.length > 0) {
-        // 找到对应的消息（跳过 system 消息）
-        const msgIndex = messages.findIndex((m, idx) =>
-          idx > 0 && m.role === ctxMsg.role && m.content === ctxMsg.content
-        );
+        const msgIndex = contextStartIndex + i;
+        const msg = messages[msgIndex];
+        if (!msg || msg.role !== ctxMsg.role || msg.content !== ctxMsg.content) continue;
         if (msgIndex >= 0) {
-          const msg = messages[msgIndex];
           const content: any[] = [{ type: 'text', text: msg.content }];
 
           // 添加附件（使用标准 image_url 格式）
@@ -551,7 +559,7 @@ async function callOpenAI(
 
   const body: any = { model, messages, temperature: 0.2, stream };
   // 注入"思考开关"相关参数（尽量兼容 OpenAI 兼容端）；OpenAI 官方 Chat Completions 会拒绝未知字段
-  if (!model.includes("gpt")) { // channelType !== 'openai'
+  if (!model.includes("gpt")) {
     Object.assign(body, buildReasoningParams(model, opts?.enableReasoning));
   } else if (opts?.enableReasoning) {
     console.warn('[OpenAI] Chat Completions 不支持 reasoning 参数，已忽略 enableReasoning。');
@@ -683,11 +691,15 @@ async function callGemini(
   context?: Array<{ role: string; content: string }>,
   stream: boolean = false,
   onChunk?: (chunk: string) => void,
-  opts?: { shouldStop?: () => boolean; signal?: AbortSignal }
+  opts?: { shouldStop?: () => boolean; signal?: AbortSignal; systemPrompt?: string; systemPromptCompatMode?: boolean }
 ) {
   const base = baseUrl || 'https://generativelanguage.googleapis.com/v1beta';
   const endpoint = stream ? 'streamGenerateContent' : 'generateContent';
   const url = joinBasePath(base, `/models/${encodeURIComponent(model)}:${endpoint}?key=${encodeURIComponent(apiKey)}`);
+
+  const systemPrompt = String(opts?.systemPrompt || '').trim();
+  const compatMode = !!opts?.systemPromptCompatMode;
+  const finalPrompt = systemPrompt && compatMode ? `${systemPrompt}\n\n${prompt}` : prompt;
 
   // 构建 Gemini 格式的消息内容
   let contents;
@@ -698,14 +710,19 @@ async function callGemini(
       parts: [{ text: msg.content }]
     })).concat([{
       role: 'user',
-      parts: [{ text: prompt }]
+      parts: [{ text: finalPrompt }]
     }]);
   } else {
     // 单轮对话
-    contents = [{ parts: [{ text: prompt }] }];
+    contents = [{ parts: [{ text: finalPrompt }] }];
   }
 
-  const body = { contents };
+  const body: any = { contents };
+  if (systemPrompt && !compatMode) {
+    body.systemInstruction = {
+      parts: [{ text: systemPrompt }]
+    };
+  }
   return rateLimited(async () => {
     const res = await withBackoff(() => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: opts?.signal as any }));
     if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);

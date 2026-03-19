@@ -249,6 +249,7 @@ function handleSaveChannelInline(idx: number) {
     editForm.apiUrl = ch.apiUrl || '';
     editForm.apiKey = ch.apiKey || '';
     editForm.modelsText = modelsTextByIndex[idx] || (Array.isArray(ch.models) ? ch.models.join('\n') : '');
+    editForm.systemPromptCompatMode = !!(ch as any).systemPromptCompatMode;
     saveEdit(idx, () => {
       initTestModels();
       toast.success('渠道已保存');
@@ -749,12 +750,21 @@ async function fetchAddFormModels() {
                   </Button>
                 </div>
               </div>
+              <div class="flex items-center justify-between gap-4">
+                <div>
+                  <label class="text-sm font-medium leading-none block mb-1">兼容模式</label>
+                  <p class="text-xs text-muted-foreground">开启后将 SystemPrompt 与 UserPrompt 合并，以 User 角色发送</p>
+                </div>
+                <div>
+                  <Switch v-model="ch.systemPromptCompatMode" />
+                </div>
+              </div>
               <div class="flex items-start justify-between gap-4">
                 <div>
                   <label class="text-sm font-medium leading-none block mb-1">Models</label>
                   <p class="text-xs text-muted-foreground">每行一个，支持 id#name 格式自定义显示名称</p>
                 </div>
-                <div class="w-[32rem] space-y-2">
+                <div class="w-[32rem] space-y-2 shrink-0">
                   <Textarea v-model="modelsTextByIndex[idx]" class="min-h-28" placeholder="gpt-4o&#10;gpt-4o-mini#GPT-4o Mini" />
                   <Button variant="outline" size="sm" class="flex items-center gap-1" @click="fetchModels(idx)" :disabled="fetchingModels[idx]">
                     <Icon v-if="!fetchingModels[idx]" icon="lucide:download" width="14" />
@@ -1034,8 +1044,7 @@ async function fetchAddFormModels() {
             <div class="w-[50%] rounded-md border bg-secondary/40 p-3 text-sm whitespace-pre-wrap min-h-12 relative">
               <div v-if="assistantLoading" class="absolute inset-0 flex items-center justify-center bg-white/60">
                 <Icon icon="line-md:loading-twotone-loop" width="20" class="animate-spin" />
-              </div>
-              {{ assistantResult }}
+              </div>{{ assistantResult }}
             </div>
           </div>
           <div class="flex items-center gap-2">
@@ -1164,13 +1173,22 @@ async function fetchAddFormModels() {
               <Input v-model="addForm.apiKey" placeholder="可留空" />
             </div>
           </div>
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <label class="text-sm font-medium leading-none block mb-1">兼容模式</label>
+              <p class="text-xs text-muted-foreground">开启后将 SystemPrompt 与 UserPrompt 合并，以 User 角色发送</p>
+            </div>
+            <div>
+              <Switch v-model="addForm.systemPromptCompatMode" />
+            </div>
+          </div>
         </div>
         <div class="flex items-start justify-between gap-4">
           <div>
             <label class="text-sm font-medium leading-none block mb-1">Models</label>
             <p class="text-xs text-muted-foreground">每行一个，支持 id#name 格式自定义显示名称</p>
           </div>
-          <div class="w-[32rem] space-y-2">
+          <div class="w-[32rem] space-y-2 shrink-0">
             <Textarea v-model="addForm.modelsText" class="min-h-28" placeholder="gpt-4o&#10;gpt-4o-mini#GPT-4o Mini" />
             <Button variant="outline" size="sm" class="flex items-center gap-1" @click="fetchAddFormModels" :disabled="fetchingAddFormModels">
               <Icon v-if="!fetchingAddFormModels" icon="lucide:download" width="14" />
