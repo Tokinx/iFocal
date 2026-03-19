@@ -1069,8 +1069,8 @@ async function fetchAddFormModels() {
       <section v-if="nav === 'debug'" :id="'opt-prompts'" class="space-y-4">
         <header class="flex items-center h-10 text-base font-semibold">Prompt 模板</header>
         <div class="space-y-3">
-          <p class="text-xs text-muted-foreground">可使用占位符 <code v-pre>{{targetLang}}</code> 与 <code
-              v-pre>{{text}}</code>。</p>
+          <p class="text-xs text-muted-foreground">可使用占位符 <code v-pre>{{targetLang}}</code>、<code
+              v-pre>{{prevLang}}</code> 与 <code v-pre>{{text}}</code>。</p>
           <div class="space-y-4">
             <div>
               <Label class="mb-1 block">翻译模板</Label>

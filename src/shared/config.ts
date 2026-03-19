@@ -2,7 +2,8 @@
 
 // 支持的语言列表
 export const SUPPORTED_LANGUAGES = [
-  { value: 'zh-CN', label: '中文' },
+  { value: 'zh-CN', label: '简体中文' },
+  { value: 'zh-TW', label: '繁體中文' },
   { value: 'en', label: 'English' },
   { value: 'ja', label: '日本語' },
   { value: 'ko', label: '한국어' },
@@ -10,6 +11,13 @@ export const SUPPORTED_LANGUAGES = [
   { value: 'es', label: 'Español' },
   { value: 'de', label: 'Deutsch' }
 ];
+
+export function getLanguageLabel(value: string): string {
+  const code = String(value || '').trim();
+  if (!code) return '';
+  const found = SUPPORTED_LANGUAGES.find((lang) => lang.value === code);
+  return found ? found.label : code;
+}
 
 // 支持的任务类型
 export const SUPPORTED_TASKS = [

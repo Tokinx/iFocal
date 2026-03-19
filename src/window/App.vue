@@ -377,7 +377,7 @@ const currentModelName = computed(() => {
 
 const currentLangLabel = computed(() => {
   const lang = SUPPORTED_LANGUAGES.find(l => l.value === state.targetLang);
-  return lang ? lang.label : '中文';
+  return lang ? lang.label : '简体中文';
 });
 
 // 按渠道分组模型

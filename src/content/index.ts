@@ -387,7 +387,8 @@ function createOverlayAt(left: number, top: number, loadingStyle: OverlayLoading
 // 语言列表：默认回退（不再从后台获取）
 type Lang = { value: string; label: string };
 let SUPPORTED_LANGUAGES: Lang[] = [
-  { value: 'zh-CN', label: '中文' },
+  { value: 'zh-CN', label: '简体中文' },
+  { value: 'zh-TW', label: '繁體中文' },
   { value: 'en', label: 'English' },
   { value: 'ja', label: '日本語' },
   { value: 'ko', label: '한국어' },
