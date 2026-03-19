@@ -109,7 +109,7 @@ chrome.runtime.onConnect.addListener((port) => {
     if (message.action !== 'performAiAction') return;
 
     try {
-      const cfg = await readConfig(['channels', 'defaultModel', 'translateModel', 'translateTargetLang', 'prevLanguage', 'promptTemplates', 'systemPrompt']);
+      const cfg = await readConfig(['channels', 'defaultModel', 'translateTargetLang', 'prevLanguage', 'promptTemplates', 'systemPrompt']);
       const pair = pickModelFromConfig(message.task, message.channel && message.model ? { channel: message.channel, model: message.model } : null, cfg);
       if (!pair) throw new Error('No available model');
       const channel = ensureChannel(cfg.channels, pair.channel);
@@ -153,7 +153,7 @@ chrome.runtime.onConnect.addListener((port) => {
 // 非流式：已移除 handleStreamRequest
 
 async function handleLegacyAction(request: any) {
-  const cfg = await readConfig(['channels', 'defaultModel', 'translateModel', 'translateTargetLang', 'prevLanguage', 'promptTemplates', 'systemPrompt']);
+  const cfg = await readConfig(['channels', 'defaultModel', 'translateTargetLang', 'prevLanguage', 'promptTemplates', 'systemPrompt']);
   const pair = pickModelFromConfig(request.task, request.channel && request.model ? { channel: request.channel, model: request.model } : null, cfg);
   if (!pair) throw new Error('No available model');
   const channel = ensureChannel(cfg.channels, pair.channel);
@@ -408,8 +408,14 @@ function pickModelFromConfig(task: string, requestPair: any, cfg: any) {
     return !!(ch && channelContainsModelId(ch, normalized.model));
   };
   if (isValid(requestPair)) return normalizePair(requestPair);
-  if (task === 'translate' && isValid(cfg.translateModel)) return normalizePair(cfg.translateModel);
   if (isValid(cfg.defaultModel)) return normalizePair(cfg.defaultModel);
+  if (task === 'translate') {
+    for (const ch of channels) {
+      const firstModelId = firstModelIdFromChannel(ch);
+      if (firstModelId) return { channel: ch.name, model: firstModelId };
+    }
+    return null;
+  }
   if (isValid(cfg.activeModel)) return normalizePair(cfg.activeModel);
   for (const ch of channels) {
     const firstModelId = firstModelIdFromChannel(ch);

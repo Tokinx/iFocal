@@ -17,7 +17,6 @@ const { channels, modelPairs, addForm, addChannel, testModel, initTestModels, ed
 const toast = useToast();
 
 const defaultModel = ref<ModelPair>(null);
-const translateModel = ref<ModelPair>(null);
 const activeModel = ref<ModelPair>(null);
 // 使用全局配置
 const config = ref({ ...DEFAULT_CONFIG });
@@ -71,7 +70,6 @@ function ensureOptionPresetStyles(list?: Array<{ name: string; css: string }>) {
 }
 
 const defaultModelValue = ref('');
-const translateModelValue = ref('');
 // 关于页版本号：优先 chrome.runtime.getManifest()，回退到读取 manifest.json
 const version = ref('-');
 // 渠道编辑：每项独立的显示/输入状态
@@ -84,7 +82,6 @@ const draggedIndex = ref<number | null>(null);
 const dragOverIndex = ref<number | null>(null);
 const isDraggable = ref<boolean[]>([]); // 控制是否可拖拽
 watch(defaultModel, (val) => { defaultModelValue.value = joinPair(val); }, { immediate: true });
-watch(translateModel, (val) => { translateModelValue.value = joinPair(val); }, { immediate: true });
 
 function joinPair(pair: ModelPair) {
   if (!pair || !(pair as any).channel || !(pair as any).model) return '';
@@ -120,7 +117,7 @@ async function loadAll() {
     // 加载其他设置
     await new Promise<void>((resolve) => {
       try {
-        chrome.storage.sync.get(['channels', 'defaultModel', 'translateModel', 'promptTemplates', 'activeModel'], (items: any) => {
+        chrome.storage.sync.get(['channels', 'defaultModel', 'promptTemplates', 'activeModel'], (items: any) => {
           channels.value = Array.isArray(items.channels) ? items.channels : [];
           // 初始化每项编辑辅助状态
           modelsTextByIndex.length = 0; showApiKeyByIndex.length = 0; channelExpanded.length = 0; fetchingModels.length = 0; isDraggable.value.length = 0;
@@ -132,7 +129,6 @@ async function loadAll() {
             isDraggable.value[i] = false; // 默认不可拖拽
           });
           defaultModel.value = parsePair(joinPair(items.defaultModel)) || null;
-          translateModel.value = parsePair(joinPair(items.translateModel)) || null;
           activeModel.value = parsePair(joinPair(items.activeModel)) || null;
           initTemplates(items.promptTemplates || {});
           initTestModels();
@@ -145,7 +141,18 @@ async function loadAll() {
   }
 }
 
-function saveModels() { const dm = parsePair(defaultModelValue.value); const tm = parsePair(translateModelValue.value); try { chrome.storage.sync.set({ defaultModel: dm, translateModel: tm }, () => toast.success('模型设置已保存')); } catch { toast.error('保存失败'); } }
+function saveModels() {
+  const dm = parsePair(defaultModelValue.value);
+  try {
+    chrome.storage.sync.set({ defaultModel: dm }, () => {
+      defaultModel.value = dm;
+      try { chrome.storage.sync.remove(['translateModel']); } catch { }
+      toast.success('模型设置已保存');
+    });
+  } catch {
+    toast.error('保存失败');
+  }
+}
 async function saveBasics() {
   try {
     const k = (config.value.actionKey || 'Alt').trim() || 'Alt';
@@ -314,7 +321,7 @@ watch(() => config.value.autoPasteGlobalAssistant, async (val) => {
 
 // 导入导出
 const importerRef = ref<HTMLInputElement | null>(null);
-const STORAGE_KEYS = ['channels', 'defaultModel', 'translateModel', 'activeModel', 'actionKey', 'hoverKey', 'selectKey', 'translateTargetLang', 'displayMode', 'promptTemplates', 'autoPasteGlobalAssistant'];
+const STORAGE_KEYS = ['channels', 'defaultModel', 'activeModel', 'actionKey', 'hoverKey', 'selectKey', 'translateTargetLang', 'displayMode', 'promptTemplates', 'autoPasteGlobalAssistant'];
 function onExport() { try { chrome.storage.sync.get(STORAGE_KEYS, (items: any) => { try { const payload = JSON.stringify(items, null, 2); const blob = new Blob([payload], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'ifocal-settings.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); toast.success('已导出设置'); } catch { } }); } catch { } }
 function triggerImport() { importerRef.value?.click(); }
 function onImportChange(e: Event) { const input = e.target as HTMLInputElement; const file = input && input.files && input.files[0]; if (!file) return; try { const reader = new FileReader(); reader.onload = () => { try { const data = JSON.parse(String(reader.result || '{}')); const toSet: any = {}; STORAGE_KEYS.forEach(k => { if (k in (data || {})) toSet[k] = (data as any)[k]; }); chrome.storage.sync.set(toSet, () => { toast.success('导入成功，正在刷新'); window.location.reload(); }); } catch { toast.error('导入失败：JSON 解析错误'); } }; reader.readAsText(file); } catch { } }
@@ -803,31 +810,6 @@ async function fetchAddFormModels() {
               </div>
               <div class="w-64">
                 <Select v-model="defaultModelValue">
-                  <SelectTrigger>
-                    <SelectValue placeholder="未设置" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__unset__">（未设置）</SelectItem>
-                    <SelectItem v-for="p in modelPairs" :key="p.value" :value="p.value">
-                      <span class="inline-flex items-center gap-2">
-                        <Icon
-                          :icon="iconOfChannelType(parsePair(p.value)?.channel ? (channels.find(c => c.name === parsePair(p.value)?.channel)?.type || '') : '')"
-                          width="14" />
-                        {{ p.label }}
-                      </span>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <!-- 翻译模型 -->
-            <div class="flex items-center justify-between gap-4">
-              <div>
-                <label class="text-sm font-medium leading-none block mb-1">翻译模型</label>
-                <p class="text-xs text-muted-foreground">用于翻译任务优先使用</p>
-              </div>
-              <div class="w-64">
-                <Select v-model="translateModelValue">
                   <SelectTrigger>
                     <SelectValue placeholder="未设置" />
                   </SelectTrigger>

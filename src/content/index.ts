@@ -260,8 +260,6 @@ type ChannelPair = { channel: string; model: string } | null;
 type StorageConfig = {
   channels?: Array<{ name: string; models?: string[] }>;
   defaultModel?: ChannelPair;
-  translateModel?: ChannelPair;
-  activeModel?: ChannelPair;
   translateTargetLang?: string;
   prevLanguage?: string;
 };
@@ -707,9 +705,8 @@ function showSelectionDot(rect: DOMRect) {
     const overlay = createOverlayAt(left - 8, top + 16, 'skeleton');
     overlayAutoFollow = true;
     overlay.setLoading(true);
-    chrome.storage.sync.get(['channels', 'defaultModel', 'translateModel', 'activeModel', 'translateTargetLang'], (cfg: StorageConfig) => {
-      const reqPair = cfg.activeModel || null;
-      const pair = pickPair(cfg, 'translate', reqPair);
+    chrome.storage.sync.get(['channels', 'defaultModel', 'translateTargetLang'], (cfg: StorageConfig) => {
+      const pair = pickPair(cfg);
       const lang = cfg.translateTargetLang || 'zh-CN';
       attachOverlayHeaderVue(overlay, cfg, pair, lang, lastSelectionText);
       startStreamForOverlay(overlay, 'translate', lastSelectionText, pair, lang);
@@ -762,9 +759,8 @@ function toggleHoverTranslate(blockEl: HTMLElement) {
       const overlay = createOverlayAt(rect.left + window.scrollX, rect.bottom + window.scrollY + 8);
       overlay.setLoading(true);
       const source = (blockEl.innerText || '').trim();
-      chrome.storage.sync.get(['channels', 'defaultModel', 'translateModel', 'activeModel', 'translateTargetLang'], (cfg: StorageConfig) => {
-        const reqPair = cfg.activeModel || null;
-        const pair = pickPair(cfg, 'translate', reqPair);
+      chrome.storage.sync.get(['channels', 'defaultModel', 'translateTargetLang'], (cfg: StorageConfig) => {
+        const pair = pickPair(cfg);
         const lang = cfg.translateTargetLang || 'zh-CN';
         attachOverlayHeaderVue(overlay, cfg, pair, lang, source);
         startStreamForOverlay(overlay, 'translate', source, pair, lang);
@@ -806,7 +802,7 @@ function toggleHoverTranslate(blockEl: HTMLElement) {
   }
 }
 
-function pickPair(cfg: StorageConfig, task: string, reqPair: ChannelPair): ChannelPair {
+function pickPair(cfg: StorageConfig, reqPair?: ChannelPair): ChannelPair {
   const channels = Array.isArray(cfg.channels) ? cfg.channels : [];
   const normalizePair = (pair?: ChannelPair) => {
     if (!pair?.channel || !pair.model) return null;
@@ -821,9 +817,7 @@ function pickPair(cfg: StorageConfig, task: string, reqPair: ChannelPair): Chann
     return !!(channel && channelHasModelId(channel, normalized.model));
   };
   if (isValid(reqPair)) return normalizePair(reqPair)!;
-  if (task === 'translate' && isValid(cfg.translateModel)) return normalizePair(cfg.translateModel)!;
   if (isValid(cfg.defaultModel)) return normalizePair(cfg.defaultModel)!;
-  if (isValid(cfg.activeModel)) return normalizePair(cfg.activeModel)!;
   for (const ch of channels) {
     const firstModelId = firstModelIdFromChannel(ch);
     if (firstModelId) return { channel: ch.name, model: firstModelId };
@@ -836,9 +830,8 @@ function triggerSelectionTranslate() {
   const rect = lastSelectionRect || getSelectionRect();
   const overlay = rect ? createOverlayAt(rect.left + window.scrollX, rect.bottom + window.scrollY + 8, 'skeleton') : createOverlayAt(80, 80, 'skeleton');
   overlay.setLoading(true);
-  chrome.storage.sync.get(['channels', 'defaultModel', 'translateModel', 'activeModel', 'translateTargetLang', 'prevLanguage'], (cfg: StorageConfig) => {
-    const reqPair = cfg.activeModel || null;
-    const pair = pickPair(cfg, 'translate', reqPair);
+  chrome.storage.sync.get(['channels', 'defaultModel', 'translateTargetLang', 'prevLanguage'], (cfg: StorageConfig) => {
+    const pair = pickPair(cfg);
     const lang = cfg.translateTargetLang || 'zh-CN';
     const prevLang = cfg.prevLanguage || 'en';
     attachOverlayHeaderVue(overlay, cfg, pair, lang, prevLang, lastSelectionText);
@@ -905,7 +898,10 @@ function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair
       ev.stopPropagation(); ev.preventDefault();
       currentPair = { channel: p.channel, model: p.model };
       modelBtn.textContent = p.displayName;
-      startStreamForOverlay(overlay, 'translate', text, currentPair, currentLangValue, currentPrevLangValue);
+      // 划词/悬浮翻译面板切换模型后，同步更新全局默认模型
+      chrome.storage.sync.set({ defaultModel: currentPair }, () => {
+        startStreamForOverlay(overlay, 'translate', text, currentPair, currentLangValue, currentPrevLangValue);
+      });
       modelMenu.classList.add('hidden');
     });
     modelMenu.appendChild(item);

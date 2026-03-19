@@ -104,7 +104,7 @@ export function useChannels() {
     if (!models.length) throw new Error('请至少填写一个模型');
     if (type === 'openai-compatible' && !apiUrl) throw new Error('兼容渠道需要 API URL');
 
-    chrome.storage.sync.get(['channels','defaultModel','translateModel','activeModel'], (items) => {
+    chrome.storage.sync.get(['channels','defaultModel','activeModel'], (items) => {
       const list: Channel[] = Array.isArray((items as any).channels) ? (items as any).channels : [];
       const idx = Number(index);
       if (!Number.isInteger(idx) || idx < 0 || idx >= list.length) throw new Error('原渠道不存在');
@@ -115,7 +115,7 @@ export function useChannels() {
       const nextList = list.slice();
       nextList[idx] = updated;
       const next: any = { channels: nextList };
-      ['defaultModel','translateModel','activeModel'].forEach(k => {
+      ['defaultModel', 'activeModel'].forEach(k => {
         const pair = (items as any)[k];
         if (pair && pair.channel === originalName) next[k] = { channel: name, model: pair.model };
       });
@@ -123,10 +123,10 @@ export function useChannels() {
     });
   }
 
-  type ChannelsSnapshot = { list: Channel[]; defaultModel: any; translateModel: any; activeModel: any };
+  type ChannelsSnapshot = { list: Channel[]; defaultModel: any; activeModel: any };
 
   function removeChannel(index: number, onRemoved?: (snapshot: ChannelsSnapshot) => void) {
-    chrome.storage.sync.get(['channels','defaultModel','translateModel','activeModel'], (items) => {
+    chrome.storage.sync.get(['channels','defaultModel','activeModel'], (items) => {
       const list: Channel[] = Array.isArray((items as any).channels) ? (items as any).channels : [];
       const idx = Number(index);
       if (!Number.isInteger(idx) || idx < 0 || idx >= list.length) throw new Error('渠道不存在');
@@ -134,13 +134,11 @@ export function useChannels() {
       const snapshot: ChannelsSnapshot = {
         list,
         defaultModel: (items as any).defaultModel ?? null,
-        translateModel: (items as any).translateModel ?? null,
         activeModel: (items as any).activeModel ?? null
       };
       const filtered = list.filter((_, i) => i !== idx);
       const next: any = { channels: filtered };
       if ((items as any).defaultModel?.channel === removed.name) next.defaultModel = null;
-      if ((items as any).translateModel?.channel === removed.name) next.translateModel = null;
       if ((items as any).activeModel?.channel === removed.name) next.activeModel = null;
       chrome.storage.sync.set(next, () => { channels.value = filtered; initTestModels(); onRemoved && onRemoved(snapshot); });
     });
@@ -150,7 +148,6 @@ export function useChannels() {
     const next: any = {
       channels: snapshot.list,
       defaultModel: snapshot.defaultModel ?? null,
-      translateModel: snapshot.translateModel ?? null,
       activeModel: snapshot.activeModel ?? null
     };
     chrome.storage.sync.set(next, () => { channels.value = snapshot.list; initTestModels(); onRestored && onRestored(); });
