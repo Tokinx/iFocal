@@ -109,7 +109,8 @@ chrome.runtime.onConnect.addListener((port) => {
     if (message.action !== 'performAiAction') return;
 
     try {
-      const text = ensureNonEmptyText(message.text);
+      const attachments = Array.isArray(message.attachments) ? message.attachments : undefined;
+      const text = ensureTextOrAttachments(message.text, attachments);
       const cfg = await readConfig(['channels', 'defaultModel', 'translateTargetLang', 'prevLanguage', 'promptTemplates', 'systemPrompt']);
       const pair = pickModelFromConfig(message.task, message.channel && message.model ? { channel: message.channel, model: message.model } : null, cfg);
       if (!pair) throw new Error('No available model');
@@ -119,7 +120,6 @@ chrome.runtime.onConnect.addListener((port) => {
       const { systemPrompt: taskSystemPrompt, userPrompt } = makePromptParts(message.task, text, targetLang, cfg.promptTemplates || {}, prevLang);
       const prompt = userPrompt;
       const context = message.context || undefined;
-      const attachments = message.attachments || undefined;
       const enableReasoning = !!message.enableReasoning;
       const requestSystemPrompt = typeof message.systemPrompt === 'string' ? message.systemPrompt.trim() : '';
       const configSystemPrompt = typeof cfg.systemPrompt === 'string' ? cfg.systemPrompt.trim() : '';
@@ -154,7 +154,8 @@ chrome.runtime.onConnect.addListener((port) => {
 // 非流式：已移除 handleStreamRequest
 
 async function handleLegacyAction(request: any) {
-  const text = ensureNonEmptyText(request.text);
+  const attachments = Array.isArray(request.attachments) ? request.attachments : undefined;
+  const text = ensureTextOrAttachments(request.text, attachments);
   const cfg = await readConfig(['channels', 'defaultModel', 'translateTargetLang', 'prevLanguage', 'promptTemplates', 'systemPrompt']);
   const pair = pickModelFromConfig(request.task, request.channel && request.model ? { channel: request.channel, model: request.model } : null, cfg);
   if (!pair) throw new Error('No available model');
@@ -164,7 +165,6 @@ async function handleLegacyAction(request: any) {
   const { systemPrompt: taskSystemPrompt, userPrompt } = makePromptParts(request.task, text, targetLang, cfg.promptTemplates || {}, prevLang);
   const prompt = userPrompt;
   const context = request.context || undefined;
-  const attachments = request.attachments || undefined;
   const enableStreaming = request.enableStreaming || false;
   const enableReasoning = !!request.enableReasoning;
   const requestSystemPrompt = typeof request.systemPrompt === 'string' ? request.systemPrompt.trim() : '';
@@ -188,10 +188,11 @@ async function handleLegacyAction(request: any) {
   }
 }
 
-function ensureNonEmptyText(text: unknown): string {
+function ensureTextOrAttachments(text: unknown, attachments?: unknown): string {
   const normalized = String(text ?? '').trim();
-  if (!normalized) {
-    throw new Error('输入内容不能为空，请先输入文本后再试。');
+  const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
+  if (!normalized && !hasAttachments) {
+    throw new Error('输入内容不能为空，请先输入文本或上传文件后再试。');
   }
   return normalized;
 }
@@ -526,7 +527,11 @@ async function callOpenAI(
         const msg = messages[msgIndex];
         if (!msg || msg.role !== ctxMsg.role || msg.content !== ctxMsg.content) continue;
         if (msgIndex >= 0) {
-          const content: any[] = [{ type: 'text', text: msg.content }];
+          const content: any[] = [];
+          const textContent = String(msg.content ?? '');
+          if (textContent.trim()) {
+            content.push({ type: 'text', text: textContent });
+          }
 
           // 添加附件（使用标准 image_url 格式）
           for (const att of ctxMsg.attachments) {
@@ -545,7 +550,9 @@ async function callOpenAI(
             }
           }
 
-          msg.content = content as any;
+          if (content.length > 0) {
+            msg.content = content as any;
+          }
         }
       }
     }
@@ -558,7 +565,13 @@ async function callOpenAI(
       // 如果已经是数组格式（处理过历史附件），则追加
       const content: any[] = Array.isArray(lastMsg.content)
         ? [...lastMsg.content]
-        : [{ type: 'text', text: lastMsg.content }];
+        : [];
+      if (!Array.isArray(lastMsg.content)) {
+        const textContent = String(lastMsg.content ?? '');
+        if (textContent.trim()) {
+          content.push({ type: 'text', text: textContent });
+        }
+      }
 
       // 添加当前消息的附件（使用标准 image_url 格式）
       for (const att of opts.attachments) {
@@ -578,7 +591,9 @@ async function callOpenAI(
         // 其他文件类型暂不支持，可以在这里扩展
       }
 
-      lastMsg.content = content as any;
+      if (content.length > 0) {
+        lastMsg.content = content as any;
+      }
     }
   }
 
