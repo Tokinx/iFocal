@@ -705,11 +705,12 @@ function showSelectionDot(rect: DOMRect) {
     const overlay = createOverlayAt(left - 8, top + 16, 'skeleton');
     overlayAutoFollow = true;
     overlay.setLoading(true);
-    chrome.storage.sync.get(['channels', 'defaultModel', 'translateTargetLang'], (cfg: StorageConfig) => {
+    chrome.storage.sync.get(['channels', 'defaultModel', 'translateTargetLang', 'prevLanguage'], (cfg: StorageConfig) => {
       const pair = pickPair(cfg);
       const lang = cfg.translateTargetLang || 'zh-CN';
-      attachOverlayHeaderVue(overlay, cfg, pair, lang, lastSelectionText);
-      startStreamForOverlay(overlay, 'translate', lastSelectionText, pair, lang);
+      const prevLang = cfg.prevLanguage || 'en';
+      attachOverlayHeaderVue(overlay, cfg, pair, lang, prevLang, lastSelectionText);
+      startStreamForOverlay(overlay, 'translate', lastSelectionText, pair, lang, prevLang);
     });
     hideSelectionDot();
   };
@@ -759,11 +760,12 @@ function toggleHoverTranslate(blockEl: HTMLElement) {
       const overlay = createOverlayAt(rect.left + window.scrollX, rect.bottom + window.scrollY + 8);
       overlay.setLoading(true);
       const source = (blockEl.innerText || '').trim();
-      chrome.storage.sync.get(['channels', 'defaultModel', 'translateTargetLang'], (cfg: StorageConfig) => {
+      chrome.storage.sync.get(['channels', 'defaultModel', 'translateTargetLang', 'prevLanguage'], (cfg: StorageConfig) => {
         const pair = pickPair(cfg);
         const lang = cfg.translateTargetLang || 'zh-CN';
-        attachOverlayHeaderVue(overlay, cfg, pair, lang, source);
-        startStreamForOverlay(overlay, 'translate', source, pair, lang);
+        const prevLang = cfg.prevLanguage || 'en';
+        attachOverlayHeaderVue(overlay, cfg, pair, lang, prevLang, source);
+        startStreamForOverlay(overlay, 'translate', source, pair, lang, prevLang);
       });
       return;
     }

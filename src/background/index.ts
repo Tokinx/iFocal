@@ -67,7 +67,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // 移除 getSupportedLanguages：前端直接使用共享常量
 
   if (message.action === 'performAiAction') {
-    handleLegacyAction(message).then(sendResponse).catch((error) => sendResponse({ ok: false, error: String(error) }));
+    handleLegacyAction(message).then(sendResponse).catch((error) => sendResponse({ ok: false, error: getErrorMessage(error) }));
     return true;
   }
   if (message.action === 'abortRequest') {
@@ -85,7 +85,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === 'testChannel') {
-    handleTestChannel(message).then(sendResponse).catch((error) => sendResponse({ ok: false, error: String(error) }));
+    handleTestChannel(message).then(sendResponse).catch((error) => sendResponse({ ok: false, error: getErrorMessage(error) }));
     return true;
   }
 
@@ -109,13 +109,14 @@ chrome.runtime.onConnect.addListener((port) => {
     if (message.action !== 'performAiAction') return;
 
     try {
+      const text = ensureNonEmptyText(message.text);
       const cfg = await readConfig(['channels', 'defaultModel', 'translateTargetLang', 'prevLanguage', 'promptTemplates', 'systemPrompt']);
       const pair = pickModelFromConfig(message.task, message.channel && message.model ? { channel: message.channel, model: message.model } : null, cfg);
       if (!pair) throw new Error('No available model');
       const channel = ensureChannel(cfg.channels, pair.channel);
       const targetLang = message.targetLang || cfg.translateTargetLang || 'zh-CN';
       const prevLang = message.prevLang || cfg.prevLanguage || 'en';
-      const { systemPrompt: taskSystemPrompt, userPrompt } = makePromptParts(message.task, message.text || '', targetLang, cfg.promptTemplates || {}, prevLang);
+      const { systemPrompt: taskSystemPrompt, userPrompt } = makePromptParts(message.task, text, targetLang, cfg.promptTemplates || {}, prevLang);
       const prompt = userPrompt;
       const context = message.context || undefined;
       const attachments = message.attachments || undefined;
@@ -143,7 +144,7 @@ chrome.runtime.onConnect.addListener((port) => {
       // 通知完成
       safePost({ type: 'done' });
     } catch (error: any) {
-      safePost({ type: 'error', error: String(error?.message || error) });
+      safePost({ type: 'error', error: getErrorMessage(error) });
     }
   });
 });
@@ -153,13 +154,14 @@ chrome.runtime.onConnect.addListener((port) => {
 // 非流式：已移除 handleStreamRequest
 
 async function handleLegacyAction(request: any) {
+  const text = ensureNonEmptyText(request.text);
   const cfg = await readConfig(['channels', 'defaultModel', 'translateTargetLang', 'prevLanguage', 'promptTemplates', 'systemPrompt']);
   const pair = pickModelFromConfig(request.task, request.channel && request.model ? { channel: request.channel, model: request.model } : null, cfg);
   if (!pair) throw new Error('No available model');
   const channel = ensureChannel(cfg.channels, pair.channel);
   const targetLang = request.targetLang || cfg.translateTargetLang || 'zh-CN';
   const prevLang = request.prevLang || cfg.prevLanguage || 'en';
-  const { systemPrompt: taskSystemPrompt, userPrompt } = makePromptParts(request.task, request.text || '', targetLang, cfg.promptTemplates || {}, prevLang);
+  const { systemPrompt: taskSystemPrompt, userPrompt } = makePromptParts(request.task, text, targetLang, cfg.promptTemplates || {}, prevLang);
   const prompt = userPrompt;
   const context = request.context || undefined;
   const attachments = request.attachments || undefined;
@@ -184,6 +186,23 @@ async function handleLegacyAction(request: any) {
       if (reqId && abortControllers[reqId]) delete abortControllers[reqId];
     }
   }
+}
+
+function ensureNonEmptyText(text: unknown): string {
+  const normalized = String(text ?? '').trim();
+  if (!normalized) {
+    throw new Error('输入内容不能为空，请先输入文本后再试。');
+  }
+  return normalized;
+}
+
+function getErrorMessage(error: unknown): string {
+  if (typeof error === 'string') return error;
+  if (error && typeof error === 'object' && 'message' in error && typeof (error as any).message === 'string') {
+    const msg = (error as any).message.trim();
+    if (msg) return msg;
+  }
+  return String(error ?? '未知错误');
 }
 
 async function handleTestChannel(request: any) {
