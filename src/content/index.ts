@@ -6,7 +6,7 @@ const DOC_STYLE = `
 .ifocal-target-inline-wrapper{}
 .ifocal-tx{display:inline;overflow-wrap:anywhere;word-break:break-word;hyphens:auto}
 @keyframes ifocal-spin{to{transform:rotate(360deg)}}
-.ifocal-loading{width:16px;height:16px;border:2px solid rgba(15,23,42,0.18);border-top-color:#0f172a;border-radius:50%;animation:ifocal-spin .8s linear infinite;display:inline-block;vertical-align:middle;line-height:1;flex:0 0 auto}
+.ifocal-loading{width:12px;height:12px;border:2px solid rgba(15,23,42,0.18);border-top-color:#0f172a;border-radius:50%;animation:ifocal-spin .8s linear infinite;display:inline-block;vertical-align:middle;line-height:1;flex:0 0 auto}
 .ifocal-loading-wrap{display:flex;align-items:center;justify-content:center;min-height:56px}
 `;
 
