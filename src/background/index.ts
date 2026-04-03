@@ -121,6 +121,7 @@ chrome.runtime.onConnect.addListener((port) => {
       const prompt = userPrompt;
       const context = message.context || undefined;
       const enableReasoning = !!message.enableReasoning;
+      const reasoningEffort = normalizeReasoningEffort(message.reasoningEffort);
       const requestSystemPrompt = typeof message.systemPrompt === 'string' ? message.systemPrompt.trim() : '';
       const configSystemPrompt = typeof cfg.systemPrompt === 'string' ? cfg.systemPrompt.trim() : '';
       const systemPrompt = requestSystemPrompt || configSystemPrompt || taskSystemPrompt;
@@ -138,7 +139,7 @@ chrome.runtime.onConnect.addListener((port) => {
         (chunk: string) => {
           if (!portDisconnected) safePost({ type: 'chunk', content: chunk });
         },
-        { enableReasoning, shouldStop: () => portDisconnected, attachments, systemPrompt }
+        { enableReasoning, reasoningEffort, shouldStop: () => portDisconnected, attachments, systemPrompt }
       );
 
       // 通知完成
@@ -167,6 +168,7 @@ async function handleLegacyAction(request: any) {
   const context = request.context || undefined;
   const enableStreaming = request.enableStreaming || false;
   const enableReasoning = !!request.enableReasoning;
+  const reasoningEffort = normalizeReasoningEffort(request.reasoningEffort);
   const requestSystemPrompt = typeof request.systemPrompt === 'string' ? request.systemPrompt.trim() : '';
   const configSystemPrompt = typeof cfg.systemPrompt === 'string' ? cfg.systemPrompt.trim() : '';
   const systemPrompt = requestSystemPrompt || configSystemPrompt || taskSystemPrompt;
@@ -180,7 +182,13 @@ async function handleLegacyAction(request: any) {
   } else {
     // 非流式响应
     try {
-      const resultText = await invokeModel(channel, pair.model, prompt, context, false, undefined, { enableReasoning, signal: controller.signal, attachments, systemPrompt });
+      const resultText = await invokeModel(channel, pair.model, prompt, context, false, undefined, {
+        enableReasoning,
+        reasoningEffort,
+        signal: controller.signal,
+        attachments,
+        systemPrompt
+      });
       return { ok: true, result: resultText, channel: pair.channel, model: pair.model };
     } finally {
       if (reqId && abortControllers[reqId]) delete abortControllers[reqId];
@@ -447,6 +455,14 @@ function pickModelFromConfig(task: string, requestPair: any, cfg: any) {
 import { makeMessage, makePromptParts } from '@/shared/ai';
 import { channelContainsModelId, firstModelIdFromChannel, modelIdFromSpec } from '@/shared/model-utils';
 
+type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
+
+function normalizeReasoningEffort(value: unknown): ReasoningEffort {
+  const v = String(value || '').toLowerCase();
+  if (v === 'low' || v === 'medium' || v === 'high' || v === 'xhigh') return v;
+  return 'medium';
+}
+
 async function invokeModel(
   channel: any,
   model: string,
@@ -454,7 +470,7 @@ async function invokeModel(
   context?: Array<{ role: string; content: string; attachments?: any[] }>,
   stream: boolean = false,
   onChunk?: (chunk: string) => void,
-  opts?: { enableReasoning?: boolean; shouldStop?: () => boolean; signal?: AbortSignal; attachments?: any[]; systemPrompt?: string }
+  opts?: { enableReasoning?: boolean; reasoningEffort?: ReasoningEffort; shouldStop?: () => boolean; signal?: AbortSignal; attachments?: any[]; systemPrompt?: string }
 ) {
   if (!channel?.apiKey) throw new Error('Channel is missing API key');
   const systemPromptCompatMode = !!channel?.systemPromptCompatMode;
@@ -468,8 +484,9 @@ async function invokeModel(
 }
 
 // 基于模型名和开关注入“思考”相关参数（尽量兼容常见 OpenAI 兼容生态）
-function buildReasoningParams(model: string, enabled: boolean | undefined) {
+function buildReasoningParams(model: string, enabled: boolean | undefined, effort: ReasoningEffort = 'medium') {
   const m = (model || '').toLowerCase();
+  const normalizedEffort = normalizeReasoningEffort(effort);
   // 常见别名，未被识别的字段通常会被服务端忽略（OpenAI 兼容行为）
   const params: any = {
     enable_thinking: false,         // 通用开关
@@ -493,7 +510,7 @@ function buildReasoningParams(model: string, enabled: boolean | undefined) {
   params.enable_reasoning = true;  // 别名 
   params.enable_thoughts = true;   // Qwen/DashScope 常见命名
   // OpenAI o3 系列在 Responses API 支持 reasoning.effort，这里仅作为兼容字段透传
-  params.reasoning = { effort: 'high' };
+  params.reasoning = { effort: normalizedEffort };
   // GLM（智谱/ChatGLM）思考开关：官方文档为 thinking: { type: 'enabled' }
   if (m.includes('glm')) {
     params.thinking = { type: 'enabled' };
@@ -509,7 +526,7 @@ async function callOpenAI(
   context?: Array<{ role: string; content: string; attachments?: any[] }>,
   stream: boolean = false,
   onChunk?: (chunk: string) => void,
-  opts?: { enableReasoning?: boolean; shouldStop?: () => boolean; signal?: AbortSignal; attachments?: any[]; systemPrompt?: string },
+  opts?: { enableReasoning?: boolean; reasoningEffort?: ReasoningEffort; shouldStop?: () => boolean; signal?: AbortSignal; attachments?: any[]; systemPrompt?: string },
   systemPromptCompatMode: boolean = false
 ) {
   const url = joinBasePath(baseUrl || 'https://api.openai.com/v1', '/chat/completions');
@@ -600,7 +617,7 @@ async function callOpenAI(
   const body: any = { model, messages, temperature: 0.2, stream };
   // 注入"思考开关"相关参数（尽量兼容 OpenAI 兼容端）；OpenAI 官方 Chat Completions 会拒绝未知字段
   if (!model.includes("gpt")) {
-    Object.assign(body, buildReasoningParams(model, opts?.enableReasoning));
+    Object.assign(body, buildReasoningParams(model, opts?.enableReasoning, opts?.reasoningEffort));
   } else if (opts?.enableReasoning) {
     console.warn('[OpenAI] Chat Completions 不支持 reasoning 参数，已忽略 enableReasoning。');
   }

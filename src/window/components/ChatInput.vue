@@ -47,6 +47,18 @@
               </div>
               <Switch :model-value="enableReasoning" @update:modelValue="$emit('toggleReasoning', $event)" />
             </div>
+            <div :class="[
+              'overflow-hidden transition-all duration-200',
+              enableReasoning ? 'max-h-24 opacity-100 mt-1 mb-2' : 'max-h-0 opacity-0 py-0'
+            ]">
+              <div class="grid grid-cols-4" :class="[bgClass, blurClassSm, 'rounded-2xl']">
+                <Button v-for="item in reasoningEffortOptions" :key="item.value" variant="ghost" size="sm"
+                  @click="$emit('changeReasoningEffort', item.value)" class="h-7 text-xs px-0 rounded-2xl"
+                  :class="[item.value === reasoningEffort ? '!bg-black !text-white' : '']">
+                  {{ item.label }}
+                </Button>
+              </div>
+            </div>
             <!-- 启用上下文 -->
             <div class="py-1 flex items-center justify-between">
               <div class="flex items-center gap-2">
@@ -55,7 +67,7 @@
               </div>
               <Switch :model-value="enableContext" @update:modelValue="$emit('toggleContext', $event)" />
             </div>
-            <DropdownMenuSeparator/>
+            <DropdownMenuSeparator class="my-2" />
             <!-- 监听剪切板 -->
             <div class="py-1 flex items-center justify-between">
               <div class="flex items-center gap-2">
@@ -101,9 +113,8 @@
 
     <!-- 输入框容器 -->
     <div :class="['relative rounded-xl', bgClass, blurClass]">
-    <Textarea v-model="innerValue" v-autosize="8" :rows="2" placeholder="输入你想了解到内容"
-      class="resize-none rounded-xl pb-11" @keydown.enter.exact.prevent="trySend"
-      @paste="handlePaste" />
+      <Textarea v-model="innerValue" v-autosize="8" :rows="2" placeholder="输入你想了解到内容"
+        class="resize-none rounded-xl pb-11" @keydown.enter.exact.prevent="trySend" @paste="handlePaste" />
       <div class="absolute bottom-2 left-2 right-2 flex items-center justify-between pointer-events-none">
         <!-- 输入框功能区 -->
         <div class="flex items-center pointer-events-auto">
@@ -148,8 +159,8 @@
         <!-- 右侧：发送/停止按钮 -->
         <div class="flex gap-1 pointer-events-auto">
           <!-- 发送按钮 -->
-          <Button variant="ghost" size="icon" class="h-7 w-7 rounded-full !bg-slate-800 !text-white"
-            @click="trySend" v-show="canSend && !sending">
+          <Button variant="ghost" size="icon" class="h-7 w-7 rounded-full !bg-slate-800 !text-white" @click="trySend"
+            v-show="canSend && !sending">
             <Icon icon="ri:send-plane-2-fill" class="h-3 w-3" />
           </Button>
           <!-- 停止按钮 -->
@@ -171,6 +182,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Switch } from '@/components/ui/switch'
+import type { ReasoningEffort } from '@/shared/config'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -193,6 +205,7 @@ const props = defineProps<{
   task: 'translate' | 'summarize' | 'rewrite' | 'polish' | 'chat'
   enableStreaming: boolean
   enableReasoning: boolean
+  reasoningEffort: ReasoningEffort
   enableContext: boolean
   autoPasteGlobalAssistant: boolean
   enableFileUpload: boolean
@@ -208,6 +221,7 @@ const emit = defineEmits<{
   (e: 'changeTask', task: 'translate' | 'summarize' | 'rewrite' | 'polish' | 'chat'): void
   (e: 'toggleStreaming', checked: boolean): void
   (e: 'toggleReasoning', checked: boolean): void
+  (e: 'changeReasoningEffort', effort: ReasoningEffort): void
   (e: 'toggleContext', checked: boolean): void
   (e: 'toggleClipboardListening', checked: boolean): void
   (e: 'toggleFileUpload', checked: boolean): void
@@ -227,6 +241,12 @@ defineExpose({
 // 文件上传相关
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const attachments = ref<FileAttachment[]>([])
+const reasoningEffortOptions: Array<{ value: ReasoningEffort; label: string }> = [
+  { value: 'low', label: '低' },
+  { value: 'medium', label: '中' },
+  { value: 'high', label: '高' },
+  { value: 'xhigh', label: '超高' },
+]
 
 // 支持的文件类型
 const acceptedFileTypeList = [

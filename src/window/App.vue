@@ -175,10 +175,12 @@
       <!-- 底部操作区 -->
       <footer ref="footerEl" class="p-3 absolute left-0 right-0 bottom-0">
         <ChatInput ref="chatInputRef" v-model="state.text" :sending="isBusy" :task="state.task"
-          :enable-streaming="enableStreaming" :enable-reasoning="enableReasoning" :enable-context="enableContext"
+          :enable-streaming="enableStreaming" :enable-reasoning="enableReasoning" :reasoning-effort="reasoningEffort"
+          :enable-context="enableContext"
           :enable-file-upload="enableFileUpload" :auto-paste-global-assistant="autoPasteGlobalAssistant"
           :bg-class="bgClass" :blur-class="blurClass" @send="handleSend()" @stop="stopGenerating"
           @changeTask="changeTask" @toggleStreaming="toggleStreaming" @toggleReasoning="toggleReasoning"
+          @changeReasoningEffort="changeReasoningEffort"
           @toggleContext="toggleContext" @toggleClipboardListening="toggleClipboardListening"
           @toggleFileUpload="toggleFileUpload" @newChat="() => startNewChat(false)" />
       </footer>
@@ -221,7 +223,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Switch } from '@/components/ui/switch';
-import { SUPPORTED_LANGUAGES, SUPPORTED_TASKS, loadConfig, saveConfig, getTaskSettings, updateTaskSettings } from '@/shared/config';
+import { DEFAULT_REASONING_EFFORT, SUPPORTED_LANGUAGES, SUPPORTED_TASKS, loadConfig, saveConfig, getTaskSettings, updateTaskSettings, type ReasoningEffort } from '@/shared/config';
 import { modelIdFromSpec, parseModelSpec } from '@/shared/model-utils';
 import ModelSelect from './components/ModelSelect.vue';
 import LanguageSelect from './components/LanguageSelect.vue';
@@ -281,6 +283,7 @@ let saveSessionsTimer: ReturnType<typeof setTimeout> | null = null;
 const aiMessageElements = ref<HTMLElement[]>([]);
 const enableStreaming = ref(false);
 const enableReasoning = ref(false); // 思考模式
+const reasoningEffort = ref<ReasoningEffort>(DEFAULT_REASONING_EFFORT); // 思考等级
 const enableContext = ref(false); // 上下文
 const enableFileUpload = ref(false); // 文件上传
 const reduceVisualEffects = ref(false); // 减弱视觉效果配置
@@ -1156,6 +1159,7 @@ async function sendPreparedMessage(
   const contextCount = globalConfig.contextMessagesCount || 2;
   const enableContextFlag = enableContext.value;
   const enableReasoningFlag = enableReasoning.value;
+  const reasoningEffortFlag = reasoningEffort.value;
 
   // 添加用户消息到当前会话
   const safeAttachments = hasAttachments ? attachments : undefined;
@@ -1202,10 +1206,10 @@ async function sendPreparedMessage(
 
   // 如果启用流式，使用流式调用
   if (enableStreaming.value) {
-    await handleStreamingSend(text, pair, session, currentModelNameSnapshot, enableContextFlag, contextCount, enableReasoningFlag, requestStartAt, requestId, attachments);
+    await handleStreamingSend(text, pair, session, currentModelNameSnapshot, enableContextFlag, contextCount, enableReasoningFlag, reasoningEffortFlag, requestStartAt, requestId, attachments);
   } else {
     inflightRequestId = requestId;
-    await handleNonStreamingSend(text, pair, session, currentModelNameSnapshot, enableContextFlag, contextCount, enableReasoningFlag, requestStartAt, requestId, attachments);
+    await handleNonStreamingSend(text, pair, session, currentModelNameSnapshot, enableContextFlag, contextCount, enableReasoningFlag, reasoningEffortFlag, requestStartAt, requestId, attachments);
   }
 }
 
@@ -1218,11 +1222,21 @@ async function handleNonStreamingSend(
   enableContext: boolean,
   contextCount: number,
   enableReasoning: boolean,
+  reasoningEffort: ReasoningEffort,
   requestStartAt: number,
   requestId: string,
   attachments?: Message['attachments']
 ) {
-  const msg: any = { action: 'performAiAction', task: state.task, text, targetLang: state.targetLang, prevLang: state.prevLang, enableReasoning, requestId };
+  const msg: any = {
+    action: 'performAiAction',
+    task: state.task,
+    text,
+    targetLang: state.targetLang,
+    prevLang: state.prevLang,
+    enableReasoning,
+    reasoningEffort,
+    requestId
+  };
   if (pair) { msg.channel = pair.channel; msg.model = pair.model; }
 
   // 添加附件
@@ -1326,11 +1340,20 @@ async function handleStreamingSend(
   enableContext: boolean,
   contextCount: number,
   enableReasoning: boolean,
+  reasoningEffort: ReasoningEffort,
   requestStartAt: number,
   requestId: string,
   attachments?: Message['attachments']
 ) {
-  const msg: any = { action: 'performAiAction', task: state.task, text, targetLang: state.targetLang, prevLang: state.prevLang, enableReasoning };
+  const msg: any = {
+    action: 'performAiAction',
+    task: state.task,
+    text,
+    targetLang: state.targetLang,
+    prevLang: state.prevLang,
+    enableReasoning,
+    reasoningEffort
+  };
   if (pair) { msg.channel = pair.channel; msg.model = pair.model; }
 
   // 添加附件
@@ -1614,6 +1637,7 @@ async function changeTask(newTask: 'translate' | 'summarize' | 'rewrite' | 'poli
     const taskSettings = getTaskSettings(globalConfig, newTask);
     enableStreaming.value = taskSettings.enableStreaming;
     enableReasoning.value = taskSettings.enableReasoning;
+    reasoningEffort.value = taskSettings.reasoningEffort;
     enableContext.value = taskSettings.enableContext;
     enableFileUpload.value = taskSettings.enableFileUpload;
     console.log(`切换到任务 ${newTask}，功能开关已更新:`, taskSettings);
@@ -1739,6 +1763,16 @@ async function toggleReasoning(checked: boolean) {
   }
 }
 
+async function changeReasoningEffort(effort: ReasoningEffort) {
+  reasoningEffort.value = effort;
+  try {
+    await updateTaskSettings(state.task, { reasoningEffort: effort });
+    console.log(`任务 ${state.task} 的思考等级设置已保存:`, effort);
+  } catch (e) {
+    console.error('保存思考等级设置失败:', e);
+  }
+}
+
 
 async function toggleContext(checked: boolean) {
   enableContext.value = checked;
@@ -1805,6 +1839,7 @@ onMounted(async () => {
   const taskSettings = getTaskSettings(globalConfig, state.task);
   enableStreaming.value = taskSettings.enableStreaming;
   enableReasoning.value = taskSettings.enableReasoning;
+  reasoningEffort.value = taskSettings.reasoningEffort;
   enableContext.value = taskSettings.enableContext;
   enableFileUpload.value = taskSettings.enableFileUpload;
 
@@ -1823,6 +1858,7 @@ onMounted(async () => {
           const currentTaskSettings = newTaskSettings[state.task];
           enableStreaming.value = currentTaskSettings.enableStreaming ?? false;
           enableReasoning.value = currentTaskSettings.enableReasoning ?? false;
+          reasoningEffort.value = currentTaskSettings.reasoningEffort ?? DEFAULT_REASONING_EFFORT;
           enableContext.value = currentTaskSettings.enableContext ?? false;
           enableFileUpload.value = currentTaskSettings.enableFileUpload ?? false;
           console.log(`检测到任务 ${state.task} 的设置变化，已更新功能开关`);
@@ -1976,7 +2012,7 @@ onBeforeUnmount(() => {
 /* 行内代码样式（更大字号、更清晰的背景与圆角） */
 .prose code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: 0.93rem;
+  /* font-size: 0.93rem; */
   background-color: rgba(2, 6, 23, 0.06);
   /* slate-950 @ ~6% */
   padding: 0.15em 0.35em;

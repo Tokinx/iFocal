@@ -26,12 +26,16 @@ export const SUPPORTED_TASKS = [
   { value: 'summarize', label: '总结' }
 ];
 
+export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
+export const DEFAULT_REASONING_EFFORT: ReasoningEffort = 'medium';
+
 // 任务专属设置类型
 export interface TaskSettings {
   enableContext: boolean;      // 启用上下文
   enableStreaming: boolean;     // 启用流式响应
   enableReasoning: boolean;     // 启用思考模式
   enableFileUpload: boolean;    // 启用文件上传
+  reasoningEffort: ReasoningEffort; // 思考等级
 }
 
 // 默认任务设置（按任务类型）
@@ -40,21 +44,55 @@ export const DEFAULT_TASK_SETTINGS: Record<string, TaskSettings> = {
     enableContext: false,
     enableStreaming: false,
     enableReasoning: false,
-    enableFileUpload: false
+    enableFileUpload: false,
+    reasoningEffort: DEFAULT_REASONING_EFFORT
   },
   chat: {
     enableContext: true,
     enableStreaming: true,
     enableReasoning: false,
-    enableFileUpload: true
+    enableFileUpload: true,
+    reasoningEffort: DEFAULT_REASONING_EFFORT
   },
   summarize: {
     enableContext: false,
     enableStreaming: false,
     enableReasoning: true,
-    enableFileUpload: false
+    enableFileUpload: false,
+    reasoningEffort: DEFAULT_REASONING_EFFORT
   }
 };
+
+function normalizeReasoningEffort(value: unknown): ReasoningEffort {
+  const v = String(value || '').toLowerCase();
+  if (v === 'low' || v === 'medium' || v === 'high' || v === 'xhigh') {
+    return v;
+  }
+  return DEFAULT_REASONING_EFFORT;
+}
+
+function normalizeTaskSetting(task: string, raw: any): TaskSettings {
+  const fallback = DEFAULT_TASK_SETTINGS[task] || DEFAULT_TASK_SETTINGS.translate;
+  return {
+    enableContext: typeof raw?.enableContext === 'boolean' ? raw.enableContext : fallback.enableContext,
+    enableStreaming: typeof raw?.enableStreaming === 'boolean' ? raw.enableStreaming : fallback.enableStreaming,
+    enableReasoning: typeof raw?.enableReasoning === 'boolean' ? raw.enableReasoning : fallback.enableReasoning,
+    enableFileUpload: typeof raw?.enableFileUpload === 'boolean' ? raw.enableFileUpload : fallback.enableFileUpload,
+    reasoningEffort: normalizeReasoningEffort(raw?.reasoningEffort ?? fallback.reasoningEffort),
+  };
+}
+
+function normalizeTaskSettingsMap(raw: any): Record<string, TaskSettings> {
+  const source = typeof raw === 'object' && raw !== null ? raw : {};
+  const normalized: Record<string, TaskSettings> = {};
+  for (const task of Object.keys(DEFAULT_TASK_SETTINGS)) {
+    normalized[task] = normalizeTaskSetting(task, source[task]);
+  }
+  for (const task of Object.keys(source)) {
+    if (!normalized[task]) normalized[task] = normalizeTaskSetting(task, source[task]);
+  }
+  return normalized;
+}
 
 // 默认配置
 export const DEFAULT_CONFIG = {
@@ -151,9 +189,7 @@ export async function loadConfig(): Promise<typeof DEFAULT_CONFIG> {
             }
             // 特殊处理：确保 taskSettings 为对象
             else if (key === 'taskSettings') {
-              (config as any)[key] = typeof items[key] === 'object' && items[key] !== null
-                ? { ...DEFAULT_TASK_SETTINGS, ...items[key] }
-                : DEFAULT_TASK_SETTINGS;
+              (config as any)[key] = normalizeTaskSettingsMap(items[key]);
             }
             else {
               (config as any)[key] = items[key];
@@ -176,7 +212,8 @@ export async function loadConfig(): Promise<typeof DEFAULT_CONFIG> {
               enableContext: items.enableContext ?? DEFAULT_TASK_SETTINGS[task].enableContext,
               enableStreaming: items.enableStreaming ?? DEFAULT_TASK_SETTINGS[task].enableStreaming,
               enableReasoning: items.enableReasoning ?? DEFAULT_TASK_SETTINGS[task].enableReasoning,
-              enableFileUpload: items.enableFileUpload ?? DEFAULT_TASK_SETTINGS[task].enableFileUpload
+              enableFileUpload: items.enableFileUpload ?? DEFAULT_TASK_SETTINGS[task].enableFileUpload,
+              reasoningEffort: DEFAULT_TASK_SETTINGS[task].reasoningEffort
             };
           }
           config.taskSettings = migratedSettings;
@@ -222,14 +259,14 @@ export async function resetConfig(): Promise<void> {
 
 // 获取特定任务的设置
 export function getTaskSettings(config: typeof DEFAULT_CONFIG, task: string): TaskSettings {
-  return config.taskSettings[task] || DEFAULT_TASK_SETTINGS[task] || DEFAULT_TASK_SETTINGS.translate;
+  return normalizeTaskSetting(task, config.taskSettings?.[task]);
 }
 
 // 更新特定任务的设置
 export async function updateTaskSettings(task: string, settings: Partial<TaskSettings>): Promise<void> {
   const config = await loadConfig();
-  const currentTaskSettings = config.taskSettings[task] || DEFAULT_TASK_SETTINGS[task] || DEFAULT_TASK_SETTINGS.translate;
-  const updatedTaskSettings = { ...currentTaskSettings, ...settings };
+  const currentTaskSettings = normalizeTaskSetting(task, config.taskSettings?.[task]);
+  const updatedTaskSettings = normalizeTaskSetting(task, { ...currentTaskSettings, ...settings });
 
   return saveConfig({
     taskSettings: {
