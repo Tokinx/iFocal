@@ -1,6 +1,6 @@
 <template>
   <div ref="rootEl"
-    class="flex h-screen w-full flex-col bg-[#f3f3f3] bg-gradient-to-b from-[#f3f3f3] to-white text-foreground">
+    class="relative flex h-screen w-full flex-col bg-[#f3f3f3] bg-gradient-to-b from-[#f3f3f3] to-white text-foreground">
     <ScrollArea ref="messagesContainer" class="ifocal-scroll-style flex-1 px-4">
       <!-- 顶部工具栏 -->
       <header class="flex items-center gap-2 absolute top-0 left-0 right-0 p-3 z-10">
@@ -188,6 +188,18 @@
     <HistoryDrawer v-model:open="historyOpen" :sessions="sessions" :current-session-id="currentSessionId"
       :bg-class="bgClass" :blur-class="blurClass" @switchSession="switchSession" @deleteSession="deleteSession"
       @newChatFromDrawer="startNewChatFromDrawer" />
+
+    <Button
+      v-if="showScrollToBottomButton"
+      variant="outline"
+      size="icon"
+      :class="['absolute left-[50%] translate-x-[-50%] z-20 h-8 w-8 rounded-full shadow-md border-none', bgClass, blurClass]"
+      :style="{ bottom: 'var(--ifocal-bottom-gap, 150px)' }"
+      @click="handleScrollToBottomClick"
+      title="滚动到底部"
+    >
+      <Icon icon="ri:arrow-down-line" class="h-4 w-4" />
+    </Button>
   </div>
 </template>
 
@@ -281,6 +293,13 @@ let currentStreamingPort: chrome.runtime.Port | null = null;
 // 当前非流式请求 ID（用于中断）
 let inflightRequestId: string | null = null;
 const abortedRequests = new Set<string>();
+let boundScrollableEl: HTMLElement | null = null;
+let isProgrammaticScroll = false;
+let onInAppCopy: ((e: ClipboardEvent) => void) | null = null;
+
+const SCROLL_BOTTOM_THRESHOLD = 48;
+const autoScrollEnabled = ref(true);
+const showScrollToBottomButton = ref(false);
 
 // 综合忙碌状态：发送中或存在流式输出中的 AI 消息
 const isBusy = computed(() => {
@@ -303,6 +322,7 @@ function setBottomGap(px: number) {
   const el: any = messagesContainer.value as any;
   const host = el?.$el as HTMLElement | null;
   if (host) host.style.setProperty('--ifocal-bottom-gap', `${Math.max(0, Math.round(px))}px`);
+  if (rootEl.value) rootEl.value.style.setProperty('--ifocal-bottom-gap', `${Math.max(0, Math.round(px))}px`);
 }
 
 function updateBottomGap() {
@@ -434,12 +454,66 @@ function getScrollableElement(): HTMLElement | null {
   return scrollableEl as HTMLElement | null;
 }
 
+function distanceToBottom(scrollableEl: HTMLElement): number {
+  return scrollableEl.scrollHeight - (scrollableEl.scrollTop + scrollableEl.clientHeight);
+}
+
+function isNearBottom(scrollableEl: HTMLElement): boolean {
+  return distanceToBottom(scrollableEl) <= SCROLL_BOTTOM_THRESHOLD;
+}
+
+function syncScrollAutoState(scrollableEl?: HTMLElement | null) {
+  const el = scrollableEl || getScrollableElement();
+  if (!el) return;
+  const nearBottom = isNearBottom(el);
+  autoScrollEnabled.value = nearBottom;
+  showScrollToBottomButton.value = !nearBottom;
+}
+
+function onScrollableScroll() {
+  const el = boundScrollableEl;
+  if (!el || isProgrammaticScroll) return;
+  syncScrollAutoState(el);
+}
+
+function bindScrollableListener() {
+  nextTick(() => {
+    const el = getScrollableElement();
+    if (!el) return;
+    if (boundScrollableEl === el) {
+      syncScrollAutoState(el);
+      return;
+    }
+    if (boundScrollableEl) {
+      boundScrollableEl.removeEventListener('scroll', onScrollableScroll);
+    }
+    boundScrollableEl = el;
+    boundScrollableEl.addEventListener('scroll', onScrollableScroll, { passive: true });
+    syncScrollAutoState(boundScrollableEl);
+  });
+}
+
+function unbindScrollableListener() {
+  if (!boundScrollableEl) return;
+  boundScrollableEl.removeEventListener('scroll', onScrollableScroll);
+  boundScrollableEl = null;
+}
+
 // 滚动到底部
-function scrollToBottom() {
+function scrollToBottom(force = false) {
   nextTick(() => {
     const scrollableEl = getScrollableElement();
     if (scrollableEl) {
+      if (!force && !autoScrollEnabled.value) {
+        showScrollToBottomButton.value = true;
+        return;
+      }
+      isProgrammaticScroll = true;
       scrollableEl.scrollTop = scrollableEl.scrollHeight;
+      requestAnimationFrame(() => {
+        isProgrammaticScroll = false;
+        syncScrollAutoState(scrollableEl);
+      });
     } else {
       console.warn('未找到可滚动元素');
     }
@@ -453,11 +527,22 @@ function scrollToElement(element: HTMLElement, offsetTop = 60) {
     if (scrollableEl && element) {
       const elementTop = element.offsetTop;
       const targetScrollTop = elementTop - offsetTop;
+      isProgrammaticScroll = true;
       scrollableEl.scrollTop = targetScrollTop;
+      requestAnimationFrame(() => {
+        isProgrammaticScroll = false;
+        syncScrollAutoState(scrollableEl);
+      });
     } else {
       console.warn('未找到可滚动元素或目标元素');
     }
   });
+}
+
+function handleScrollToBottomClick() {
+  autoScrollEnabled.value = true;
+  showScrollToBottomButton.value = false;
+  scrollToBottom(true);
 }
 
 // 监听消息变化，智能滚动
@@ -728,7 +813,8 @@ function switchSession(sessionId: string) {
   lastAutoFilledClipboard = '';
 
   // 切换会话后滚动到底部
-  scrollToBottom();
+  autoScrollEnabled.value = true;
+  scrollToBottom(true);
 }
 
 function deleteSession(sessionId: string) {
@@ -1108,7 +1194,8 @@ async function sendPreparedMessage(
 
   // 确保骨架屏在可视区域内（在用户消息滚动后再次滚动）
   await nextTick();
-  scrollToBottom();
+  autoScrollEnabled.value = true;
+  scrollToBottom(true);
 
   // 保存当前选中的模型名称，避免回调时已切换模型
   const currentModelNameSnapshot = currentModelName.value;
@@ -1767,7 +1854,7 @@ onMounted(async () => {
   window.addEventListener('focus', windowFocusHandler);
   window.addEventListener('blur', windowBlurHandler);
   // 监听在助手页内的复制事件，抑制剪贴板回填
-  const onInAppCopy = (e: ClipboardEvent) => {
+  onInAppCopy = (e: ClipboardEvent) => {
     try {
       lastInAppCopiedText = String(window.getSelection()?.toString() ?? '').trim();
     } catch { lastInAppCopiedText = ''; }
@@ -1777,6 +1864,8 @@ onMounted(async () => {
   if (document.hasFocus() && autoPasteGlobalAssistant.value) {
     startClipboardMonitoring(true);
   }
+
+  bindScrollableListener();
 
   // 监听窗口关闭事件，确保保存会话
   window.addEventListener('beforeunload', () => {
@@ -1792,7 +1881,8 @@ onMounted(async () => {
 
   // 初始加载后滚动到底部
   setTimeout(() => {
-    scrollToBottom();
+    autoScrollEnabled.value = true;
+    scrollToBottom(true);
   }, 150);
 
   // 启动“思考用时”心跳，实时刷新
@@ -1829,7 +1919,11 @@ onBeforeUnmount(() => {
   // 组件卸载前保存会话
   saveSessions();
   // 移除 copy 监听
-  try { document.removeEventListener('copy', onInAppCopy as any); } catch { }
+  if (onInAppCopy) {
+    try { document.removeEventListener('copy', onInAppCopy); } catch { }
+    onInAppCopy = null;
+  }
+  unbindScrollableListener();
   if (footerResizeObserver) footerResizeObserver.disconnect();
   window.removeEventListener('resize', updateBottomGap);
   // 停止“思考用时”心跳
