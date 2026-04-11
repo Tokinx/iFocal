@@ -142,7 +142,7 @@ const SHADOW_STYLE = `
 .ifocal-dd-wrap{position:relative}
 .ifocal-dd-btn{height:28px;padding:0 10px;font-size:12px;border:none;border-radius:24px;background:rgba(0,0,0,0.05);color:#0f172a;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
 .ifocal-dd-btn::after{content:'▾';font-size: 14px;line-height: 1;opacity: .25;transform: scaleX(2);}
-.ifocal-dd-menu{position:absolute;top:110%;left:0;min-width:200px;max-height:300px;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;background:#fff;border-radius:10px;box-shadow:0 8px 24px rgba(15,23,42,.12);font-size:12px;padding:6px;z-index:3}
+.ifocal-dd-menu{position:absolute;top:110%;left:0;min-width:200px;max-height:240px;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;background:#fff;border-radius:10px;box-shadow:0 8px 24px rgba(15,23,42,.12);font-size:12px;padding:6px;z-index:3}
 .ifocal-dd-item{padding:8px 10px;border-radius:8px;cursor:pointer}
 .ifocal-dd-item:hover{background:rgba(15,23,42,.06)}
 .ifocal-dd-item .title{font-weight:600;line-height:1.1}
@@ -153,7 +153,6 @@ const SHADOW_STYLE = `
 .ifocal-overlay:hover .copy-btn{opacity:1}
 .ifocal-dot{position:absolute;width:10px;height:10px;border-radius:50%;background:#0f172a;opacity:.9;cursor:pointer;box-shadow:0 0 0 2px rgba(255,255,255,.9);z-index:2147483647;pointer-events:auto}
 @keyframes ifocal-shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
-.ifocal-skeleton-wrap{padding-top:6px}
 .ifocal-skeleton-line{height:12px;border-radius:6px;margin:10px 0;background:linear-gradient(90deg, rgba(15,23,42,0.08) 25%, rgba(15,23,42,0.14) 37%, rgba(15,23,42,0.08) 63%);background-size:400% 100%;animation:ifocal-shimmer 1.2s ease-in-out infinite}
 .hidden{display:none}
 ${DOC_STYLE}

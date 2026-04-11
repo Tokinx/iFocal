@@ -111,7 +111,7 @@ chrome.runtime.onConnect.addListener((port) => {
     try {
       const attachments = Array.isArray(message.attachments) ? message.attachments : undefined;
       const text = ensureTextOrAttachments(message.text, attachments);
-      const cfg = await readConfig(['channels', 'defaultModel', 'translateTargetLang', 'prevLanguage', 'promptTemplates', 'systemPrompt']);
+      const cfg = await readConfig(['channels', 'defaultModel', 'activeModel', 'translateTargetLang', 'prevLanguage', 'promptTemplates', 'systemPrompt']);
       const pair = pickModelFromConfig(message.task, message.channel && message.model ? { channel: message.channel, model: message.model } : null, cfg);
       if (!pair) throw new Error('No available model');
       const channel = ensureChannel(cfg.channels, pair.channel);
@@ -157,7 +157,7 @@ chrome.runtime.onConnect.addListener((port) => {
 async function handleLegacyAction(request: any) {
   const attachments = Array.isArray(request.attachments) ? request.attachments : undefined;
   const text = ensureTextOrAttachments(request.text, attachments);
-  const cfg = await readConfig(['channels', 'defaultModel', 'translateTargetLang', 'prevLanguage', 'promptTemplates', 'systemPrompt']);
+  const cfg = await readConfig(['channels', 'defaultModel', 'activeModel', 'translateTargetLang', 'prevLanguage', 'promptTemplates', 'systemPrompt']);
   const pair = pickModelFromConfig(request.task, request.channel && request.model ? { channel: request.channel, model: request.model } : null, cfg);
   if (!pair) throw new Error('No available model');
   const channel = ensureChannel(cfg.channels, pair.channel);
@@ -489,20 +489,24 @@ function buildReasoningParams(model: string, enabled: boolean | undefined, effor
   const normalizedEffort = normalizeReasoningEffort(effort);
   // 常见别名，未被识别的字段通常会被服务端忽略（OpenAI 兼容行为）
   const params: any = {
-    enable_thinking: false,         // 通用开关
-    enable_reasoning: false,        // 别名
-    enable_thoughts: false,         // Qwen/DashScope 常见命名
-    reasoning: { effort: 'low' },   // 对支持 reasoning.effort 的服务尽量降到最低（禁用与否取决于服务实现）
+    enable_thinking: undefined,         // 通用开关
+    enable_reasoning: undefined,        // 别名
+    enable_thoughts: undefined,         // Qwen/DashScope 常见命名
+    reasoning: undefined,               // 对支持 reasoning.effort 的服务尽量降到最低（禁用与否取决于服务实现）
+    reasoning_effort: undefined,        // 别名
   };
   // DeepSeek 特殊：通常 deepseek-reasoner 会默认返回 reasoning_content，这里显式开启亦可被忽略
   // Qwen：部分兼容端要求 enable_thoughts/enable_thinking
   if (m.includes('deepseek') || m.includes('qwen')) {
     params.model = model; // 不改模型，仅确保所有别名传递
   }
-  // 显式关闭：部分模型默认开启思考，需要传 false 才能关闭
+  // 显式关闭：部分模型默认开启思考，需要明确指定才能关闭
   if (!enabled) {
     if (m.includes('glm')) {
       params.thinking = { type: 'disabled' };
+    }
+    if (m.includes('qwen')) {
+      params.enable_thinking = false;
     }
     return params;
   }
@@ -511,6 +515,7 @@ function buildReasoningParams(model: string, enabled: boolean | undefined, effor
   params.enable_thoughts = true;   // Qwen/DashScope 常见命名
   // OpenAI o3 系列在 Responses API 支持 reasoning.effort，这里仅作为兼容字段透传
   params.reasoning = { effort: normalizedEffort };
+  params.reasoning_effort = normalizedEffort;
   // GLM（智谱/ChatGLM）思考开关：官方文档为 thinking: { type: 'enabled' }
   if (m.includes('glm')) {
     params.thinking = { type: 'enabled' };

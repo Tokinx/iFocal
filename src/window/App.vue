@@ -742,14 +742,38 @@ function getReasoningElapsedLabel(message: Message): string {
 }
 
 function keyOf(pair: Pair) {
-  return `${pair.channel}:${pair.model}`;
+  return JSON.stringify([String(pair.channel || ''), String(pair.model || '')]);
 }
 
 function parseKey(key: string): Pair | null {
   if (!key) return null;
-  const [channel, model] = key.split(':');
-  if (!channel || !model) return null;
-  return { channel, model };
+  const raw = String(key || '').trim();
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length === 2) {
+      const channel = String(parsed[0] || '').trim();
+      const model = String(parsed[1] || '').trim();
+      if (channel && model) return { channel, model };
+    }
+  } catch { }
+
+  const pipeIndex = raw.indexOf('|');
+  if (pipeIndex > 0) {
+    const channel = raw.slice(0, pipeIndex).trim();
+    const model = raw.slice(pipeIndex + 1).trim();
+    if (channel && model) return { channel, model };
+  }
+
+  const colonIndex = raw.indexOf(':');
+  if (colonIndex > 0) {
+    const channel = raw.slice(0, colonIndex).trim();
+    const model = raw.slice(colonIndex + 1).trim();
+    if (channel && model) return { channel, model };
+  }
+
+  return null;
 }
 
 function formatDate(timestamp: number) {
