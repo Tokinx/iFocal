@@ -132,20 +132,17 @@ function sharedApplyWrapperResult(wrapper: HTMLElement, text: string, targetLang
 let uiHost: HTMLElement | null = null;
 let uiShadow: ShadowRoot | null = null;
 const SHADOW_STYLE = `
-:host{ all: initial; }
-:host ::-webkit-scrollbar {width: 10px;height: 10px;}
-:host ::-webkit-scrollbar-thumb {background-color: #656D78;background-clip: padding-box;border: 3px solid transparent;border-radius:5px;}
 .ifocal-overlay{position:absolute;z-index:2147483647;max-width:420px;width:100%;background:rgba(255,255,255,0.88);border-radius:12px;box-shadow:0 12px 32px rgba(15,23,42,0.18);color:#0f172a;line-height:1.55;backdrop-filter:saturate(180%) blur(12px);-webkit-backdrop-filter:saturate(180%) blur(12px);pointer-events:auto}
 .ifocal-overlay-body{white-space:pre-wrap;max-height:50vh;overflow-y:auto;position:relative;padding:0 12px 12px;}
-.ifocal-overlay-header{cursor:move;display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;padding:12px 12px 0;}
+.ifocal-overlay-header{cursor:move;display:flex;align-items:center;justify-content:space-between;padding:12px;}
 .ifocal-header-left{display:flex;align-items:center;gap:8px}
 .ifocal-dd-wrap{position:relative}
 .ifocal-dd-btn{height:28px;padding:0 10px;font-size:12px;border:none;border-radius:24px;background:rgba(0,0,0,0.05);color:#0f172a;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
 .ifocal-dd-btn::after{content:'▾';font-size: 14px;line-height: 1;opacity: .25;transform: scaleX(2);}
-.ifocal-dd-menu{position:absolute;top:110%;left:0;min-width:200px;max-height:240px;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;background:#fff;border-radius:10px;box-shadow:0 8px 24px rgba(15,23,42,.12);font-size:12px;padding:6px;z-index:3}
-.ifocal-dd-item{padding:8px 10px;border-radius:8px;cursor:pointer}
+.ifocal-dd-menu{position:absolute;top:110%;left:0;max-width:200px;max-height:200px;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;background:#fff;border-radius:5px;box-shadow:0 8px 24px rgba(15,23,42,.12);font-size:12px;padding:5px 0;z-index:3}
+.ifocal-dd-item{padding: 0 10px;cursor: pointer;height: 32px;display: flex;align-items: center;}
 .ifocal-dd-item:hover{background:rgba(15,23,42,.06)}
-.ifocal-dd-item .title{font-weight:600;line-height:1.1}
+.ifocal-dd-item .title{font-weight: 600;white-space: nowrap;overflow: hidden;text-overflow: ellipsis;width: 100%;}
 .ifocal-dd-item .sub{opacity:.65;font-size:12px;line-height:1.1}
 .ifocal-close{height:28px;width:28px;border:none;border-radius:24px;background:unset;color:#6a6a6a;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
 .ifocal-close:hover{background:rgba(15,23,42,.06)}
@@ -154,6 +151,8 @@ const SHADOW_STYLE = `
 .ifocal-dot{position:absolute;width:10px;height:10px;border-radius:50%;background:#0f172a;opacity:.9;cursor:pointer;box-shadow:0 0 0 2px rgba(255,255,255,.9);z-index:2147483647;pointer-events:auto}
 @keyframes ifocal-shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
 .ifocal-skeleton-line{height:12px;border-radius:6px;margin:10px 0;background:linear-gradient(90deg, rgba(15,23,42,0.08) 25%, rgba(15,23,42,0.14) 37%, rgba(15,23,42,0.08) 63%);background-size:400% 100%;animation:ifocal-shimmer 1.2s ease-in-out infinite}
+.ifocal-skeleton-line:first-child{margin-top:0}
+.ifocal-skeleton-line:last-child{margin-bottom:0}
 .hidden{display:none}
 ${DOC_STYLE}
 `;
@@ -695,13 +694,13 @@ function showSelectionDot(rect: DOMRect) {
   try { hideSelectionDot(); } catch {}
   const dot = document.createElement('div');
   dot.className = 'ifocal-dot';
-  const left = Math.floor(rect.right + window.scrollX - 6);
+  const left = Math.floor(rect.right + window.scrollX - 12);
   const top = Math.floor(rect.top + window.scrollY - 12);
   dot.style.left = `${left}px`;
   dot.style.top = `${top}px`;
   const trigger = (ev: Event) => {
     ev.preventDefault(); ev.stopPropagation();
-    const overlay = createOverlayAt(left - 8, top + 16, 'skeleton');
+    const overlay = createOverlayAt(left, top + 16, 'skeleton');
     overlayAutoFollow = true;
     overlay.setLoading(true);
     chrome.storage.sync.get(['channels', 'defaultModel', 'translateTargetLang', 'prevLanguage'], (cfg: StorageConfig) => {
@@ -731,14 +730,14 @@ function updateSelectionDotPosition() {
     if (!lastSelectionText) return;
     const rect = getSelectionRect();
     if (!rect) { hideSelectionDot(); return; }
-    const left = Math.floor(rect.right + window.scrollX - 6);
+    const left = Math.floor(rect.right + window.scrollX - 12);
     const top = Math.floor(rect.top + window.scrollY - 12);
     if (selectionDot) {
       selectionDot.style.left = `${left}px`;
       selectionDot.style.top = `${top}px`;
     }
     if (overlayAutoFollow && lastOverlay?.root) {
-      lastOverlay.root.style.left = `${left - 8}px`;
+      lastOverlay.root.style.left = `${left}px`;
       lastOverlay.root.style.top = `${top + 16}px`;
     }
   });
