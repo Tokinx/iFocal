@@ -1,7 +1,8 @@
 <template>
   <div ref="rootEl"
     class="relative flex h-screen w-full flex-col bg-[#f3f3f3] bg-gradient-to-b from-[#f3f3f3] to-white text-foreground">
-    <ScrollArea ref="messagesContainer" class="ifocal-scroll-style flex-1 px-4">
+    <template v-if="viewMode === 'chat'">
+      <ScrollArea ref="messagesContainer" class="ifocal-scroll-style flex-1 px-4">
       <!-- 顶部工具栏 -->
       <header class="flex items-center gap-2 absolute top-0 left-0 right-0 p-3 z-10">
         <Button variant="ghost" size="icon" :class="['h-8 w-8 shrink-0 rounded-full', bgClass, blurClass]"
@@ -182,11 +183,11 @@
           @changeTask="changeTask" @toggleStreaming="toggleStreaming" @toggleReasoning="toggleReasoning"
           @changeReasoningEffort="changeReasoningEffort"
           @toggleContext="toggleContext" @toggleClipboardListening="toggleClipboardListening"
-          @toggleFileUpload="toggleFileUpload" @newChat="() => startNewChat(false)" />
+          @toggleFileUpload="toggleFileUpload" @newChat="() => startNewChat(false)"
+          @openSettings="openSettingsCenter" />
       </footer>
     </ScrollArea>
 
-    <!-- 历史会话抽屉 -->
     <HistoryDrawer v-model:open="historyOpen" :sessions="sessions" :current-session-id="currentSessionId"
       :bg-class="bgClass" :blur-class="blurClass" @switchSession="switchSession" @deleteSession="deleteSession"
       @newChatFromDrawer="startNewChatFromDrawer" />
@@ -202,6 +203,17 @@
     >
       <Icon icon="ri:arrow-down-line" class="h-4 w-4" />
     </Button>
+    </template>
+
+    <template v-else>
+      <div class="relative flex-1 min-h-0 overflow-auto">
+        <Button variant="ghost" size="icon" :class="['absolute left-3 top-3 z-20 h-8 w-8 shrink-0 rounded-full', bgClass, blurClass]"
+          @click="closeSettingsCenter">
+          <Icon icon="ri:arrow-left-line" class="h-5 w-5" />
+        </Button>
+        <WindowSettingsCenter />
+      </div>
+    </template>
   </div>
 </template>
 
@@ -210,25 +222,16 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, nextTick, t
 import { marked } from 'marked';
 import { Icon } from '@iconify/vue';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Textarea } from '@/components/ui/textarea';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Switch } from '@/components/ui/switch';
-import { DEFAULT_REASONING_EFFORT, SUPPORTED_LANGUAGES, SUPPORTED_TASKS, loadConfig, saveConfig, getTaskSettings, updateTaskSettings, type ReasoningEffort } from '@/shared/config';
+import { DEFAULT_REASONING_EFFORT, SUPPORTED_LANGUAGES, loadConfig, saveConfig, getTaskSettings, updateTaskSettings, type ReasoningEffort } from '@/shared/config';
 import { modelIdFromSpec, parseModelSpec } from '@/shared/model-utils';
 import ModelSelect from './components/ModelSelect.vue';
 import LanguageSelect from './components/LanguageSelect.vue';
 import ChatInput from './components/ChatInput.vue';
 import HistoryDrawer from './components/HistoryDrawer.vue';
+import WindowSettingsCenter from './components/WindowSettingsCenter.vue';
+
+const GLOBAL_WIN_VIEW_KEY = 'globalAssistantWindowRequestedView';
 
 type Pair = { channel: string; model: string };
 type Channel = { name: string; type: string; apiKey?: string; apiUrl?: string; models?: string[]; systemPromptCompatMode?: boolean };
@@ -270,6 +273,7 @@ const sending = ref(false);
 const rootEl = ref<HTMLElement | null>(null);
 const messagesContainer = ref<HTMLElement | null>(null);
 const historyOpen = ref(false);
+const viewMode = ref<'chat' | 'settings'>('chat');
 const isInitialLoad = ref(true);
 let clipboardWatcher: ReturnType<typeof setInterval> | null = null;
 let latestClipboardSnapshot = '';
@@ -288,6 +292,8 @@ const enableContext = ref(false); // 上下文
 const enableFileUpload = ref(false); // 文件上传
 const reduceVisualEffects = ref(false); // 减弱视觉效果配置
 const autoPasteGlobalAssistant = ref(false); // 全局助手：是否自动粘贴剪贴板
+const maxSessionsCount = ref(10);
+const contextMessagesCount = ref(2);
 const footerEl = ref<HTMLElement | null>(null);
 const chatInputRef = ref<InstanceType<typeof ChatInput> | null>(null);
 let footerResizeObserver: ResizeObserver | null = null;
@@ -796,6 +802,26 @@ function generateSessionTitle(firstMessage: string): string {
   return firstMessage.slice(0, 30) + (firstMessage.length > 30 ? '...' : '');
 }
 
+function normalizeMaxSessionsCount(value: unknown): number {
+  const count = Number(value);
+  return [10, 25, 50].includes(count) ? count : 10;
+}
+
+function normalizeContextMessagesCount(value: unknown): number {
+  const count = Number(value);
+  return [2, 6, 10].includes(count) ? count : 2;
+}
+
+function clampSessionsByMaxCount(limit = maxSessionsCount.value): boolean {
+  const maxCount = normalizeMaxSessionsCount(limit);
+  if (sessions.value.length <= maxCount) return false;
+  sessions.value = sessions.value.slice(0, maxCount);
+  if (!sessions.value.find((s: Session) => s.id === currentSessionId.value)) {
+    currentSessionId.value = sessions.value[0]?.id || '';
+  }
+  return true;
+}
+
 function startNewChat(autoRun = false) {
   const newSession: Session = {
     id: Date.now().toString(),
@@ -807,11 +833,7 @@ function startNewChat(autoRun = false) {
   };
   sessions.value.unshift(newSession);
 
-  // 限制会话数量（默认最多 50 个）
-  const maxCount = 50;
-  if (sessions.value.length > maxCount) {
-    sessions.value = sessions.value.slice(0, maxCount);
-  }
+  clampSessionsByMaxCount();
 
   currentSessionId.value = newSession.id;
   state.text = '';
@@ -870,6 +892,7 @@ function saveSessions() {
       // 页面卸载或扩展上下文失效时无需保存，避免抛错噪音
       return;
     }
+    clampSessionsByMaxCount();
     // 创建深拷贝以避免引用问题
     const sessionsToSave = JSON.parse(JSON.stringify(sessions.value));
     chrome.storage.local.set(
@@ -1640,6 +1663,26 @@ function retryMessage(messageIndex: number) {
   void sendPreparedMessage(retryText, retryAttachments);
 }
 
+async function consumeRequestedWindowView(requestedView?: unknown) {
+  if (requestedView !== 'settings') return;
+  viewMode.value = 'settings';
+  historyOpen.value = false;
+  try { await chrome.storage.local.remove([GLOBAL_WIN_VIEW_KEY]); } catch { }
+}
+
+function openSettingsCenter() {
+  viewMode.value = 'settings';
+  historyOpen.value = false;
+}
+
+function closeSettingsCenter() {
+  viewMode.value = 'chat';
+  nextTick(() => {
+    bindScrollableListener();
+    updateBottomGap();
+  });
+}
+
 async function changeTask(newTask: 'translate' | 'summarize' | 'rewrite' | 'polish' | 'chat') {
   if (state.task === newTask) return;
 
@@ -1827,7 +1870,6 @@ async function toggleClipboardListening(checked: boolean) {
     console.error('保存监听剪切板设置失败:', e);
   }
 
-  // 立即启停监听器
   if (checked && document.hasFocus()) {
     startClipboardMonitoring(true);
   } else {
@@ -1867,8 +1909,16 @@ onMounted(async () => {
   enableContext.value = taskSettings.enableContext;
   enableFileUpload.value = taskSettings.enableFileUpload;
 
+  maxSessionsCount.value = normalizeMaxSessionsCount(globalConfig.maxSessionsCount);
+  contextMessagesCount.value = normalizeContextMessagesCount(globalConfig.contextMessagesCount);
   reduceVisualEffects.value = globalConfig.reduceVisualEffects || false;
   autoPasteGlobalAssistant.value = !!globalConfig.autoPasteGlobalAssistant;
+  state.targetLang = globalConfig.translateTargetLang || 'zh-CN';
+  state.prevLang = globalConfig.prevLanguage || 'en';
+  if (clampSessionsByMaxCount()) {
+    saveSessions();
+    sessions.value = [...sessions.value];
+  }
 
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
@@ -1888,8 +1938,18 @@ onMounted(async () => {
           console.log(`检测到任务 ${state.task} 的设置变化，已更新功能开关`);
         }
       }
+      if (area === 'sync' && changes.maxSessionsCount) {
+        maxSessionsCount.value = normalizeMaxSessionsCount(changes.maxSessionsCount.newValue);
+        if (clampSessionsByMaxCount()) {
+          saveSessions();
+          sessions.value = [...sessions.value];
+        }
+      }
+      if (area === 'sync' && changes.contextMessagesCount) {
+        contextMessagesCount.value = normalizeContextMessagesCount(changes.contextMessagesCount.newValue);
+      }
       if (area === 'sync' && changes.reduceVisualEffects) {
-        reduceVisualEffects.value = changes.reduceVisualEffects.newValue || false;
+        reduceVisualEffects.value = !!changes.reduceVisualEffects.newValue;
       }
       if (area === 'sync' && changes.autoPasteGlobalAssistant) {
         autoPasteGlobalAssistant.value = !!changes.autoPasteGlobalAssistant.newValue;
@@ -1899,7 +1959,15 @@ onMounted(async () => {
           stopClipboardMonitoring();
         }
       }
+      if (area === 'local' && changes[GLOBAL_WIN_VIEW_KEY]) {
+        void consumeRequestedWindowView(changes[GLOBAL_WIN_VIEW_KEY].newValue);
+      }
     });
+  } catch { }
+
+  try {
+    const requested = await new Promise<any>((resolve) => chrome.storage.local.get([GLOBAL_WIN_VIEW_KEY], resolve));
+    await consumeRequestedWindowView(requested?.[GLOBAL_WIN_VIEW_KEY]);
   } catch { }
 
   windowFocusHandler = () => {

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "iFocal",
-  "version": "0.3.0",
+  "version": "0.3.2",
   "description": "iFocal assistant with selection/overlay translate and a global window, built with Vue + shadcn-vue.",
   "permissions": ["storage","clipboardRead"],
   "host_permissions": [
@@ -26,7 +26,6 @@
       "run_at": "document_idle"
     }
   ],
-  "options_page": "dist/options.html",
   "commands": {
     "open-global-window": {
       "suggested_key": {

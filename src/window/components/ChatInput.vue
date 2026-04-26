@@ -93,6 +93,11 @@
               </div>
               <Switch disabled />
             </div>
+            <DropdownMenuSeparator class="my-2" />
+            <DropdownMenuItem class="rounded-xl" @select.prevent="$emit('openSettings')">
+              <Icon icon="ri:settings-4-line" class="mr-2 h-4 w-4" />
+              设置中心
+            </DropdownMenuItem>
           </ScrollArea>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -226,6 +231,7 @@ const emit = defineEmits<{
   (e: 'toggleClipboardListening', checked: boolean): void
   (e: 'toggleFileUpload', checked: boolean): void
   (e: 'newChat'): void
+  (e: 'openSettings'): void
   (e: 'attachmentsChange', files: FileAttachment[]): void
 }>()
 

@@ -3,6 +3,7 @@ export { };
 let isOpeningGlobalWindow = false; // 打开全局窗口的重入保护
 // 全局助手窗口单例 ID 存储键
 const GLOBAL_WIN_KEY = 'globalAssistantWindowId';
+const GLOBAL_WIN_VIEW_KEY = 'globalAssistantWindowRequestedView';
 
 // 监听窗口关闭，若为全局助手，则清理存储的 ID
 // 非流式请求中断：为每个 requestId 维护 AbortController
@@ -86,6 +87,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.action === 'testChannel') {
     handleTestChannel(message).then(sendResponse).catch((error) => sendResponse({ ok: false, error: getErrorMessage(error) }));
+    return true;
+  }
+
+  if (message.action === 'openSettingsCenter') {
+    openOrFocusGlobalWindow({ openSettings: true }).then(() => sendResponse({ ok: true })).catch((error) => sendResponse({ ok: false, error: getErrorMessage(error) }));
     return true;
   }
 
@@ -838,10 +844,13 @@ async function callGemini(
   });
 }
 
-async function openOrFocusGlobalWindow() {
+async function openOrFocusGlobalWindow(options?: { openSettings?: boolean }) {
   if (isOpeningGlobalWindow) return;
   isOpeningGlobalWindow = true;
   try {
+    if (options?.openSettings) {
+      try { await chrome.storage.local.set({ [GLOBAL_WIN_VIEW_KEY]: 'settings' }); } catch { }
+    }
     const distUrl = chrome.runtime.getURL('dist/window.html');
     const altDistUrl = chrome.runtime.getURL('dist/src/window/index.html');
     // 先尝试通过已记录的窗口 ID 聚焦，确保单例

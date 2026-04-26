@@ -56,7 +56,6 @@ iFocal/
 ├── vite.config.ts           # Vite 多入口构建配置
 ├── tailwind.config.cjs      # Tailwind + shadcn 设计系统
 ├── tsconfig.json            # TypeScript 配置
-├── options.html             # 设置页入口
 ├── window.html              # 全局助手窗口入口
 └── src/
     ├── background/          # Service Worker（MV3 后台脚本）
@@ -64,13 +63,13 @@ iFocal/
     ├── content/             # 内容脚本（注入网页）
     │   └── index.ts         # 划词/悬浮翻译 UI、Shadow DOM 隔离
     ├── window/              # 全局助手窗口（Vue 3）
-    │   ├── App.vue          # 对话界面、思考模式、历史记录
+    │   ├── App.vue          # 对话界面与设置中心视图切换
     │   ├── main.ts          # 入口文件
     │   └── components/      # 窗口专用组件
-    ├── options/             # 设置页面（Vue 3）
-    │   ├── App.vue          # 设置主界面（多 tab 导航）
-    │   ├── main.ts          # 入口文件
-    │   └── composables/     # 可组合逻辑（useChannels、useTemplates）
+    ├── options/             # 兼容壳层与复用 composables
+    │   ├── App.vue          # 提示设置已迁移到助手窗口
+    │   ├── main.ts          # 兼容入口（待后续彻底清理）
+    │   └── composables/     # 仍被窗口设置中心复用的逻辑
     ├── sidebar/             # 共享 UI 注册与主题样式
     │   ├── plugins/ui.ts    # 注册通用 UI 组件
     │   └── styles.css       # 主题与工具类样式
@@ -122,18 +121,19 @@ iFocal/
 
 #### 1️⃣ 配置 AI 渠道
 
-首次使用需要配置 AI 渠道：
+首次使用需要先打开助手窗口中的设置中心完成渠道配置：
 
-1. 右键点击扩展图标 → 选项
-2. 进入"渠道管理"标签
-3. 点击"添加渠道"，填写信息：
+1. 点击扩展图标或按 `Ctrl+Shift+O` 打开全局助手窗口
+2. 点击输入框上方菜单中的"设置中心"
+3. 进入"渠道管理"分组，点击"添加渠道"
+4. 填写信息：
    - **类型**：选择 OpenAI / Google Gemini / OpenAI 兼容
    - **名称**：自定义渠道名称（如 "My GPT-4"）
    - **API URL**：API 端点地址（可选，使用默认地址）
    - **API Key**：你的 API 密钥
    - **Models**：支持的模型列表（每行一个，如 `gpt-4`）
-4. 点击"测试"按钮验证连通性
-5. 保存配置
+5. 点击"测试"按钮验证连通性
+6. 保存配置
 
 #### 2️⃣ 使用翻译功能
 
@@ -159,7 +159,7 @@ iFocal/
 
 ### 通用设置
 
-在设置页面可以配置以下选项：
+在助手窗口的设置中心中可以配置以下选项：
 
 #### 语言与任务
 - **目标语言**：翻译的默认目标语言（中文、英语、日语等）
@@ -191,8 +191,8 @@ iFocal/
 
 自定义译文显示样式：
 
-1. 进入"样式预设"标签
-2. 选择预设样式或创建自定义样式
+1. 进入助手窗口的设置中心
+2. 在通用设置中选择译文样式或切换到自定义 CSS 编辑
 3. 编辑 CSS 代码（支持实时预览）
 4. 保存应用
 
@@ -434,7 +434,7 @@ npm run ui:add:more
 - 查看 Service Worker 控制台的错误日志
 
 ### 3. 如何更换 API 端点？
-- 在设置页面编辑渠道的 API URL
+- 在助手窗口的设置中心编辑渠道的 API URL
 - OpenAI 兼容接口只需修改 baseURL 即可
 
 ### 4. 流式响应不生效？
