@@ -20,7 +20,7 @@
                   {{ formatDate(session.updatedAt) }}
                 </div>
               </div>
-              <Button variant="ghost" size="icon" class="h-6 w-6 shrink-0 hover:bg-zinc-200/80" @click.stop="$emit('deleteSession', session.id)">
+              <Button variant="outline" size="icon" class="h-6 w-6 shrink-0 hover:bg-zinc-200/80" @click.stop="$emit('deleteSession', session.id)">
                 <Icon icon="ri:delete-bin-line" class="h-4 w-4 text-muted-foreground" />
               </Button>
             </div>

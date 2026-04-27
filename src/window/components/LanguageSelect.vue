@@ -1,12 +1,12 @@
 <template>
   <DropdownMenu>
     <DropdownMenuTrigger as-child>
-      <Button variant="ghost" :class="['rounded-2xl h-8 shrink-0 px-3', bgClass, blurClass]">
+      <Button variant="outline" :class="['rounded-2xl h-8 shrink-0 px-3', bgClass, blurClass]">
         <span class="truncate text-sm">{{ currentLangLabel }}</span>
         <Icon icon="ri:arrow-down-s-line" class="h-8 w-8 shrink-0" />
       </Button>
     </DropdownMenuTrigger>
-    <DropdownMenuContent align="end" :class="['rounded-2xl border-none', bgClass, blurClass]">
+    <DropdownMenuContent align="end" :class="['rounded-2xl', bgClass, blurClass]">
       <DropdownMenuItem v-for="lang in supportedLanguages" :key="lang.value" @click="$emit('selectLanguage', lang.value)"
         class="rounded-xl cursor-pointer">
         {{ lang.label }}

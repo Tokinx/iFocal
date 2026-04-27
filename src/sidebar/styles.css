@@ -16,7 +16,8 @@
 }
 
 /* utility helpers built on CSS variables */
-.bg-background { background-color: var(--ifocal-window-background); }
+.basic-bg { background-color: var(--ifocal-window-background); }
+.bg-background { background-color: #fff; }
 .text-foreground { color: hsl(var(--foreground)); }
 .bg-popover { background-color: hsl(var(--popover)); }
 .text-popover-foreground { color: hsl(var(--popover-foreground)); }

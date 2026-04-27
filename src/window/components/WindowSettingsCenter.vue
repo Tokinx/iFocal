@@ -690,7 +690,7 @@ async function fetchAddFormModels() {
                 </Button>
                 <div class="flex-1">
                   <div class="font-medium inline-flex items-center gap-2">
-                    <Icon :icon="iconOfChannelType(ch.type)" width="16" />
+                    <!-- <Icon :icon="iconOfChannelType(ch.type)" width="16" /> -->
                     {{ ch.name || '未命名' }}
                   </div>
                   <div class="text-muted-foreground">{{ ch.type }} · {{ ch.apiUrl || '-' }}</div>

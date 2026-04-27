@@ -1,12 +1,12 @@
 <template>
   <DropdownMenu>
     <DropdownMenuTrigger as-child>
-      <Button variant="ghost" :class="['rounded-2xl justify-start truncate h-8 px-3', bgClass, blurClass]">
+      <Button variant="ghost" class="rounded-full justify-start truncate h-7 font-normal opacity-60 hover:opacity-100 gap-1 px-2">
         <span class="truncate text-sm">{{ currentModelName || 'GPT-5' }}</span>
-        <Icon icon="ri:arrow-down-s-line" class="h-8 w-8 shrink-0" />
+        <Icon icon="ri:arrow-down-s-line" class="h-7 w-7 shrink-0" />
       </Button>
     </DropdownMenuTrigger>
-    <DropdownMenuContent align="start" :class="['w-56 rounded-2xl border-none', bgClass, blurClass]">
+    <DropdownMenuContent align="start" :class="['w-56 rounded-2xl', bgClass, blurClass]">
       <ScrollArea class="h-80">
         <template v-for="(group, channelName, groupIndex) in groupedModels" :key="channelName">
           <DropdownMenuSeparator v-if="groupIndex" />

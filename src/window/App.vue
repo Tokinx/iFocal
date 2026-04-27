@@ -4,15 +4,10 @@
       <ScrollArea ref="messagesContainer" class="ifocal-scroll-style flex-1 px-4">
         <!-- 顶部工具栏 -->
         <header class="flex items-center gap-2 absolute top-0 left-0 right-0 p-3 z-10">
-          <Button variant="ghost" size="icon" :class="['h-8 w-8 shrink-0 rounded-full', bgClass, blurClass]"
+          <Button variant="outline" size="icon" :class="['h-8 w-8 shrink-0 rounded-full', bgClass, blurClass]"
             @click="historyOpen = true">
             <Icon icon="ri:menu-line" class="h-5 w-5" />
           </Button>
-
-          <!-- 模型选择 Dropdown -->
-          <ModelSelect :current-model-name="currentModelName" :grouped-models="groupedModels"
-            :selected-pair-key="selectedPairKey" :bg-class="bgClass" :blur-class="blurClass"
-            @selectModel="selectModel" />
 
           <div class="flex-1"></div>
 
@@ -179,7 +174,8 @@
             :enable-streaming="enableStreaming" :enable-reasoning="enableReasoning" :reasoning-effort="reasoningEffort"
             :enable-context="enableContext" :enable-file-upload="enableFileUpload"
             :auto-paste-global-assistant="autoPasteGlobalAssistant" :bg-class="bgClass" :blur-class="blurClass"
-            @send="handleSend()" @stop="stopGenerating" @changeTask="changeTask" @toggleStreaming="toggleStreaming"
+            :current-model-name="currentModelName" :grouped-models="groupedModels" :selected-pair-key="selectedPairKey"
+            @selectModel="selectModel" @send="handleSend()" @stop="stopGenerating" @changeTask="changeTask" @toggleStreaming="toggleStreaming"
             @toggleReasoning="toggleReasoning" @changeReasoningEffort="changeReasoningEffort"
             @toggleContext="toggleContext" @toggleClipboardListening="toggleClipboardListening"
             @toggleFileUpload="toggleFileUpload" @newChat="() => startNewChat(false)"
@@ -219,7 +215,6 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { DEFAULT_REASONING_EFFORT, SUPPORTED_LANGUAGES, loadConfig, saveConfig, getTaskSettings, updateTaskSettings, type ReasoningEffort } from '@/shared/config';
 import { modelIdFromSpec, parseModelSpec } from '@/shared/model-utils';
-import ModelSelect from './components/ModelSelect.vue';
 import LanguageSelect from './components/LanguageSelect.vue';
 import ChatInput from './components/ChatInput.vue';
 import HistoryDrawer from './components/HistoryDrawer.vue';

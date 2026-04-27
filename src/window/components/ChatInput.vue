@@ -2,19 +2,19 @@
   <div class="mx-auto max-w-[50rem] space-y-2">
     <!-- 快捷操作按钮 -->
     <div class="flex items-center gap-2">
-      <Button variant="ghost" size="sm" class="gap-1"
+      <Button variant="outline" size="sm" class="gap-1"
         :class="[bgClass, 'rounded-2xl', blurClassSm, { '!bg-slate-800/80 !text-white': task === 'translate' }]"
         @click="$emit('changeTask', 'translate')">
         <Icon icon="ri:translate-ai" class="h-4 w-4" />
         翻译
       </Button>
-      <Button variant="ghost" size="sm" class="gap-1"
+      <Button variant="outline" size="sm" class="gap-1"
         :class="[bgClass, 'rounded-2xl', blurClassSm, { '!bg-slate-800/80 !text-white': task === 'chat' }]"
         @click="$emit('changeTask', 'chat')">
         <Icon icon="ri:chat-ai-line" class="h-4 w-4" />
         聊天
       </Button>
-      <Button variant="ghost" size="sm" class="gap-1"
+      <Button variant="outline" size="sm" class="gap-1"
         :class="[bgClass, 'rounded-2xl', blurClassSm, { '!bg-slate-800/80 !text-white': task === 'summarize' }]"
         @click="$emit('changeTask', 'summarize')">
         <Icon icon="ri:quill-pen-ai-line" class="h-4 w-4" />
@@ -25,11 +25,11 @@
 
       <DropdownMenu>
         <DropdownMenuTrigger as-child>
-          <Button variant="ghost" size="icon" :class="['h-8 w-8 shrink-0 rounded-full', bgClass, blurClass]">
+          <Button variant="outline" size="icon" :class="['h-8 w-8 shrink-0 rounded-full', bgClass, blurClass]">
             <Icon icon="ri:apps-2-ai-line" class="h-5 w-5" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" :class="['w-56 rounded-2xl border-none', bgClass, blurClass]">
+        <DropdownMenuContent align="end" :class="['w-56 rounded-2xl', bgClass, blurClass]">
           <ScrollArea class="h-60 py-1 px-3">
             <!-- 流式开关 -->
             <div class="py-1 flex items-center justify-between">
@@ -52,7 +52,7 @@
               enableReasoning ? 'max-h-24 opacity-100 mt-1 mb-2' : 'max-h-0 opacity-0 py-0'
             ]">
               <div class="grid grid-cols-4" :class="[bgClass, blurClassSm, 'rounded-2xl']">
-                <Button v-for="item in reasoningEffortOptions" :key="item.value" variant="ghost" size="sm"
+                <Button v-for="item in reasoningEffortOptions" :key="item.value" variant="outline" size="sm"
                   @click="$emit('changeReasoningEffort', item.value)" class="h-7 text-xs px-0 rounded-2xl"
                   :class="[item.value === reasoningEffort ? '!bg-black !text-white' : '']">
                   {{ item.label }}
@@ -104,7 +104,7 @@
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger as-child>
-            <Button variant="ghost" size="icon" :class="['h-8 w-8 shrink-0 rounded-full', bgClass, blurClass]"
+            <Button variant="outline" size="icon" :class="['h-8 w-8 shrink-0 rounded-full', bgClass, blurClass]"
               @click="$emit('newChat')">
               <Icon icon="ri:pencil-ai-2-line" class="h-5 w-5" />
             </Button>
@@ -121,8 +121,16 @@
       <Textarea v-model="innerValue" v-autosize="8" :rows="2" placeholder="输入你想了解到内容"
         class="resize-none rounded-xl pb-11" @keydown.enter.exact.prevent="trySend" @paste="handlePaste" />
       <div class="absolute bottom-2 left-2 right-2 flex items-center justify-between pointer-events-none">
-        <!-- 输入框功能区 -->
         <div class="flex items-center pointer-events-auto">
+          <!-- 模型选择 Dropdown -->
+          <ModelSelect :current-model-name="currentModelName" :grouped-models="groupedModels"
+            :selected-pair-key="selectedPairKey" :bg-class="bgClass" :blur-class="blurClass"
+            @selectModel="selectModel" />
+        </div>
+
+        <div class="flex-1"></div>
+        <!-- 输入框功能区 -->
+        <div class="flex items-center pointer-events-auto mr-2">
           <!-- 附件预览区域 -->
           <div v-if="attachments.length > 0" class="flex flex-wrap gap-2">
             <div v-for="(file, idx) in attachments" :key="idx"
@@ -134,7 +142,7 @@
               <!-- 文件大小 -->
               <span class="text-xs text-muted-foreground">{{ formatFileSize(file.size) }}</span>
               <!-- 删除按钮 -->
-              <Button variant="ghost" size="icon"
+              <Button variant="outline" size="icon"
                 class="h-4 w-4 absolute -top-1 -right-1 rounded-full !bg-red-500 !text-white opacity-0 group-hover:opacity-100 transition-opacity"
                 @click="removeAttachment(idx)">
                 <Icon icon="ri:close-line" class="h-3 w-3" />
@@ -145,7 +153,7 @@
           <TooltipProvider v-else-if="enableFileUpload">
             <Tooltip>
               <TooltipTrigger as-child>
-                <Button variant="ghost" size="icon" class="h-7 w-7 rounded-full hover:bg-zinc-200/80 relative"
+                <Button variant="outline" size="icon" class="h-7 w-7 rounded-full hover:bg-zinc-200/80 relative"
                   @click="triggerFileInput">
                   <Icon icon="ri:attachment-2" class="h-4 w-4 text-muted-foreground" />
                   <input ref="fileInputRef" type="file" :accept="acceptedFileTypes" class="hidden"
@@ -158,8 +166,6 @@
             </Tooltip>
           </TooltipProvider>
         </div>
-
-        <div class="flex-1"></div>
 
         <!-- 右侧：发送/停止按钮 -->
         <div class="flex gap-1 pointer-events-auto">
@@ -188,6 +194,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Switch } from '@/components/ui/switch'
 import type { ReasoningEffort } from '@/shared/config'
+import ModelSelect from './ModelSelect.vue';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -214,6 +221,9 @@ const props = defineProps<{
   enableContext: boolean
   autoPasteGlobalAssistant: boolean
   enableFileUpload: boolean
+  currentModelName: string
+  groupedModels: Record<string, Array<{ key: string; model: string; channel: string }>>
+  selectedPairKey: string
   bgClass?: string
   blurClass?: string
   blurClassSm?: string
@@ -230,6 +240,7 @@ const emit = defineEmits<{
   (e: 'toggleContext', checked: boolean): void
   (e: 'toggleClipboardListening', checked: boolean): void
   (e: 'toggleFileUpload', checked: boolean): void
+  (e: 'selectModel', key: string): void
   (e: 'newChat'): void
   (e: 'openSettings'): void
   (e: 'attachmentsChange', files: FileAttachment[]): void
@@ -378,6 +389,10 @@ function trySend() {
   if (props.sending) return
   if (!canSend.value) return
   emit('send')
+}
+
+function selectModel(key: string) {
+  emit('selectModel', key)
 }
 
 // 本地 v-autosize 指令
