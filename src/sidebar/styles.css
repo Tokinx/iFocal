@@ -4,8 +4,19 @@
 
 /* shadcn-vue theme: new-york, color: slate, radius: 0.5 */
 
+/* window focus state colors */
+:root {
+  --ifocal-window-background-active: #e3e3e3;
+  --ifocal-window-background-inactive: #f4f4f4;
+  --ifocal-window-background: var(--ifocal-window-background-active);
+}
+
+:root.ifocal-window-inactive {
+  --ifocal-window-background: var(--ifocal-window-background-inactive);
+}
+
 /* utility helpers built on CSS variables */
-.bg-background { background-color: hsl(var(--background)); }
+.bg-background { background-color: var(--ifocal-window-background); }
 .text-foreground { color: hsl(var(--foreground)); }
 .bg-popover { background-color: hsl(var(--popover)); }
 .text-popover-foreground { color: hsl(var(--popover-foreground)); }

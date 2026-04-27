@@ -1,213 +1,207 @@
 <template>
-  <div ref="rootEl"
-    class="relative flex h-screen w-full flex-col bg-[#f3f3f3] bg-gradient-to-b from-[#f3f3f3] to-white text-foreground">
+  <div ref="rootEl" class="relative flex h-full w-full flex-col bg-white text-foreground rounded-sm">
     <template v-if="viewMode === 'chat'">
       <ScrollArea ref="messagesContainer" class="ifocal-scroll-style flex-1 px-4">
-      <!-- 顶部工具栏 -->
-      <header class="flex items-center gap-2 absolute top-0 left-0 right-0 p-3 z-10">
-        <Button variant="ghost" size="icon" :class="['h-8 w-8 shrink-0 rounded-full', bgClass, blurClass]"
-          @click="historyOpen = true">
-          <Icon icon="ri:menu-line" class="h-5 w-5" />
-        </Button>
+        <!-- 顶部工具栏 -->
+        <header class="flex items-center gap-2 absolute top-0 left-0 right-0 p-3 z-10">
+          <Button variant="ghost" size="icon" :class="['h-8 w-8 shrink-0 rounded-full', bgClass, blurClass]"
+            @click="historyOpen = true">
+            <Icon icon="ri:menu-line" class="h-5 w-5" />
+          </Button>
 
-        <!-- 模型选择 Dropdown -->
-        <ModelSelect :current-model-name="currentModelName" :grouped-models="groupedModels"
-          :selected-pair-key="selectedPairKey" :bg-class="bgClass" :blur-class="blurClass" @selectModel="selectModel" />
+          <!-- 模型选择 Dropdown -->
+          <ModelSelect :current-model-name="currentModelName" :grouped-models="groupedModels"
+            :selected-pair-key="selectedPairKey" :bg-class="bgClass" :blur-class="blurClass"
+            @selectModel="selectModel" />
 
-        <div class="flex-1"></div>
+          <div class="flex-1"></div>
 
-        <!-- 语言选择 Dropdown -->
-        <LanguageSelect :current-lang-label="currentLangLabel" :current-target-lang="state.targetLang"
-          :supported-languages="SUPPORTED_LANGUAGES" :bg-class="bgClass" :blur-class="blurClass"
-          @selectLanguage="selectLanguage" />
-      </header>
+          <!-- 语言选择 Dropdown -->
+          <LanguageSelect :current-lang-label="currentLangLabel" :current-target-lang="state.targetLang"
+            :supported-languages="SUPPORTED_LANGUAGES" :bg-class="bgClass" :blur-class="blurClass"
+            @selectLanguage="selectLanguage" />
+        </header>
 
-      <!-- 对话区域 -->
-      <div class="mx-auto max-w-[50rem] space-y-6 ">
-        <!-- 示例问题（仅在无对话时显示） -->
-        <div v-if="!currentSession.messages.length && !isBusy" class="space-y-4 mx-auto w-[80%] pt-[38%]">
-          <h2 class="text-center text-2xl font-medium text-muted-foreground">
-            有什么可以帮忙的？
-          </h2>
-        </div>
-
-        <!-- 对话历史 -->
-        <template v-for="(message, idx) in currentSession.messages" :key="idx">
-          <!-- 用户消息 -->
-          <div v-if="message.role === 'user'" class="flex justify-end">
-            <div class="group relative max-w-[80%]">
-              <!-- 附件预览 -->
-              <div v-if="message.attachments && message.attachments.length > 0"
-                :class="['space-y-2', { 'mb-2': message.content }]">
-                <div v-for="(att, attIdx) in message.attachments" :key="attIdx">
-                  <!-- 图片附件 -->
-                  <img v-if="att.type.startsWith('image/')" :src="att.data" :alt="att.name"
-                    class="max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
-                    @click="viewAttachment(att)" />
-                  <!-- 其他文件附件 -->
-                  <div v-else
-                    class="flex items-center gap-2 px-3 py-2 bg-white/60 rounded-lg border border-zinc-300 cursor-pointer hover:bg-white/80 transition-colors"
-                    @click="downloadAttachment(att)">
-                    <Icon :icon="getFileIcon(att.type)" class="h-5 w-5 text-muted-foreground shrink-0" />
-                    <div class="flex-1 min-w-0">
-                      <div class="text-sm font-medium truncate">{{ att.name }}</div>
-                      <div class="text-xs text-muted-foreground">{{ formatFileSize(att.size) }}</div>
-                    </div>
-                    <Icon icon="ri:download-line" class="h-4 w-4 text-muted-foreground" />
-                  </div>
-                </div>
-              </div>
-              <!-- 消息内容 -->
-              <div v-if="message.content" v-html="renderMarkdownSafe(message.content)"
-                class="rounded-xl !rounded-tr-none bg-zinc-200 px-4 py-3 text-foreground prose prose-sm max-w-none">
-              </div>
-              <!-- 重试按钮 - 左下角 -->
-              <Button variant="ghost" size="icon"
-                class="absolute -left-7 bottom-0 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400"
-                @click="retryMessage(idx)" title="重试">
-                <Icon icon="ri:restart-line" class="h-3 w-3" />
-              </Button>
-            </div>
+        <!-- 对话区域 -->
+        <div class="mx-auto max-w-[50rem] space-y-6 ">
+          <!-- 示例问题（仅在无对话时显示） -->
+          <div v-if="!currentSession.messages.length && !isBusy" class="space-y-4 mx-auto w-[80%] pt-[38%]">
+            <h2 class="text-center text-2xl font-medium text-muted-foreground">
+              有什么可以帮忙的？
+            </h2>
           </div>
 
-          <!-- AI 回复 -->
-          <div v-else :ref="el => setAiMessageRef(el, idx)" class="w-full group">
-            <div class="flex items-center justify-between">
-              <span class="text-xs font-medium text-muted-foreground">{{ message.modelName || 'Assistant' }}</span>
-              <div class="flex items-center gap-1">
-                <!-- 复制按钮 -->
+          <!-- 对话历史 -->
+          <template v-for="(message, idx) in currentSession.messages" :key="idx">
+            <!-- 用户消息 -->
+            <div v-if="message.role === 'user'" class="flex justify-end">
+              <div class="group relative max-w-[80%]">
+                <!-- 附件预览 -->
+                <div v-if="message.attachments && message.attachments.length > 0"
+                  :class="['space-y-2', { 'mb-2': message.content }]">
+                  <div v-for="(att, attIdx) in message.attachments" :key="attIdx">
+                    <!-- 图片附件 -->
+                    <img v-if="att.type.startsWith('image/')" :src="att.data" :alt="att.name"
+                      class="max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+                      @click="viewAttachment(att)" />
+                    <!-- 其他文件附件 -->
+                    <div v-else
+                      class="flex items-center gap-2 px-3 py-2 bg-white/60 rounded-lg border border-zinc-300 cursor-pointer hover:bg-white/80 transition-colors"
+                      @click="downloadAttachment(att)">
+                      <Icon :icon="getFileIcon(att.type)" class="h-5 w-5 text-muted-foreground shrink-0" />
+                      <div class="flex-1 min-w-0">
+                        <div class="text-sm font-medium truncate">{{ att.name }}</div>
+                        <div class="text-xs text-muted-foreground">{{ formatFileSize(att.size) }}</div>
+                      </div>
+                      <Icon icon="ri:download-line" class="h-4 w-4 text-muted-foreground" />
+                    </div>
+                  </div>
+                </div>
+                <!-- 消息内容 -->
+                <div v-if="message.content" v-html="renderMarkdownSafe(message.content)"
+                  class="rounded-xl !rounded-tr-none bg-zinc-200 px-4 py-3 text-foreground prose prose-sm max-w-none">
+                </div>
+                <!-- 重试按钮 - 左下角 -->
                 <Button variant="ghost" size="icon"
-                  class="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400"
-                  @click="copyMessage(message.content)" title="复制">
-                  <Icon icon="ri:file-copy-line" class="h-3 w-3" />
+                  class="absolute -left-7 bottom-0 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400"
+                  @click="retryMessage(idx)" title="重试">
+                  <Icon icon="ri:restart-line" class="h-3 w-3" />
                 </Button>
               </div>
             </div>
 
-            <div class="w-full">
-              <div v-if="message.isError" class="text-red-600">{{ message.content }}</div>
-              <div v-else-if="message.content">
-                <!-- 解析思考过程和答案 -->
-                <template v-if="getParsed(message, idx).reasoning">
-                  <template v-if="message.isStreaming && enableReasoning && !getParsed(message, idx).answer">
-                    <div class="flex items-center">
-                      <Button variant="ghost" size="xs" class="h-6 p-0 text-xs gap-1">
-                        <Icon icon="ri:lightbulb-line" class="h-4 w-4 text-muted-foreground" />
-                        <span class="text-xs text-muted-foreground shimmer-text">
-                          正在思考...
+            <!-- AI 回复 -->
+            <div v-else :ref="el => setAiMessageRef(el, idx)" class="w-full group">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-medium text-muted-foreground">{{ message.modelName || 'Assistant' }}</span>
+                <div class="flex items-center gap-1">
+                  <!-- 复制按钮 -->
+                  <Button variant="ghost" size="icon"
+                    class="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400"
+                    @click="copyMessage(message.content)" title="复制">
+                    <Icon icon="ri:file-copy-line" class="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+
+              <div class="w-full">
+                <div v-if="message.isError" class="text-red-600">{{ message.content }}</div>
+                <div v-else-if="message.content">
+                  <!-- 解析思考过程和答案 -->
+                  <template v-if="getParsed(message, idx).reasoning">
+                    <template v-if="message.isStreaming && enableReasoning && !getParsed(message, idx).answer">
+                      <div class="flex items-center">
+                        <Button variant="ghost" size="xs" class="h-6 p-0 text-xs gap-1">
+                          <Icon icon="ri:lightbulb-line" class="h-4 w-4 text-muted-foreground" />
+                          <span class="text-xs text-muted-foreground shimmer-text">
+                            正在思考...
+                          </span>
+                        </Button>
+                        <span class="ml-2 text-muted-foreground" v-if="getReasoningElapsedSeconds(message) > 0">
+                          {{ getReasoningElapsedLabel(message) }}s
                         </span>
-                      </Button>
-                      <span class="ml-2 text-muted-foreground" v-if="getReasoningElapsedSeconds(message) > 0">
-                        {{ getReasoningElapsedLabel(message) }}s
-                      </span>
+                      </div>
+                    </template>
+                    <template v-else>
+                      <div class="flex items-center">
+                        <Button variant="ghost" size="xs" class="group/inner h-6 p-0 text-xs gap-1"
+                          @click="message.reasoningCollapsed = !message.reasoningCollapsed">
+                          <div class="relative h-4 w-4">
+                            <Icon icon="ri:lightbulb-line"
+                              class="absolute left-0 top-0 opacity-100 group-hover/inner:opacity-0 h-4 w-4 text-muted-foreground transition-opacity" />
+                            <Icon :icon="message.reasoningCollapsed ? 'ri:arrow-down-s-line' : 'ri:arrow-up-s-line'"
+                              class="absolute left-0 top-0 opacity-0 group-hover/inner:opacity-100 h-4 w-4 transition-opacity" />
+                          </div>
+                          <span class="text-xs text-muted-foreground">
+                            思考过程
+                          </span>
+                        </Button>
+                        <span class="ml-2 text-muted-foreground" v-if="getReasoningElapsedSeconds(message) > 0">
+                          {{ getReasoningElapsedLabel(message) }}s
+                        </span>
+                      </div>
+                      <div v-if="!message.reasoningCollapsed"
+                        class="p-3 bg-white rounded-md prose prose-sm max-w-none !text-muted-foreground text-xs"
+                        v-html="renderMarkdown(getParsed(message, idx).reasoning)"></div>
+                    </template>
+                    <div v-if="getParsed(message, idx).answer" class="h-2"></div>
+                    <div class="prose prose-sm max-w-none" v-html="renderMarkdown(getParsed(message, idx).answer)">
                     </div>
+                  </template>
+                  <!-- 普通消息（没有思考过程） -->
+                  <div v-else class="prose prose-sm max-w-none" v-html="renderMarkdown(message.content)"></div>
+                </div>
+                <div v-else>
+                  <template v-if="enableReasoning">
+                    <Button variant="ghost" size="xs" class="h-6 p-0 text-xs gap-1">
+                      <Icon icon="ri:lightbulb-line" class="h-4 w-4 text-muted-foreground" />
+                      <span class="text-xs text-muted-foreground shimmer-text">
+                        正在思考...
+                      </span>
+                    </Button>
                   </template>
                   <template v-else>
-                    <div class="flex items-center">
-                      <Button variant="ghost" size="xs" class="group/inner h-6 p-0 text-xs gap-1"
-                        @click="message.reasoningCollapsed = !message.reasoningCollapsed">
-                        <div class="relative h-4 w-4">
-                          <Icon icon="ri:lightbulb-line"
-                            class="absolute left-0 top-0 opacity-100 group-hover/inner:opacity-0 h-4 w-4 text-muted-foreground transition-opacity" />
-                          <Icon :icon="message.reasoningCollapsed ? 'ri:arrow-down-s-line' : 'ri:arrow-up-s-line'"
-                            class="absolute left-0 top-0 opacity-0 group-hover/inner:opacity-100 h-4 w-4 transition-opacity" />
-                        </div>
-                        <span class="text-xs text-muted-foreground">
-                          思考过程
-                        </span>
-                      </Button>
-                      <span class="ml-2 text-muted-foreground" v-if="getReasoningElapsedSeconds(message) > 0">
-                        {{ getReasoningElapsedLabel(message) }}s
-                      </span>
+                    <div class="space-y-3">
+                      <div class="h-3 w-2/3 rounded bg-muted-foreground/20 animate-pulse"></div>
+                      <div class="h-3 w-full rounded bg-muted-foreground/20 animate-pulse"></div>
+                      <div class="h-3 w-5/6 rounded bg-muted-foreground/20 animate-pulse"></div>
                     </div>
-                    <div v-if="!message.reasoningCollapsed"
-                      class="p-3 bg-white rounded-md prose prose-sm max-w-none !text-muted-foreground text-xs"
-                      v-html="renderMarkdown(getParsed(message, idx).reasoning)"></div>
                   </template>
-                  <div v-if="getParsed(message, idx).answer" class="h-2"></div>
-                  <div class="prose prose-sm max-w-none" v-html="renderMarkdown(getParsed(message, idx).answer)">
-                  </div>
-                </template>
-                <!-- 普通消息（没有思考过程） -->
-                <div v-else class="prose prose-sm max-w-none" v-html="renderMarkdown(message.content)"></div>
-              </div>
-              <div v-else>
-                <template v-if="enableReasoning">
-                  <Button variant="ghost" size="xs" class="h-6 p-0 text-xs gap-1">
-                    <Icon icon="ri:lightbulb-line" class="h-4 w-4 text-muted-foreground" />
-                    <span class="text-xs text-muted-foreground shimmer-text">
-                      正在思考...
-                    </span>
-                  </Button>
-                </template>
-                <template v-else>
-                  <div class="space-y-3">
-                    <div class="h-3 w-2/3 rounded bg-muted-foreground/20 animate-pulse"></div>
-                    <div class="h-3 w-full rounded bg-muted-foreground/20 animate-pulse"></div>
-                    <div class="h-3 w-5/6 rounded bg-muted-foreground/20 animate-pulse"></div>
-                  </div>
-                </template>
+                </div>
               </div>
             </div>
-          </div>
-        </template>
+          </template>
 
-        <!-- 加载状态（骨架屏/思考动画） -->
-        <div v-if="sending" class="w-full">
-          <div class="mb-2">
-            <span class="text-xs font-medium text-muted-foreground">{{ currentModelName || 'Assistant' }}</span>
-          </div>
+          <!-- 加载状态（骨架屏/思考动画） -->
+          <div v-if="sending" class="w-full">
+            <div class="mb-2">
+              <span class="text-xs font-medium text-muted-foreground">{{ currentModelName || 'Assistant' }}</span>
+            </div>
 
-          <div class="w-full">
-            <template v-if="enableReasoning">
-              <div class="text-sm text-muted-foreground shimmer-text">正在思考...</div>
-            </template>
-            <template v-else>
-              <div class="space-y-3">
-                <div class="h-3 w-2/3 rounded bg-muted-foreground/20 animate-pulse"></div>
-                <div class="h-3 w-full rounded bg-muted-foreground/20 animate-pulse"></div>
-                <div class="h-3 w-5/6 rounded bg-muted-foreground/20 animate-pulse"></div>
-              </div>
-            </template>
+            <div class="w-full">
+              <template v-if="enableReasoning">
+                <div class="text-sm text-muted-foreground shimmer-text">正在思考...</div>
+              </template>
+              <template v-else>
+                <div class="space-y-3">
+                  <div class="h-3 w-2/3 rounded bg-muted-foreground/20 animate-pulse"></div>
+                  <div class="h-3 w-full rounded bg-muted-foreground/20 animate-pulse"></div>
+                  <div class="h-3 w-5/6 rounded bg-muted-foreground/20 animate-pulse"></div>
+                </div>
+              </template>
+            </div>
           </div>
         </div>
-      </div>
 
-      <!-- 底部操作区 -->
-      <footer ref="footerEl" class="p-3 absolute left-0 right-0 bottom-0">
-        <ChatInput ref="chatInputRef" v-model="state.text" :sending="isBusy" :task="state.task"
-          :enable-streaming="enableStreaming" :enable-reasoning="enableReasoning" :reasoning-effort="reasoningEffort"
-          :enable-context="enableContext"
-          :enable-file-upload="enableFileUpload" :auto-paste-global-assistant="autoPasteGlobalAssistant"
-          :bg-class="bgClass" :blur-class="blurClass" @send="handleSend()" @stop="stopGenerating"
-          @changeTask="changeTask" @toggleStreaming="toggleStreaming" @toggleReasoning="toggleReasoning"
-          @changeReasoningEffort="changeReasoningEffort"
-          @toggleContext="toggleContext" @toggleClipboardListening="toggleClipboardListening"
-          @toggleFileUpload="toggleFileUpload" @newChat="() => startNewChat(false)"
-          @openSettings="openSettingsCenter" />
-      </footer>
-    </ScrollArea>
+        <!-- 底部操作区 -->
+        <footer ref="footerEl" class="p-3 absolute left-0 right-0 bottom-0">
+          <ChatInput ref="chatInputRef" v-model="state.text" :sending="isBusy" :task="state.task"
+            :enable-streaming="enableStreaming" :enable-reasoning="enableReasoning" :reasoning-effort="reasoningEffort"
+            :enable-context="enableContext" :enable-file-upload="enableFileUpload"
+            :auto-paste-global-assistant="autoPasteGlobalAssistant" :bg-class="bgClass" :blur-class="blurClass"
+            @send="handleSend()" @stop="stopGenerating" @changeTask="changeTask" @toggleStreaming="toggleStreaming"
+            @toggleReasoning="toggleReasoning" @changeReasoningEffort="changeReasoningEffort"
+            @toggleContext="toggleContext" @toggleClipboardListening="toggleClipboardListening"
+            @toggleFileUpload="toggleFileUpload" @newChat="() => startNewChat(false)"
+            @openSettings="openSettingsCenter" />
+        </footer>
+      </ScrollArea>
 
-    <HistoryDrawer v-model:open="historyOpen" :sessions="sessions" :current-session-id="currentSessionId"
-      :bg-class="bgClass" :blur-class="blurClass" @switchSession="switchSession" @deleteSession="deleteSession"
-      @newChatFromDrawer="startNewChatFromDrawer" />
+      <HistoryDrawer v-model:open="historyOpen" :sessions="sessions" :current-session-id="currentSessionId"
+        :bg-class="bgClass" :blur-class="blurClass" @switchSession="switchSession" @deleteSession="deleteSession"
+        @newChatFromDrawer="startNewChatFromDrawer" />
 
-    <Button
-      v-if="showScrollToBottomButton"
-      variant="outline"
-      size="icon"
-      :class="['absolute left-[50%] translate-x-[-50%] z-20 h-8 w-8 rounded-full shadow-md border-none', bgClass, blurClass]"
-      :style="{ bottom: 'var(--ifocal-bottom-gap, 150px)' }"
-      @click="handleScrollToBottomClick"
-      title="滚动到底部"
-    >
-      <Icon icon="ri:arrow-down-line" class="h-4 w-4" />
-    </Button>
+      <Button v-if="showScrollToBottomButton" variant="outline" size="icon"
+        :class="['absolute left-[50%] translate-x-[-50%] z-20 h-8 w-8 rounded-full shadow-md border-none', bgClass, blurClass]"
+        :style="{ bottom: 'var(--ifocal-bottom-gap, 150px)' }" @click="handleScrollToBottomClick" title="滚动到底部">
+        <Icon icon="ri:arrow-down-line" class="h-4 w-4" />
+      </Button>
     </template>
 
     <template v-else>
       <div class="relative flex-1 min-h-0 overflow-auto">
-        <Button variant="ghost" size="icon" :class="['absolute left-3 top-3 z-20 h-8 w-8 shrink-0 rounded-full', bgClass, blurClass]"
+        <Button variant="ghost" size="icon"
+          :class="['absolute left-3 top-3 z-20 h-8 w-8 shrink-0 rounded-full', bgClass, blurClass]"
           @click="closeSettingsCenter">
           <Icon icon="ri:arrow-left-line" class="h-5 w-5" />
         </Button>
@@ -283,6 +277,7 @@ let clipboardPollPromise: Promise<void> | null = null;
 let clipboardErrorLogged = false;
 let windowFocusHandler: (() => void) | null = null;
 let windowBlurHandler: (() => void) | null = null;
+let visibilityChangeHandler: (() => void) | null = null;
 let saveSessionsTimer: ReturnType<typeof setTimeout> | null = null;
 const aiMessageElements = ref<HTMLElement[]>([]);
 const enableStreaming = ref(false);
@@ -430,6 +425,10 @@ watch(currentSessionId, () => {
 const blurClass = computed(() => reduceVisualEffects.value ? '' : 'backdrop-blur-md');
 const blurClassSm = computed(() => reduceVisualEffects.value ? '' : 'backdrop-blur-sm');
 const bgClass = computed(() => reduceVisualEffects.value ? 'bg-white' : 'bg-white/60');
+
+function syncWindowFocusClass() {
+  document.documentElement.classList.toggle('ifocal-window-inactive', !document.hasFocus());
+}
 
 // 获取可滚动元素
 function getScrollableElement(): HTMLElement | null {
@@ -1971,16 +1970,23 @@ onMounted(async () => {
   } catch { }
 
   windowFocusHandler = () => {
+    syncWindowFocusClass();
     if (autoPasteGlobalAssistant.value) {
       startClipboardMonitoring(true);
     }
   };
   windowBlurHandler = () => {
+    syncWindowFocusClass();
     stopClipboardMonitoring();
   };
+  visibilityChangeHandler = () => {
+    syncWindowFocusClass();
+  };
 
+  syncWindowFocusClass();
   window.addEventListener('focus', windowFocusHandler);
   window.addEventListener('blur', windowBlurHandler);
+  document.addEventListener('visibilitychange', visibilityChangeHandler);
   // 监听在助手页内的复制事件，抑制剪贴板回填
   onInAppCopy = (e: ClipboardEvent) => {
     try {
@@ -2038,6 +2044,11 @@ onBeforeUnmount(() => {
     window.removeEventListener('blur', windowBlurHandler);
     windowBlurHandler = null;
   }
+  if (visibilityChangeHandler) {
+    document.removeEventListener('visibilitychange', visibilityChangeHandler);
+    visibilityChangeHandler = null;
+  }
+  document.documentElement.classList.remove('ifocal-window-inactive');
   stopClipboardMonitoring();
   // 清理定时器
   if (saveSessionsTimer) {
