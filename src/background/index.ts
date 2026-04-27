@@ -893,8 +893,8 @@ async function openOrFocusGlobalWindow(options?: { openSettings?: boolean }) {
 
     const targetUrl = await pickExistingExtensionUrl(['dist/window.html', 'dist/src/window/index.html']);
     // 居中计算：基于最后聚焦的浏览器窗口
-    const width = 420;
-    const height = 640;
+    const width = 1280;
+    const height = 860;
     let left: number | undefined;
     let top: number | undefined;
     try {
