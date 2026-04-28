@@ -1,25 +1,10 @@
 <template>
   <div class="mx-auto max-w-[50rem] space-y-2">
-    <!-- 快捷操作按钮 -->
+    <!-- 顶部操作按钮 -->
     <div class="flex items-center gap-2">
-      <Button variant="outline" size="sm" class="gap-1"
-        :class="[bgClass, 'rounded-2xl', blurClassSm, { '!bg-slate-800/80 !text-white': task === 'translate' }]"
-        @click="$emit('changeTask', 'translate')">
-        <Icon icon="ri:translate-ai" class="h-4 w-4" />
-        翻译
-      </Button>
-      <Button variant="outline" size="sm" class="gap-1"
-        :class="[bgClass, 'rounded-2xl', blurClassSm, { '!bg-slate-800/80 !text-white': task === 'chat' }]"
-        @click="$emit('changeTask', 'chat')">
-        <Icon icon="ri:chat-ai-line" class="h-4 w-4" />
-        聊天
-      </Button>
-      <Button variant="outline" size="sm" class="gap-1"
-        :class="[bgClass, 'rounded-2xl', blurClassSm, { '!bg-slate-800/80 !text-white': task === 'summarize' }]"
-        @click="$emit('changeTask', 'summarize')">
-        <Icon icon="ri:quill-pen-ai-line" class="h-4 w-4" />
-        总结
-      </Button>
+      <!-- 模型选择 Dropdown -->
+      <ModelSelect :current-model-name="currentModelName" :grouped-models="groupedModels"
+        :selected-pair-key="selectedPairKey" :bg-class="bgClass" :blur-class="blurClass" @selectModel="selectModel" />
 
       <div class="flex-1"></div>
 
@@ -101,19 +86,6 @@
           </ScrollArea>
         </DropdownMenuContent>
       </DropdownMenu>
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger as-child>
-            <Button variant="outline" size="icon" :class="['h-8 w-8 shrink-0 rounded-full', bgClass, blurClass]"
-              @click="$emit('newChat')">
-              <Icon icon="ri:pencil-ai-2-line" class="h-5 w-5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>新会话</p>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
     </div>
 
     <!-- 输入框容器 -->
@@ -121,16 +93,8 @@
       <Textarea v-model="innerValue" v-autosize="8" :rows="2" placeholder="输入你想了解到内容"
         class="resize-none rounded-xl pb-11" @keydown.enter.exact.prevent="trySend" @paste="handlePaste" />
       <div class="absolute bottom-2 left-2 right-2 flex items-center justify-between pointer-events-none">
-        <div class="flex items-center pointer-events-auto">
-          <!-- 模型选择 Dropdown -->
-          <ModelSelect :current-model-name="currentModelName" :grouped-models="groupedModels"
-            :selected-pair-key="selectedPairKey" :bg-class="bgClass" :blur-class="blurClass"
-            @selectModel="selectModel" />
-        </div>
-
-        <div class="flex-1"></div>
         <!-- 输入框功能区 -->
-        <div class="flex items-center pointer-events-auto mr-2">
+        <div class="flex items-center pointer-events-auto">
           <!-- 附件预览区域 -->
           <div v-if="attachments.length > 0" class="flex flex-wrap gap-2">
             <div v-for="(file, idx) in attachments" :key="idx"
@@ -153,7 +117,7 @@
           <TooltipProvider v-else-if="enableFileUpload">
             <Tooltip>
               <TooltipTrigger as-child>
-                <Button variant="outline" size="icon" class="h-7 w-7 rounded-full hover:bg-zinc-200/80 relative"
+                <Button variant="ghost" size="icon" class="h-7 w-7 rounded-full hover:bg-zinc-200/80 relative"
                   @click="triggerFileInput">
                   <Icon icon="ri:attachment-2" class="h-4 w-4 text-muted-foreground" />
                   <input ref="fileInputRef" type="file" :accept="acceptedFileTypes" class="hidden"
@@ -166,6 +130,8 @@
             </Tooltip>
           </TooltipProvider>
         </div>
+
+        <div class="flex-1"></div>
 
         <!-- 右侧：发送/停止按钮 -->
         <div class="flex gap-1 pointer-events-auto">
@@ -199,7 +165,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
@@ -214,7 +179,6 @@ interface FileAttachment {
 const props = defineProps<{
   modelValue: string
   sending: boolean
-  task: 'translate' | 'summarize' | 'rewrite' | 'polish' | 'chat'
   enableStreaming: boolean
   enableReasoning: boolean
   reasoningEffort: ReasoningEffort
@@ -233,7 +197,6 @@ const emit = defineEmits<{
   (e: 'update:modelValue', v: string): void
   (e: 'send'): void
   (e: 'stop'): void
-  (e: 'changeTask', task: 'translate' | 'summarize' | 'rewrite' | 'polish' | 'chat'): void
   (e: 'toggleStreaming', checked: boolean): void
   (e: 'toggleReasoning', checked: boolean): void
   (e: 'changeReasoningEffort', effort: ReasoningEffort): void
@@ -241,7 +204,6 @@ const emit = defineEmits<{
   (e: 'toggleClipboardListening', checked: boolean): void
   (e: 'toggleFileUpload', checked: boolean): void
   (e: 'selectModel', key: string): void
-  (e: 'newChat'): void
   (e: 'openSettings'): void
   (e: 'attachmentsChange', files: FileAttachment[]): void
 }>()

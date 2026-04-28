@@ -10,6 +10,7 @@ import { loadGlossary, parseGlossaryMixedText, parseGlossaryTermsText, serialize
 import { loadSettingsSnapshot, downloadSettingsSnapshot, parseSettingsImportFile, saveSettingsSnapshot } from '@/shared/settings-import-export';
 import { buildStylePresetsCss, CUSTOM_STYLE_SELECTION, DEFAULT_WRAPPER_STYLE_NAME, mergeTargetStylePresets, parseStyleNameFromCss, resolveSelectedStylePresetCss, upsertCustomStylePreset } from '@/shared/style-presets';
 import { modelIdFromSpec, parseModelSpec } from '@/shared/model-utils';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 type ModelPair = { channel: string; model: string } | null;
 
@@ -632,28 +633,31 @@ async function fetchAddFormModels() {
 </script>
 
 <template>
-  <div class="min-h-screen flex text-foreground mx-auto max-w-6xl gap-4">
-    <!-- 左侧导航（sticky） -->
-    <aside class="min-h-screen w-40 shrink-0 sticky top-0 self-start">
-      <nav class="my-6 space-y-1">
-        <Button v-for="item in [
-          { id: 'settings', label: '通用设置' },
-          { id: 'channels', label: '渠道管理' },
-          { id: 'debug', label: '其它设置' },
-          { id: 'about', label: '关于插件' }
-        ] as Array<{ id: 'channels' | 'settings' | 'debug' | 'about'; label: string }>" :key="item.id" variant="ghost"
-          size="lg" class="w-full justify-start rounded-md px-3 py-2 text-sm flex items-center gap-2"
-          :class="nav === (item.id as any) ? 'bg-secondary' : ''" @click="nav = item.id as any">
-          <Icon :icon="iconOfNav(item.id)" width="16" class="opacity-80" />
-          <span>{{ item.label }}</span>
-        </Button>
-      </nav>
+  <div class="flex h-full min-h-0 w-full text-foreground">
+    <!-- 左侧导航 -->
+    <aside class="w-60 shrink-0 border-r p-4">
+      <div class="flex h-full min-h-0 flex-col gap-4">
+        <nav class="space-y-1 pt-12">
+          <Button v-for="item in [
+            { id: 'settings', label: '通用设置' },
+            { id: 'channels', label: '渠道管理' },
+            { id: 'debug', label: '其它设置' },
+            { id: 'about', label: '关于插件' }
+          ] as Array<{ id: 'channels' | 'settings' | 'debug' | 'about'; label: string }>" :key="item.id" variant="ghost"
+            class="w-full justify-start gap-2 rounded-lg hover:!bg-slate-900/10 text-slate-800/60"
+            :class="nav === (item.id as any) ? '!bg-slate-900/5 text-slate-800' : ''" @click="nav = item.id as any">
+            <Icon :icon="iconOfNav(item.id)" width="16" class="opacity-80" />
+            <span>{{ item.label }}</span>
+          </Button>
+        </nav>
+      </div>
     </aside>
 
     <!-- 右侧内容 -->
-    <main class="flex-1 py-6 space-y-6">
-      <!-- 渠道管理 -->
-      <section v-if="nav === 'channels'" :id="'opt-channels'" class="space-y-4">
+    <ScrollArea class="flex-1 min-h-0">
+      <main class="space-y-6 p-6">
+        <!-- 渠道管理 -->
+        <section v-if="nav === 'channels'" :id="'opt-channels'" class="space-y-4">
         <header class="flex items-center h-10 text-base font-semibold">
           <div class="shrink-0">渠道管理</div>
           <div class="w-full"></div>
@@ -1180,8 +1184,8 @@ async function fetchAddFormModels() {
 
       <!-- 快捷键菜单已移除，触发键移至通用设置“悬浮翻译”项 -->
 
-      <!-- 关于 -->
-      <section v-if="nav === 'about'" :id="'opt-about'" class="space-y-4">
+        <!-- 关于 -->
+        <section v-if="nav === 'about'" :id="'opt-about'" class="space-y-4">
         <header class="flex items-center h-10 text-base font-semibold">关于插件</header>
         <div class="space-y-3 text-sm">
           <div>版本：{{ version }}</div>
@@ -1191,8 +1195,9 @@ async function fetchAddFormModels() {
             <input ref="importerRef" type="file" accept="application/json" class="hidden" @change="onImportChange" />
           </div>
         </div>
-      </section>
-    </main>
+        </section>
+      </main>
+    </ScrollArea>
   </div>
 
   <!-- 添加渠道 Dialog -->

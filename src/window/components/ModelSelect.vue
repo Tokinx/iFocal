@@ -1,7 +1,7 @@
 <template>
   <DropdownMenu>
     <DropdownMenuTrigger as-child>
-      <Button variant="ghost" class="rounded-full justify-start truncate h-7 font-normal opacity-60 hover:opacity-100 gap-1 px-2">
+      <Button variant="outline" class="rounded-full justify-start truncate h-8 font-normal gap-1 px-3">
         <span class="truncate text-sm">{{ currentModelName || 'GPT-5' }}</span>
         <Icon icon="ri:arrow-down-s-line" class="h-7 w-7 shrink-0" />
       </Button>

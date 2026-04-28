@@ -1,16 +1,66 @@
 <template>
-  <div ref="rootEl" class="relative flex h-full w-full flex-col bg-white text-foreground rounded-sm">
+  <div ref="rootEl" class="relative flex h-full w-full text-foreground gap-4">
+    <!-- bg-[radial-gradient(circle_at_top_left,rgba(201,100,66,0.16),transparent_35%),radial-gradient(circle_at_bottom_right,rgba(20,20,19,0.08),transparent_30%)]  -->
     <template v-if="viewMode === 'chat'">
-      <ScrollArea ref="messagesContainer" class="ifocal-scroll-style flex-1 px-4">
-        <!-- 顶部工具栏 -->
-        <header class="flex items-center gap-2 absolute top-0 left-0 right-0 p-3 z-10">
-          <Button variant="outline" size="icon" :class="['h-8 w-8 shrink-0 rounded-full', bgClass, blurClass]"
-            @click="historyOpen = true">
-            <Icon icon="ri:menu-line" class="h-5 w-5" />
+      <aside class="w-60 shrink-0">
+        <div class="flex h-full min-h-0 flex-col gap-4">
+          <Button variant="outline" class="w-full justify-center gap-2 rounded-lg" @click="startNewChatFromAside">
+            <Icon icon="ri:pencil-ai-line" class="h-4 w-4" />
+            新会话
           </Button>
 
-          <div class="flex-1"></div>
+          <div class="space-y-1">
+            <Button v-for="item in sidebarTasks" :key="item.key" variant="ghost"
+              class="w-full justify-start gap-2 rounded-lg hover:!bg-slate-900/10 text-slate-800/60"
+              :class="state.task === item.key ? '!bg-slate-900/5 text-slate-800' : ''" @click="changeTask(item.key)">
+              <Icon :icon="item.icon" class="h-4 w-4" />
+              {{ item.label }}
+            </Button>
+          </div>
 
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-medium text-muted-foreground">历史会话</span>
+            <span class="text-xs text-muted-foreground">{{ sessions.length }}</span>
+          </div>
+          <ScrollArea class="min-h-0 flex-1 max-h-60">
+            <div class="space-y-1">
+              <div v-for="session in sessions" :key="session.id" role="button" tabindex="0"
+                class="group flex cursor-pointer items-start gap-1 text-left transition-opacity"
+                :class="currentSessionId === session.id ? 'opacity-100' : 'opacity-30'"
+                @click="switchSession(session.id)" @keydown.enter.prevent="switchSession(session.id)"
+                @keydown.space.prevent="switchSession(session.id)">
+                <div class="min-w-0 flex-1">
+                  <div class="truncate text-sm font-medium text-foreground">
+                    {{ session.title || '新对话' }}
+                  </div>
+                  <div class="text-[11px] text-muted-foreground">
+                    {{ formatDate(session.updatedAt) }}
+                  </div>
+                </div>
+                <Button variant="ghost" size="icon"
+                  class="h-5 w-5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+                  @click.stop="deleteSession(session.id)">
+                  <Icon icon="ri:delete-bin-line" class="!h-3 !w-3 text-muted-foreground" />
+                </Button>
+              </div>
+
+              <div v-if="sessions.length === 0" class="px-2 py-8 text-center text-sm text-muted-foreground">
+                暂无历史会话
+              </div>
+            </div>
+          </ScrollArea>
+          <div class="flex-1"></div>
+          <div class="space-y-2">
+            <Button variant="outline" class="w-full justify-center gap-2 rounded-lg" @click="openSettingsCenter">
+              <Icon icon="ri:settings-4-line" class="h-4 w-4" />
+              设置中心
+            </Button>
+          </div>
+        </div>
+      </aside>
+      <ScrollArea ref="messagesContainer" class="ifocal-scroll-style flex-1 px-4 bg-white rounded-md">
+        <!-- 顶部工具栏 -->
+        <header class="flex items-center justify-end absolute top-0 left-0 right-0 p-4 z-10">
           <!-- 语言选择 Dropdown -->
           <LanguageSelect :current-lang-label="currentLangLabel" :current-target-lang="state.targetLang"
             :supported-languages="SUPPORTED_LANGUAGES" :bg-class="bgClass" :blur-class="blurClass"
@@ -99,7 +149,7 @@
                     </template>
                     <template v-else>
                       <div class="flex items-center">
-                        <Button variant="ghost" size="xs" class="group/inner h-6 p-0 text-xs gap-1"
+                        <Button variant="ghost" size="xs" class="group/inner h-6 p-0 text-xs gap-1 hover:bg-transparent"
                           @click="message.reasoningCollapsed = !message.reasoningCollapsed">
                           <div class="relative h-4 w-4">
                             <Icon icon="ri:lightbulb-line"
@@ -116,7 +166,7 @@
                         </span>
                       </div>
                       <div v-if="!message.reasoningCollapsed"
-                        class="p-3 bg-white rounded-md prose prose-sm max-w-none !text-muted-foreground text-xs"
+                        class="p-3 bg-slate-800/5 rounded-md !rounded-tl-none prose prose-sm max-w-none !text-muted-foreground text-xs"
                         v-html="renderMarkdown(getParsed(message, idx).reasoning)"></div>
                     </template>
                     <div v-if="getParsed(message, idx).answer" class="h-2"></div>
@@ -169,23 +219,18 @@
         </div>
 
         <!-- 底部操作区 -->
-        <footer ref="footerEl" class="p-3 absolute left-0 right-0 bottom-0">
-          <ChatInput ref="chatInputRef" v-model="state.text" :sending="isBusy" :task="state.task"
-            :enable-streaming="enableStreaming" :enable-reasoning="enableReasoning" :reasoning-effort="reasoningEffort"
-            :enable-context="enableContext" :enable-file-upload="enableFileUpload"
-            :auto-paste-global-assistant="autoPasteGlobalAssistant" :bg-class="bgClass" :blur-class="blurClass"
-            :current-model-name="currentModelName" :grouped-models="groupedModels" :selected-pair-key="selectedPairKey"
-            @selectModel="selectModel" @send="handleSend()" @stop="stopGenerating" @changeTask="changeTask" @toggleStreaming="toggleStreaming"
+        <footer ref="footerEl" class="absolute left-0 right-0 bottom-0 p-4">
+          <ChatInput ref="chatInputRef" v-model="state.text" :sending="isBusy" :enable-streaming="enableStreaming"
+            :enable-reasoning="enableReasoning" :reasoning-effort="reasoningEffort" :enable-context="enableContext"
+            :enable-file-upload="enableFileUpload" :auto-paste-global-assistant="autoPasteGlobalAssistant"
+            :bg-class="bgClass" :blur-class="blurClass" :current-model-name="currentModelName"
+            :grouped-models="groupedModels" :selected-pair-key="selectedPairKey" @selectModel="selectModel"
+            @send="handleSend()" @stop="stopGenerating" @toggleStreaming="toggleStreaming"
             @toggleReasoning="toggleReasoning" @changeReasoningEffort="changeReasoningEffort"
             @toggleContext="toggleContext" @toggleClipboardListening="toggleClipboardListening"
-            @toggleFileUpload="toggleFileUpload" @newChat="() => startNewChat(false)"
-            @openSettings="openSettingsCenter" />
+            @toggleFileUpload="toggleFileUpload" @openSettings="openSettingsCenter" />
         </footer>
       </ScrollArea>
-
-      <HistoryDrawer v-model:open="historyOpen" :sessions="sessions" :current-session-id="currentSessionId"
-        :bg-class="bgClass" :blur-class="blurClass" @switchSession="switchSession" @deleteSession="deleteSession"
-        @newChatFromDrawer="startNewChatFromDrawer" />
 
       <Button v-if="showScrollToBottomButton" variant="outline" size="icon"
         :class="['absolute left-[50%] translate-x-[-50%] z-20 h-8 w-8 rounded-full shadow-md border-none', bgClass, blurClass]"
@@ -196,8 +241,8 @@
 
     <template v-else>
       <div class="relative flex-1 min-h-0 overflow-auto">
-        <Button variant="ghost" size="icon"
-          :class="['absolute left-3 top-3 z-20 h-8 w-8 shrink-0 rounded-full', bgClass, blurClass]"
+        <Button variant="outline" size="icon"
+          :class="['absolute left-4 top-4 z-20 h-8 w-8 shrink-0 rounded-full', bgClass, blurClass]"
           @click="closeSettingsCenter">
           <Icon icon="ri:arrow-left-line" class="h-5 w-5" />
         </Button>
@@ -217,7 +262,6 @@ import { DEFAULT_REASONING_EFFORT, SUPPORTED_LANGUAGES, loadConfig, saveConfig, 
 import { modelIdFromSpec, parseModelSpec } from '@/shared/model-utils';
 import LanguageSelect from './components/LanguageSelect.vue';
 import ChatInput from './components/ChatInput.vue';
-import HistoryDrawer from './components/HistoryDrawer.vue';
 import WindowSettingsCenter from './components/WindowSettingsCenter.vue';
 
 const GLOBAL_WIN_VIEW_KEY = 'globalAssistantWindowRequestedView';
@@ -251,6 +295,20 @@ interface Session {
   updatedAt: number;
 }
 
+const sidebarTasks: Array<{ key: Session['task']; label: string; icon: string }> = [
+  { key: 'chat', label: '聊天', icon: 'ri:chat-ai-line' },
+  { key: 'translate', label: '翻译', icon: 'ri:translate-ai' },
+  { key: 'summarize', label: '总结', icon: 'ri:quill-pen-ai-line' },
+];
+
+const taskLabelMap: Record<Session['task'], string> = {
+  chat: '聊天',
+  translate: '翻译',
+  summarize: '总结',
+  rewrite: '改写',
+  polish: '润色',
+};
+
 const modelPairs = ref<{ key: string; channel: string; model: string }[]>([]);
 // 为每个任务类型独立存储模型选择
 const selectedModelByTask = ref<Record<string, string>>({
@@ -261,7 +319,6 @@ const selectedModelByTask = ref<Record<string, string>>({
 const sending = ref(false);
 const rootEl = ref<HTMLElement | null>(null);
 const messagesContainer = ref<HTMLElement | null>(null);
-const historyOpen = ref(false);
 const viewMode = ref<'chat' | 'settings'>('chat');
 const isInitialLoad = ref(true);
 let clipboardWatcher: ReturnType<typeof setInterval> | null = null;
@@ -840,9 +897,10 @@ function startNewChat(autoRun = false) {
   }
 }
 
-function startNewChatFromDrawer() {
+function startNewChatFromAside() {
   startNewChat(false);
-  historyOpen.value = false;
+  autoScrollEnabled.value = true;
+  scrollToBottom(true);
 }
 
 function switchSession(sessionId: string) {
@@ -851,7 +909,6 @@ function switchSession(sessionId: string) {
   if (session) {
     state.task = session.task;
   }
-  historyOpen.value = false;
   state.text = '';
   lastAutoFilledClipboard = '';
 
@@ -1660,13 +1717,11 @@ function retryMessage(messageIndex: number) {
 async function consumeRequestedWindowView(requestedView?: unknown) {
   if (requestedView !== 'settings') return;
   viewMode.value = 'settings';
-  historyOpen.value = false;
   try { await chrome.storage.local.remove([GLOBAL_WIN_VIEW_KEY]); } catch { }
 }
 
 function openSettingsCenter() {
   viewMode.value = 'settings';
-  historyOpen.value = false;
 }
 
 function closeSettingsCenter() {
