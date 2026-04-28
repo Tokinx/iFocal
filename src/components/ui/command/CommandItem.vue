@@ -1,16 +1,18 @@
 <script setup lang="ts">
-import type { ListboxItemEmits, ListboxItemProps } from "reka-ui"
-import type { HTMLAttributes } from "vue"
-import { reactiveOmit, useCurrentElement } from "@vueuse/core"
-import { ListboxItem, useForwardPropsEmits, useId } from "reka-ui"
-import { computed, onMounted, onUnmounted, ref } from "vue"
-import { cn } from "@/lib/utils"
-import { useCommand, useCommandGroup } from "."
+import type { ListboxItemEmits, ListboxItemProps } from 'reka-ui'
 
-const props = defineProps<ListboxItemProps & { class?: HTMLAttributes["class"] }>()
+import type { HTMLAttributes } from 'vue'
+import { reactiveOmit, useCurrentElement } from '@vueuse/core'
+import { PhCheck } from '@phosphor-icons/vue'
+import { ListboxItem, useForwardPropsEmits, useId } from 'reka-ui'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { cn } from '@/lib/utils'
+import { useCommand, useCommandGroup } from '.'
+
+const props = defineProps<ListboxItemProps & { class?: HTMLAttributes['class'] }>()
 const emits = defineEmits<ListboxItemEmits>()
 
-const delegatedProps = reactiveOmit(props, "class")
+const delegatedProps = reactiveOmit(props, 'class')
 
 const forwarded = useForwardPropsEmits(delegatedProps, emits)
 
@@ -42,7 +44,7 @@ onMounted(() => {
     return
 
   // textValue to perform filter
-  allItems.value.set(id, currentElement.value.textContent ?? props?.value!.toString())
+  allItems.value.set(id, currentElement.value.textContent ?? (props.value?.toString() ?? ''))
 
   const groupId = groupContext?.id
   if (groupId) {
@@ -65,11 +67,13 @@ onUnmounted(() => {
     v-bind="forwarded"
     :id="id"
     ref="itemRef"
-    :class="cn('relative flex cursor-default gap-2 select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0', props.class)"
+    data-slot="command-item"
+    :class="cn('data-selected:bg-muted data-selected:text-foreground data-selected:**:[svg]:text-foreground relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none in-data-[slot=dialog-content]:rounded-lg! [&_svg:not([class*=size-])]:size-4 group/command-item data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0', props.class)"
     @select="() => {
       filterState.search = ''
     }"
   >
     <slot />
+    <PhCheck class="ml-auto opacity-0 group-has-data-[slot=command-shortcut]/command-item:hidden group-data-[checked=true]/command-item:opacity-100" />
   </ListboxItem>
 </template>
