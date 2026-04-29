@@ -9,18 +9,12 @@
 @custom-variant dark (&:is(.dark *));
 @config "../../tailwind.config.cjs";
 
-/* shadcn-vue theme: new-york, color: slate, radius: 0.5 */
-
-/* window focus state colors */
 :root {
-  --ifocal-window-background-active: #e3e3e3;
-  --ifocal-window-background-inactive: #f4f4f4;
-  --ifocal-window-background: var(--ifocal-window-background-active);
   --background: oklch(1 0 0);
   --foreground: oklch(0.153 0.006 107.1);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.153 0.006 107.1);
-  --popover: oklch(1 0 0);
+  --popover: oklch(100% 0.00011 271.152 / 0.6);
   --popover-foreground: oklch(0.153 0.006 107.1);
   --primary: oklch(0.228 0.013 107.4);
   --primary-foreground: oklch(0.988 0.003 106.5);
@@ -48,116 +42,6 @@
   --sidebar-accent-foreground: oklch(0.228 0.013 107.4);
   --sidebar-border: oklch(0.93 0.007 106.5);
   --sidebar-ring: oklch(0.737 0.021 106.9);
-}
-
-:root.ifocal-window-inactive {
-  --ifocal-window-background: var(--ifocal-window-background-inactive);
-}
-
-/* utility helpers built on CSS variables */
-.basic-bg {
-  background-color: var(--ifocal-window-background);
-}
-.bg-background {
-  background-color: #fff;
-}
-.text-foreground {
-  color: hsl(var(--foreground));
-}
-.bg-popover {
-  background-color: hsl(var(--popover));
-}
-.text-popover-foreground {
-  color: hsl(var(--popover-foreground));
-}
-.bg-primary {
-  background-color: hsl(var(--primary));
-}
-.text-primary-foreground {
-  color: hsl(var(--primary-foreground));
-}
-.text-muted-foreground {
-  color: hsl(var(--muted-foreground));
-}
-
-@layer base {
-  :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-    --primary: 240 5.9% 10%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 240 10% 3.9%;
-    --chart-1: 12 76% 61%;
-    --chart-2: 173 58% 39%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
-    --radius: 0;
-  }
-  .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 10% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 240 4.9% 83.9%;
-    --chart-1: 220 70% 50%;
-    --chart-2: 160 60% 45%;
-    --chart-3: 30 80% 55%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%;
-  }
-  * {
-    @apply border-border outline-ring/50;
-  }
-  body {
-    @apply bg-background text-foreground;
-    @apply font-sans;
-  }
-}
-
-@layer base {
-  * {
-    @apply border-border;
-  }
-  body {
-    @apply bg-background text-foreground;
-  }
-}
-
-/* AI 消息渲染内容：去除首尾多余外边距 */
-.ai-message > :first-child {
-  margin-top: 0;
-}
-.ai-message > :last-child {
-  margin-bottom: 0;
 }
 
 @theme inline {
@@ -194,10 +78,14 @@
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-xl: 0;
+  --radius-1xl: 0;
+  --radius-2xl: 0;
+  --radius-3xl: 0;
+  --radius-4xl: 0;
 }
 
 .dark {
@@ -232,4 +120,32 @@
   --sidebar-accent-foreground: oklch(0.988 0.003 106.5);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.58 0.031 107.3);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    font-family: "JetBrains Mono" !important;
+  }
+  /* utility helpers built on CSS variables */
+  .basic-bg {
+    background-color: #f4f4f0;
+  }
+  .bg-background {
+    background-color: #fff;
+  }
+  .text-foreground {
+    color: hsl(var(--foreground));
+  }
+  .bg-popover {
+    background-color: var(--popover) !important; /* 半透明 */
+    backdrop-filter: blur(12px);
+    padding: 4px;
+  }
+  [data-slot="switch"],
+  [data-slot="switch-thumb"] {
+    border-radius: var(--radius) !important;
+  }
 }

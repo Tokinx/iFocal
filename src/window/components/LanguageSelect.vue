@@ -1,14 +1,14 @@
 <template>
   <DropdownMenu>
     <DropdownMenuTrigger as-child>
-      <Button variant="outline" :class="['rounded-2xl h-8 shrink-0 px-3', bgClass, blurClass]">
+      <Button variant="outline" :class="[' h-8 shrink-0 px-3', bgClass, blurClass]">
         <span class="truncate text-sm">{{ currentLangLabel }}</span>
         <Icon icon="ri:arrow-down-s-line" class="h-8 w-8 shrink-0" />
       </Button>
     </DropdownMenuTrigger>
-    <DropdownMenuContent align="end" :class="['rounded-2xl', bgClass, blurClass]">
-      <DropdownMenuItem v-for="lang in supportedLanguages" :key="lang.value" @click="$emit('selectLanguage', lang.value)"
-        class="rounded-xl cursor-pointer">
+    <DropdownMenuContent align="end" :class="['', bgClass, blurClass]">
+      <DropdownMenuItem v-for="lang in supportedLanguages" :key="lang.value"
+        @click="$emit('selectLanguage', lang.value)" class=" cursor-pointer">
         {{ lang.label }}
         <Icon v-if="currentTargetLang === lang.value" icon="ri:check-line" class="ml-auto h-4 w-4" />
       </DropdownMenuItem>
@@ -38,4 +38,3 @@ defineEmits<{
   (e: 'selectLanguage', value: string): void
 }>()
 </script>
-

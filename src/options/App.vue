@@ -1,7 +1,7 @@
 <template>
   <div class="min-h-screen bg-background text-foreground">
     <main class="mx-auto flex min-h-screen max-w-2xl items-center px-6 py-12">
-      <div class="w-full rounded-2xl border bg-card p-8 shadow-sm">
+      <div class="w-full border bg-card p-8 shadow-sm">
         <div class="space-y-3">
           <h1 class="text-2xl font-semibold">设置已迁移到助手窗口</h1>
           <p class="text-sm text-muted-foreground">

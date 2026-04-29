@@ -1,6 +1,7 @@
 <template>
   <Sheet v-model:open="innerOpen">
-    <SheetContent side="right" :class="['w-80 flex flex-col rounded-md right-2 top-2 bottom-2 border !h-auto !p-3', bgClass, blurClass]">
+    <SheetContent side="right"
+      :class="['w-80 flex flex-col right-2 top-2 bottom-2 border !h-auto !p-3', bgClass, blurClass]">
       <SheetHeader>
         <SheetTitle class="text-lg font-medium">插件设置</SheetTitle>
         <SheetDescription>这是保留给助手窗口的轻量设置面板，完整配置统一在设置中心中维护。</SheetDescription>
@@ -36,7 +37,8 @@
                 <p class="text-xs text-muted-foreground">助手窗口最多保留的历史会话数</p>
               </div>
               <div class="w-28 shrink-0">
-                <Select :model-value="maxSessionsCount" @update:modelValue="$emit('update:maxSessionsCount', Number($event))">
+                <Select :model-value="maxSessionsCount"
+                  @update:modelValue="$emit('update:maxSessionsCount', Number($event))">
                   <SelectTrigger>
                     <SelectValue placeholder="数量" />
                   </SelectTrigger>
@@ -55,7 +57,8 @@
                 <p class="text-xs text-muted-foreground">开启上下文时携带最近 N 条消息</p>
               </div>
               <div class="w-28 shrink-0">
-                <Select :model-value="contextMessagesCount" @update:modelValue="$emit('update:contextMessagesCount', Number($event))">
+                <Select :model-value="contextMessagesCount"
+                  @update:modelValue="$emit('update:contextMessagesCount', Number($event))">
                   <SelectTrigger>
                     <SelectValue placeholder="数量" />
                   </SelectTrigger>
@@ -73,7 +76,8 @@
                 <div class="text-sm font-medium">减弱视觉效果</div>
                 <p class="text-xs text-muted-foreground">关闭毛玻璃效果以提升性能</p>
               </div>
-              <Switch :model-value="reduceVisualEffects" @update:modelValue="$emit('update:reduceVisualEffects', !!$event)" />
+              <Switch :model-value="reduceVisualEffects"
+                @update:modelValue="$emit('update:reduceVisualEffects', !!$event)" />
             </div>
 
             <div class="flex items-center justify-between gap-4">
@@ -81,7 +85,8 @@
                 <div class="text-sm font-medium">监听剪贴板</div>
                 <p class="text-xs text-muted-foreground">窗口聚焦时自动读取剪贴板内容</p>
               </div>
-              <Switch :model-value="autoPasteGlobalAssistant" @update:modelValue="$emit('update:autoPasteGlobalAssistant', !!$event)" />
+              <Switch :model-value="autoPasteGlobalAssistant"
+                @update:modelValue="$emit('update:autoPasteGlobalAssistant', !!$event)" />
             </div>
           </section>
         </div>

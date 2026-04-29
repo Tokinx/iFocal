@@ -6,99 +6,98 @@
       <ModelSelect :current-model-name="currentModelName" :grouped-models="groupedModels"
         :selected-pair-key="selectedPairKey" :bg-class="bgClass" :blur-class="blurClass" @selectModel="selectModel" />
 
-      <div class="flex-1"></div>
-
       <DropdownMenu>
         <DropdownMenuTrigger as-child>
-          <Button variant="outline" size="icon" :class="['h-8 w-8 shrink-0 rounded-full', bgClass, blurClass]">
+          <Button variant="outline" size="icon" :class="['h-8 w-8 shrink-0', bgClass, blurClass]">
             <Icon icon="ri:apps-2-ai-line" class="h-5 w-5" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" :class="['w-56 rounded-2xl', bgClass, blurClass]">
-          <ScrollArea class="h-60 py-1 px-3">
-            <!-- 流式开关 -->
-            <div class="py-1 flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <Icon icon="ri:dvd-ai-line" class="h-4 w-4" />
-                <span class="text-sm font-medium">流式响应</span>
+        <DropdownMenuContent align="end" :class="['w-56', bgClass, blurClass]">
+          <ScrollArea class="h-60 p-2">
+            <div class="space-y-3">
+              <!-- 流式开关 -->
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <Icon icon="ri:dvd-ai-line" class="h-4 w-4" />
+                  <span class="text-sm font-medium">流式响应</span>
+                </div>
+                <Switch :model-value="enableStreaming" @update:modelValue="$emit('toggleStreaming', $event)" />
               </div>
-              <Switch :model-value="enableStreaming" @update:modelValue="$emit('toggleStreaming', $event)" />
-            </div>
-            <!-- 思考模式 -->
-            <div class="py-1 flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <Icon icon="ri:lightbulb-ai-line" class="h-4 w-4" />
-                <span class="text-sm font-medium">思考模式</span>
+              <!-- 思考模式 -->
+              <div>
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <Icon icon="ri:lightbulb-ai-line" class="h-4 w-4" />
+                    <span class="text-sm font-medium">思考模式</span>
+                  </div>
+                  <Switch :model-value="enableReasoning" @update:modelValue="$emit('toggleReasoning', $event)" />
+                </div>
+                <div :class="[
+                  'overflow-hidden transition-all duration-200',
+                  enableReasoning ? 'max-h-24 opacity-100 mt-1' : 'max-h-0 opacity-0 py-0'
+                ]">
+                  <div class="grid grid-cols-4" :class="[bgClass]">
+                    <Button v-for="item in reasoningEffortOptions" :key="item.value" variant="ghost" size="sm"
+                      @click="$emit('changeReasoningEffort', item.value)" class="h-6 text-xs px-0"
+                      :class="[item.value === reasoningEffort ? '!bg-black !text-white' : '']">
+                      {{ item.label }}
+                    </Button>
+                  </div>
+                </div>
               </div>
-              <Switch :model-value="enableReasoning" @update:modelValue="$emit('toggleReasoning', $event)" />
-            </div>
-            <div :class="[
-              'overflow-hidden transition-all duration-200',
-              enableReasoning ? 'max-h-24 opacity-100 mt-1 mb-2' : 'max-h-0 opacity-0 py-0'
-            ]">
-              <div class="grid grid-cols-4" :class="[bgClass, blurClassSm, 'rounded-2xl']">
-                <Button v-for="item in reasoningEffortOptions" :key="item.value" variant="outline" size="sm"
-                  @click="$emit('changeReasoningEffort', item.value)" class="h-7 text-xs px-0 rounded-2xl"
-                  :class="[item.value === reasoningEffort ? '!bg-black !text-white' : '']">
-                  {{ item.label }}
-                </Button>
+              <!-- 启用上下文 -->
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <Icon icon="ri:message-ai-3-line" class="h-4 w-4" />
+                  <span class="text-sm font-medium">启用上下文</span>
+                </div>
+                <Switch :model-value="enableContext" @update:modelValue="$emit('toggleContext', $event)" />
+              </div>
+              <DropdownMenuSeparator class="my-2" />
+              <!-- 监听剪切板 -->
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <Icon icon="ri:file-ai-line" class="h-4 w-4" />
+                  <span class="text-sm font-medium">监听剪切板</span>
+                </div>
+                <Switch :model-value="autoPasteGlobalAssistant"
+                  @update:modelValue="$emit('toggleClipboardListening', $event)" />
+              </div>
+              <!-- 文件上传 -->
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <Icon icon="ri:attachment-2" class="h-4 w-4" />
+                  <span class="text-sm font-medium">文件上传</span>
+                </div>
+                <Switch :model-value="enableFileUpload" @update:modelValue="$emit('toggleFileUpload', $event)" />
+              </div>
+              <!-- 网络搜索（占位） -->
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <Icon icon="ri:search-ai-line" class="h-4 w-4" />
+                  <span class="text-sm font-medium">网络搜索</span>
+                </div>
+                <Switch disabled />
               </div>
             </div>
-            <!-- 启用上下文 -->
-            <div class="py-1 flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <Icon icon="ri:message-ai-3-line" class="h-4 w-4" />
-                <span class="text-sm font-medium">启用上下文</span>
-              </div>
-              <Switch :model-value="enableContext" @update:modelValue="$emit('toggleContext', $event)" />
-            </div>
-            <DropdownMenuSeparator class="my-2" />
-            <!-- 监听剪切板 -->
-            <div class="py-1 flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <Icon icon="ri:file-ai-line" class="h-4 w-4" />
-                <span class="text-sm font-medium">监听剪切板</span>
-              </div>
-              <Switch :model-value="autoPasteGlobalAssistant"
-                @update:modelValue="$emit('toggleClipboardListening', $event)" />
-            </div>
-            <!-- 文件上传 -->
-            <div class="py-1 flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <Icon icon="ri:attachment-2" class="h-4 w-4" />
-                <span class="text-sm font-medium">文件上传</span>
-              </div>
-              <Switch :model-value="enableFileUpload" @update:modelValue="$emit('toggleFileUpload', $event)" />
-            </div>
-            <!-- 网络搜索（占位） -->
-            <div class="py-1 flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <Icon icon="ri:search-ai-line" class="h-4 w-4" />
-                <span class="text-sm font-medium">网络搜索</span>
-              </div>
-              <Switch disabled />
-            </div>
-            <DropdownMenuSeparator class="my-2" />
-            <DropdownMenuItem class="rounded-xl" @select.prevent="$emit('openSettings')">
-              <Icon icon="ri:settings-4-line" class="mr-2 h-4 w-4" />
-              设置中心
-            </DropdownMenuItem>
           </ScrollArea>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <div class="flex-1"></div>
     </div>
 
     <!-- 输入框容器 -->
-    <div :class="['relative rounded-xl', bgClass, blurClass]">
+    <div :class="['relative', bgClass, blurClass]">
       <Textarea v-model="innerValue" v-autosize="8" :rows="2" placeholder="输入你想了解到内容"
-        class="resize-none rounded-xl pb-11" @keydown.enter.exact.prevent="trySend" @paste="handlePaste" />
+        class="resize-none pb-11 bg-transparent" @keydown.enter.exact.prevent="trySend" @paste="handlePaste" />
       <div class="absolute bottom-2 left-2 right-2 flex items-center justify-between pointer-events-none">
         <!-- 输入框功能区 -->
         <div class="flex items-center pointer-events-auto">
           <!-- 附件预览区域 -->
           <div v-if="attachments.length > 0" class="flex flex-wrap gap-2">
             <div v-for="(file, idx) in attachments" :key="idx"
-              class="relative group flex items-center gap-2 py-1 px-2 bg-white/60 rounded-full border border-zinc-200">
+              class="relative group flex items-center gap-2 py-1 px-2 bg-white/60 border border-zinc-200">
               <!-- 文件图标 -->
               <Icon :icon="getFileIcon(file.type)" class="h-4 w-4 text-muted-foreground shrink-0" />
               <!-- 文件名 -->
@@ -107,7 +106,7 @@
               <span class="text-xs text-muted-foreground">{{ formatFileSize(file.size) }}</span>
               <!-- 删除按钮 -->
               <Button variant="outline" size="icon"
-                class="h-4 w-4 absolute -top-1 -right-1 rounded-full !bg-red-500 !text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                class="h-4 w-4 absolute -top-1 -right-1 !bg-red-500 !text-white opacity-0 group-hover:opacity-100 transition-opacity"
                 @click="removeAttachment(idx)">
                 <Icon icon="ri:close-line" class="h-3 w-3" />
               </Button>
@@ -117,7 +116,7 @@
           <TooltipProvider v-else-if="enableFileUpload">
             <Tooltip>
               <TooltipTrigger as-child>
-                <Button variant="ghost" size="icon" class="h-7 w-7 rounded-full hover:bg-zinc-200/80 relative"
+                <Button variant="ghost" size="icon" class="h-7 w-7 hover:bg-zinc-200/80 relative"
                   @click="triggerFileInput">
                   <Icon icon="ri:attachment-2" class="h-4 w-4 text-muted-foreground" />
                   <input ref="fileInputRef" type="file" :accept="acceptedFileTypes" class="hidden"
@@ -136,13 +135,13 @@
         <!-- 右侧：发送/停止按钮 -->
         <div class="flex gap-1 pointer-events-auto">
           <!-- 发送按钮 -->
-          <Button variant="ghost" size="icon" class="h-7 w-7 rounded-full !bg-slate-800 !text-white" @click="trySend"
+          <Button variant="ghost" size="icon" class="h-7 w-7 !bg-amber-800 !text-white" @click="trySend"
             v-show="canSend && !sending">
             <Icon icon="ri:send-plane-2-fill" class="h-3 w-3" />
           </Button>
           <!-- 停止按钮 -->
-          <Button variant="ghost" size="icon" class="h-7 w-7 rounded-full !bg-slate-800 !text-white"
-            @click="$emit('stop')" v-show="sending">
+          <Button variant="ghost" size="icon" class="h-7 w-7 !bg-amber-800 !text-white" @click="$emit('stop')"
+            v-show="sending">
             <Icon icon="ri:stop-fill" class="h-3 w-3" />
           </Button>
         </div>
@@ -152,7 +151,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, type Directive } from 'vue'
+import { computed, defineAsyncComponent, nextTick, ref, type Directive } from 'vue'
 import { Icon } from '@iconify/vue'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -160,7 +159,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Switch } from '@/components/ui/switch'
 import type { ReasoningEffort } from '@/shared/config'
-import ModelSelect from './ModelSelect.vue';
+const ModelSelect = defineAsyncComponent(() => import('./ModelSelect.vue'))
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -204,7 +203,6 @@ const emit = defineEmits<{
   (e: 'toggleClipboardListening', checked: boolean): void
   (e: 'toggleFileUpload', checked: boolean): void
   (e: 'selectModel', key: string): void
-  (e: 'openSettings'): void
   (e: 'attachmentsChange', files: FileAttachment[]): void
 }>()
 

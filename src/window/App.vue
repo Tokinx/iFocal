@@ -1,313 +1,58 @@
 <template>
-  <div ref="rootEl" class="relative flex h-full w-full text-foreground gap-4">
-    <!-- bg-[radial-gradient(circle_at_top_left,rgba(201,100,66,0.16),transparent_35%),radial-gradient(circle_at_bottom_right,rgba(20,20,19,0.08),transparent_30%)]  -->
-    <template v-if="viewMode === 'chat'">
-      <aside class="w-60 shrink-0">
-        <div class="flex h-full min-h-0 flex-col gap-4">
-          <Button variant="outline" class="w-full justify-center gap-2 rounded-lg" @click="startNewChatFromAside">
-            <Icon icon="ri:pencil-ai-line" class="h-4 w-4" />
-            新会话
-          </Button>
+  <div ref="rootEl" class="relative flex h-full w-full text-foreground gap-2">
+    <WindowSidebar
+      :tasks="sidebarTasks"
+      :sessions="sessions"
+      :current-session-id="currentSessionId"
+      :active-route-name="currentRoute.name"
+      :format-date="formatDate"
+      @navigate="navigateTo"
+      @newChat="startNewChatFromAside"
+      @switchSession="switchSession"
+      @deleteSession="deleteSession"
+    />
 
-          <div class="space-y-1">
-            <Button v-for="item in sidebarTasks" :key="item.key" variant="ghost"
-              class="w-full justify-start gap-2 rounded-lg hover:!bg-slate-900/10 text-slate-800/60"
-              :class="state.task === item.key ? '!bg-slate-900/5 text-slate-800' : ''" @click="changeTask(item.key)">
-              <Icon :icon="item.icon" class="h-4 w-4" />
-              {{ item.label }}
-            </Button>
-          </div>
-
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-medium text-muted-foreground">历史会话</span>
-            <span class="text-xs text-muted-foreground">{{ sessions.length }}</span>
-          </div>
-          <ScrollArea class="min-h-0 flex-1 max-h-60">
-            <div class="space-y-1">
-              <div v-for="session in sessions" :key="session.id" role="button" tabindex="0"
-                class="group flex cursor-pointer items-start gap-1 text-left transition-opacity"
-                :class="currentSessionId === session.id ? 'opacity-100' : 'opacity-30'"
-                @click="switchSession(session.id)" @keydown.enter.prevent="switchSession(session.id)"
-                @keydown.space.prevent="switchSession(session.id)">
-                <div class="min-w-0 flex-1">
-                  <div class="truncate text-sm font-medium text-foreground">
-                    {{ session.title || '新对话' }}
-                  </div>
-                  <div class="text-[11px] text-muted-foreground">
-                    {{ formatDate(session.updatedAt) }}
-                  </div>
-                </div>
-                <Button variant="ghost" size="icon"
-                  class="h-5 w-5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
-                  @click.stop="deleteSession(session.id)">
-                  <Icon icon="ri:delete-bin-line" class="!h-3 !w-3 text-muted-foreground" />
-                </Button>
-              </div>
-
-              <div v-if="sessions.length === 0" class="px-2 py-8 text-center text-sm text-muted-foreground">
-                暂无历史会话
-              </div>
-            </div>
-          </ScrollArea>
-          <div class="flex-1"></div>
-          <div class="space-y-2">
-            <Button variant="outline" class="w-full justify-center gap-2 rounded-lg" @click="openSettingsCenter">
-              <Icon icon="ri:settings-4-line" class="h-4 w-4" />
-              设置中心
-            </Button>
-          </div>
-        </div>
-      </aside>
-      <ScrollArea ref="messagesContainer" class="ifocal-scroll-style flex-1 px-4 bg-white rounded-md">
-        <!-- 顶部工具栏 -->
-        <header class="flex items-center justify-end absolute top-0 left-0 right-0 p-4 z-10">
-          <!-- 语言选择 Dropdown -->
-          <LanguageSelect :current-lang-label="currentLangLabel" :current-target-lang="state.targetLang"
-            :supported-languages="SUPPORTED_LANGUAGES" :bg-class="bgClass" :blur-class="blurClass"
-            @selectLanguage="selectLanguage" />
-        </header>
-
-        <!-- 对话区域 -->
-        <div class="mx-auto max-w-[50rem] space-y-6 ">
-          <!-- 示例问题（仅在无对话时显示） -->
-          <div v-if="!currentSession.messages.length && !isBusy" class="space-y-4 mx-auto w-[80%] pt-[38%]">
-            <h2 class="text-center text-2xl font-medium text-muted-foreground">
-              有什么可以帮忙的？
-            </h2>
-          </div>
-
-          <!-- 对话历史 -->
-          <template v-for="(message, idx) in currentSession.messages" :key="idx">
-            <!-- 用户消息 -->
-            <div v-if="message.role === 'user'" class="flex justify-end">
-              <div class="group relative max-w-[80%]">
-                <!-- 附件预览 -->
-                <div v-if="message.attachments && message.attachments.length > 0"
-                  :class="['space-y-2', { 'mb-2': message.content }]">
-                  <div v-for="(att, attIdx) in message.attachments" :key="attIdx">
-                    <!-- 图片附件 -->
-                    <img v-if="att.type.startsWith('image/')" :src="att.data" :alt="att.name"
-                      class="max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
-                      @click="viewAttachment(att)" />
-                    <!-- 其他文件附件 -->
-                    <div v-else
-                      class="flex items-center gap-2 px-3 py-2 bg-white/60 rounded-lg border border-zinc-300 cursor-pointer hover:bg-white/80 transition-colors"
-                      @click="downloadAttachment(att)">
-                      <Icon :icon="getFileIcon(att.type)" class="h-5 w-5 text-muted-foreground shrink-0" />
-                      <div class="flex-1 min-w-0">
-                        <div class="text-sm font-medium truncate">{{ att.name }}</div>
-                        <div class="text-xs text-muted-foreground">{{ formatFileSize(att.size) }}</div>
-                      </div>
-                      <Icon icon="ri:download-line" class="h-4 w-4 text-muted-foreground" />
-                    </div>
-                  </div>
-                </div>
-                <!-- 消息内容 -->
-                <div v-if="message.content" v-html="renderMarkdownSafe(message.content)"
-                  class="rounded-xl !rounded-tr-none bg-zinc-200 px-4 py-3 text-foreground prose prose-sm max-w-none">
-                </div>
-                <!-- 重试按钮 - 左下角 -->
-                <Button variant="ghost" size="icon"
-                  class="absolute -left-7 bottom-0 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400"
-                  @click="retryMessage(idx)" title="重试">
-                  <Icon icon="ri:restart-line" class="h-3 w-3" />
-                </Button>
-              </div>
-            </div>
-
-            <!-- AI 回复 -->
-            <div v-else :ref="el => setAiMessageRef(el, idx)" class="w-full group">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-medium text-muted-foreground">{{ message.modelName || 'Assistant' }}</span>
-                <div class="flex items-center gap-1">
-                  <!-- 复制按钮 -->
-                  <Button variant="ghost" size="icon"
-                    class="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400"
-                    @click="copyMessage(message.content)" title="复制">
-                    <Icon icon="ri:file-copy-line" class="h-3 w-3" />
-                  </Button>
-                </div>
-              </div>
-
-              <div class="w-full">
-                <div v-if="message.isError" class="text-red-600">{{ message.content }}</div>
-                <div v-else-if="message.content">
-                  <!-- 解析思考过程和答案 -->
-                  <template v-if="getParsed(message, idx).reasoning">
-                    <template v-if="message.isStreaming && enableReasoning && !getParsed(message, idx).answer">
-                      <div class="flex items-center">
-                        <Button variant="ghost" size="xs" class="h-6 p-0 text-xs gap-1">
-                          <Icon icon="ri:lightbulb-line" class="h-4 w-4 text-muted-foreground" />
-                          <span class="text-xs text-muted-foreground shimmer-text">
-                            正在思考...
-                          </span>
-                        </Button>
-                        <span class="ml-2 text-muted-foreground" v-if="getReasoningElapsedSeconds(message) > 0">
-                          {{ getReasoningElapsedLabel(message) }}s
-                        </span>
-                      </div>
-                    </template>
-                    <template v-else>
-                      <div class="flex items-center">
-                        <Button variant="ghost" size="xs" class="group/inner h-6 p-0 text-xs gap-1 hover:bg-transparent"
-                          @click="message.reasoningCollapsed = !message.reasoningCollapsed">
-                          <div class="relative h-4 w-4">
-                            <Icon icon="ri:lightbulb-line"
-                              class="absolute left-0 top-0 opacity-100 group-hover/inner:opacity-0 h-4 w-4 text-muted-foreground transition-opacity" />
-                            <Icon :icon="message.reasoningCollapsed ? 'ri:arrow-down-s-line' : 'ri:arrow-up-s-line'"
-                              class="absolute left-0 top-0 opacity-0 group-hover/inner:opacity-100 h-4 w-4 transition-opacity" />
-                          </div>
-                          <span class="text-xs text-muted-foreground">
-                            思考过程
-                          </span>
-                        </Button>
-                        <span class="ml-2 text-muted-foreground" v-if="getReasoningElapsedSeconds(message) > 0">
-                          {{ getReasoningElapsedLabel(message) }}s
-                        </span>
-                      </div>
-                      <div v-if="!message.reasoningCollapsed"
-                        class="p-3 bg-slate-800/5 rounded-md !rounded-tl-none prose prose-sm max-w-none !text-muted-foreground text-xs"
-                        v-html="renderMarkdown(getParsed(message, idx).reasoning)"></div>
-                    </template>
-                    <div v-if="getParsed(message, idx).answer" class="h-2"></div>
-                    <div class="prose prose-sm max-w-none" v-html="renderMarkdown(getParsed(message, idx).answer)">
-                    </div>
-                  </template>
-                  <!-- 普通消息（没有思考过程） -->
-                  <div v-else class="prose prose-sm max-w-none" v-html="renderMarkdown(message.content)"></div>
-                </div>
-                <div v-else>
-                  <template v-if="enableReasoning">
-                    <Button variant="ghost" size="xs" class="h-6 p-0 text-xs gap-1">
-                      <Icon icon="ri:lightbulb-line" class="h-4 w-4 text-muted-foreground" />
-                      <span class="text-xs text-muted-foreground shimmer-text">
-                        正在思考...
-                      </span>
-                    </Button>
-                  </template>
-                  <template v-else>
-                    <div class="space-y-3">
-                      <div class="h-3 w-2/3 rounded bg-muted-foreground/20 animate-pulse"></div>
-                      <div class="h-3 w-full rounded bg-muted-foreground/20 animate-pulse"></div>
-                      <div class="h-3 w-5/6 rounded bg-muted-foreground/20 animate-pulse"></div>
-                    </div>
-                  </template>
-                </div>
-              </div>
-            </div>
-          </template>
-
-          <!-- 加载状态（骨架屏/思考动画） -->
-          <div v-if="sending" class="w-full">
-            <div class="mb-2">
-              <span class="text-xs font-medium text-muted-foreground">{{ currentModelName || 'Assistant' }}</span>
-            </div>
-
-            <div class="w-full">
-              <template v-if="enableReasoning">
-                <div class="text-sm text-muted-foreground shimmer-text">正在思考...</div>
-              </template>
-              <template v-else>
-                <div class="space-y-3">
-                  <div class="h-3 w-2/3 rounded bg-muted-foreground/20 animate-pulse"></div>
-                  <div class="h-3 w-full rounded bg-muted-foreground/20 animate-pulse"></div>
-                  <div class="h-3 w-5/6 rounded bg-muted-foreground/20 animate-pulse"></div>
-                </div>
-              </template>
-            </div>
-          </div>
-        </div>
-
-        <!-- 底部操作区 -->
-        <footer ref="footerEl" class="absolute left-0 right-0 bottom-0 p-4">
-          <ChatInput ref="chatInputRef" v-model="state.text" :sending="isBusy" :enable-streaming="enableStreaming"
-            :enable-reasoning="enableReasoning" :reasoning-effort="reasoningEffort" :enable-context="enableContext"
-            :enable-file-upload="enableFileUpload" :auto-paste-global-assistant="autoPasteGlobalAssistant"
-            :bg-class="bgClass" :blur-class="blurClass" :current-model-name="currentModelName"
-            :grouped-models="groupedModels" :selected-pair-key="selectedPairKey" @selectModel="selectModel"
-            @send="handleSend()" @stop="stopGenerating" @toggleStreaming="toggleStreaming"
-            @toggleReasoning="toggleReasoning" @changeReasoningEffort="changeReasoningEffort"
-            @toggleContext="toggleContext" @toggleClipboardListening="toggleClipboardListening"
-            @toggleFileUpload="toggleFileUpload" @openSettings="openSettingsCenter" />
-        </footer>
-      </ScrollArea>
-
-      <Button v-if="showScrollToBottomButton" variant="outline" size="icon"
-        :class="['absolute left-[50%] translate-x-[-50%] z-20 h-8 w-8 rounded-full shadow-md border-none', bgClass, blurClass]"
-        :style="{ bottom: 'var(--ifocal-bottom-gap, 150px)' }" @click="handleScrollToBottomClick" title="滚动到底部">
-        <Icon icon="ri:arrow-down-line" class="h-4 w-4" />
-      </Button>
-    </template>
-
-    <template v-else>
-      <div class="relative flex-1 min-h-0 overflow-auto">
-        <Button variant="outline" size="icon"
-          :class="['absolute left-4 top-4 z-20 h-8 w-8 shrink-0 rounded-full', bgClass, blurClass]"
-          @click="closeSettingsCenter">
-          <Icon icon="ri:arrow-left-line" class="h-5 w-5" />
-        </Button>
-        <WindowSettingsCenter />
-      </div>
-    </template>
+    <main class="relative min-h-0 flex-1 overflow-hidden">
+      <Transition name="ifocal-route" mode="out-in">
+        <component
+          :is="activeAssistantPageComponent"
+          v-if="isAssistantRoute"
+          :key="currentRoute.name"
+          ref="activePageRef"
+          :ctx="assistantCtx"
+        />
+        <SettingsPage v-else key="settings" />
+      </Transition>
+    </main>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, nextTick, type ComponentPublicInstance } from 'vue';
 import { marked } from 'marked';
-import { Icon } from '@iconify/vue';
-import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { DEFAULT_REASONING_EFFORT, SUPPORTED_LANGUAGES, loadConfig, saveConfig, getTaskSettings, updateTaskSettings, type ReasoningEffort } from '@/shared/config';
 import { modelIdFromSpec, parseModelSpec } from '@/shared/model-utils';
-import LanguageSelect from './components/LanguageSelect.vue';
-import ChatInput from './components/ChatInput.vue';
-import WindowSettingsCenter from './components/WindowSettingsCenter.vue';
+import WindowSidebar from './components/WindowSidebar.vue';
+import ChatPage from './pages/ChatPage.vue';
+import TranslatePage from './pages/TranslatePage.vue';
+import SummaryPage from './pages/SummaryPage.vue';
+import SettingsPage from './pages/SettingsPage.vue';
+import { currentRoute, hasInitialRoute, navigateTo, routeNameToTask, taskToRouteName } from './router';
+import type { AssistantPageExpose, AssistantTask, AssistantWorkspaceContext, SidebarTask, WindowMessage, WindowSession } from './types';
 
 const GLOBAL_WIN_VIEW_KEY = 'globalAssistantWindowRequestedView';
 
 type Pair = { channel: string; model: string };
 type Channel = { name: string; type: string; apiKey?: string; apiUrl?: string; models?: string[]; systemPromptCompatMode?: boolean };
 
-interface Message {
-  role: 'user' | 'assistant';
-  content: string;
-  isError?: boolean;
-  modelName?: string; // 生成该消息的模型名称（仅 assistant 消息）
-  isStreaming?: boolean; // 标记是否正在流式显示
-  reasoningStartedAt?: number; // 思考开始（检测到起始标签）
-  reasoningEndedAt?: number;   // 思考结束（检测到闭合标签或完成）
-  reasoningCollapsed?: boolean; // 思考过程是否折叠（仅 assistant 消息）
-  attachments?: Array<{
-    name: string;
-    type: string;
-    size: number;
-    data: string; // base64 编码的数据
-  }>; // 附件（仅 user 消息）
-}
+type Message = WindowMessage;
+type Session = WindowSession;
 
-interface Session {
-  id: string;
-  title: string;
-  task: 'translate' | 'summarize' | 'rewrite' | 'polish' | 'chat';
-  messages: Message[];
-  createdAt: number;
-  updatedAt: number;
-}
-
-const sidebarTasks: Array<{ key: Session['task']; label: string; icon: string }> = [
+const sidebarTasks: SidebarTask[] = [
   { key: 'chat', label: '聊天', icon: 'ri:chat-ai-line' },
   { key: 'translate', label: '翻译', icon: 'ri:translate-ai' },
   { key: 'summarize', label: '总结', icon: 'ri:quill-pen-ai-line' },
 ];
-
-const taskLabelMap: Record<Session['task'], string> = {
-  chat: '聊天',
-  translate: '翻译',
-  summarize: '总结',
-  rewrite: '改写',
-  polish: '润色',
-};
 
 const modelPairs = ref<{ key: string; channel: string; model: string }[]>([]);
 // 为每个任务类型独立存储模型选择
@@ -318,8 +63,8 @@ const selectedModelByTask = ref<Record<string, string>>({
 });
 const sending = ref(false);
 const rootEl = ref<HTMLElement | null>(null);
-const messagesContainer = ref<HTMLElement | null>(null);
-const viewMode = ref<'chat' | 'settings'>('chat');
+const activePageRef = ref<AssistantPageExpose | null>(null);
+const routesReady = ref(false);
 const isInitialLoad = ref(true);
 let clipboardWatcher: ReturnType<typeof setInterval> | null = null;
 let latestClipboardSnapshot = '';
@@ -329,7 +74,6 @@ let clipboardPollPromise: Promise<void> | null = null;
 let clipboardErrorLogged = false;
 let windowFocusHandler: (() => void) | null = null;
 let windowBlurHandler: (() => void) | null = null;
-let visibilityChangeHandler: (() => void) | null = null;
 let saveSessionsTimer: ReturnType<typeof setTimeout> | null = null;
 const aiMessageElements = ref<HTMLElement[]>([]);
 const enableStreaming = ref(false);
@@ -341,8 +85,6 @@ const reduceVisualEffects = ref(false); // 减弱视觉效果配置
 const autoPasteGlobalAssistant = ref(false); // 全局助手：是否自动粘贴剪贴板
 const maxSessionsCount = ref(10);
 const contextMessagesCount = ref(2);
-const footerEl = ref<HTMLElement | null>(null);
-const chatInputRef = ref<InstanceType<typeof ChatInput> | null>(null);
 let footerResizeObserver: ResizeObserver | null = null;
 // 当前流式端口（用于停止）
 let currentStreamingPort: chrome.runtime.Port | null = null;
@@ -356,6 +98,45 @@ let onInAppCopy: ((e: ClipboardEvent) => void) | null = null;
 const SCROLL_BOTTOM_THRESHOLD = 48;
 const autoScrollEnabled = ref(true);
 const showScrollToBottomButton = ref(false);
+const assistantPageMap = {
+  chat: ChatPage,
+  translate: TranslatePage,
+  summary: SummaryPage,
+} as const;
+
+const isAssistantRoute = computed(() => !!routeNameToTask(currentRoute.value.name));
+const activeAssistantPageComponent = computed(() => {
+  const name = currentRoute.value.name;
+  return name === 'translate' ? assistantPageMap.translate : name === 'summary' ? assistantPageMap.summary : assistantPageMap.chat;
+});
+
+watch(
+  () => currentRoute.value.name,
+  async (routeName) => {
+    const task = routeNameToTask(routeName);
+    if (!task) {
+      showScrollToBottomButton.value = false;
+      unbindScrollableListener();
+      footerResizeObserver?.disconnect();
+      return;
+    }
+    await changeTask(task, { persist: routesReady.value });
+    await nextTick();
+    syncFooterObserver();
+    bindScrollableListener();
+    updateBottomGap();
+  },
+  { immediate: true }
+);
+
+watch(activePageRef, () => {
+  if (!isAssistantRoute.value) return;
+  nextTick(() => {
+    syncFooterObserver();
+    bindScrollableListener();
+    updateBottomGap();
+  });
+});
 
 // 综合忙碌状态：发送中或存在流式输出中的 AI 消息
 const isBusy = computed(() => {
@@ -375,18 +156,30 @@ function isExtensionAlive(): boolean {
 }
 
 function setBottomGap(px: number) {
-  const el: any = messagesContainer.value as any;
-  const host = el?.$el as HTMLElement | null;
+  const el: any = activePageRef.value?.getMessagesContainer();
+  const host = (el?.$el || el) as HTMLElement | null;
   if (host) host.style.setProperty('--ifocal-bottom-gap', `${Math.max(0, Math.round(px))}px`);
   if (rootEl.value) rootEl.value.style.setProperty('--ifocal-bottom-gap', `${Math.max(0, Math.round(px))}px`);
 }
 
 function updateBottomGap() {
-  const footer = footerEl.value;
+  const footer = activePageRef.value?.getFooterEl();
   if (!footer) return;
   const extra = 16; // 额外留白
   const gap = footer.offsetHeight + extra;
   setBottomGap(gap);
+}
+
+function syncFooterObserver() {
+  try {
+    if (!footerResizeObserver) {
+      footerResizeObserver = new ResizeObserver(() => updateBottomGap());
+    } else {
+      footerResizeObserver.disconnect();
+    }
+    const footer = activePageRef.value?.getFooterEl();
+    if (footer) footerResizeObserver.observe(footer);
+  } catch { }
 }
 
 
@@ -413,7 +206,7 @@ function getParsed(message: Message, idx: number): ParsedParts {
 
 const state = reactive({
   text: '',
-  task: '' as 'translate' | 'summarize' | 'rewrite' | 'polish' | 'chat',
+  task: 'chat' as AssistantTask,
   targetLang: 'zh-CN',
   prevLang: 'en' // 上一次选择的语言
 });
@@ -475,32 +268,78 @@ watch(currentSessionId, () => {
 
 // 动态类名：根据 reduceVisualEffects 决定是否应用 backdrop-blur 和背景透明
 const blurClass = computed(() => reduceVisualEffects.value ? '' : 'backdrop-blur-md');
-const blurClassSm = computed(() => reduceVisualEffects.value ? '' : 'backdrop-blur-sm');
-const bgClass = computed(() => reduceVisualEffects.value ? 'bg-white' : 'bg-white/60');
+const bgClass = computed(() => reduceVisualEffects.value ? 'bg-olive-50' : 'bg-olive-50/60');
 
-function syncWindowFocusClass() {
-  document.documentElement.classList.toggle('ifocal-window-inactive', !document.hasFocus());
-}
+const assistantCtx = computed<AssistantWorkspaceContext>(() => ({
+  text: state.text,
+  messages: currentSession.value.messages,
+  sending: sending.value,
+  isBusy: isBusy.value,
+  enableStreaming: enableStreaming.value,
+  enableReasoning: enableReasoning.value,
+  reasoningEffort: reasoningEffort.value,
+  enableContext: enableContext.value,
+  enableFileUpload: enableFileUpload.value,
+  autoPasteGlobalAssistant: autoPasteGlobalAssistant.value,
+  currentModelName: currentModelName.value,
+  groupedModels: groupedModels.value,
+  selectedPairKey: selectedPairKey.value,
+  currentLangLabel: currentLangLabel.value,
+  targetLang: state.targetLang,
+  supportedLanguages: SUPPORTED_LANGUAGES,
+  bgClass: bgClass.value,
+  blurClass: blurClass.value,
+  showScrollToBottomButton: showScrollToBottomButton.value,
+  updateText: (value: string) => { state.text = value },
+  selectLanguage,
+  selectModel,
+  handleSend,
+  stopGenerating,
+  toggleStreaming,
+  toggleReasoning,
+  changeReasoningEffort,
+  toggleContext,
+  toggleClipboardListening,
+  toggleFileUpload,
+  openSettings: openSettingsCenter,
+  handleScrollToBottomClick,
+  retryMessage,
+  copyMessage,
+  viewAttachment,
+  downloadAttachment,
+  getFileIcon,
+  formatFileSize,
+  renderMarkdown,
+  renderMarkdownSafe,
+  getParsed,
+  getReasoningElapsedSeconds,
+  getReasoningElapsedLabel,
+  setAiMessageRef,
+}));
 
 // 获取可滚动元素
 function getScrollableElement(): HTMLElement | null {
-  if (!messagesContainer.value) return null;
+  if (!isAssistantRoute.value) return null;
+  const messagesContainer = activePageRef.value?.getMessagesContainer();
+  if (!messagesContainer) return null;
 
   // ScrollArea 的可滚动元素是 ScrollAreaViewport
   // 尝试多种选择器以确保兼容性
-  const el = messagesContainer.value as any;
+  const el = messagesContainer as any;
+  const host = (el?.$el || el) as HTMLElement | null;
+  if (!host) return null;
 
   // 尝试 1: 通过 data-radix 属性查找
-  let scrollableEl = el.$el?.querySelector('[data-radix-scroll-area-viewport]');
+  let scrollableEl = host.querySelector('[data-radix-scroll-area-viewport]');
 
   // 尝试 2: 通过 class 查找
   if (!scrollableEl) {
-    scrollableEl = el.$el?.querySelector('.scroll-area-viewport');
+    scrollableEl = host.querySelector('.scroll-area-viewport');
   }
 
   // 尝试 3: 查找所有 div，找到有 overflow 的
-  if (!scrollableEl && el.$el) {
-    const divs = el.$el.querySelectorAll('div');
+  if (!scrollableEl) {
+    const divs = host.querySelectorAll('div');
     for (const div of divs) {
       const style = window.getComputedStyle(div);
       if (style.overflow === 'auto' || style.overflow === 'scroll' ||
@@ -681,7 +520,7 @@ function renderMarkdown(content: string) {
   // 标准 Markdown 换行规则：行尾两个空格+\n 或 两个 \n（空行）才会换行
   return marked(content, {
     breaks: false, // 关闭 GFM 单换行支持，使用标准 Markdown 换行
-    gfm: true      // 启用 GitHub Flavored Markdown 其他特性（表格、删除线等）
+    gfm: true // 启用 GitHub Flavored Markdown 其他特性（表格、删除线等）
   });
 }
 
@@ -899,6 +738,7 @@ function startNewChat(autoRun = false) {
 
 function startNewChatFromAside() {
   startNewChat(false);
+  navigateTo(taskToRouteName(state.task));
   autoScrollEnabled.value = true;
   scrollToBottom(true);
 }
@@ -908,6 +748,7 @@ function switchSession(sessionId: string) {
   const session = sessions.value.find(s => s.id === sessionId);
   if (session) {
     state.task = session.task;
+    navigateTo(taskToRouteName(session.task));
   }
   state.text = '';
   lastAutoFilledClipboard = '';
@@ -1212,7 +1053,7 @@ async function fileToBase64(file: File): Promise<string> {
 
 async function handleSend() {
   const text = state.text.trim();
-  const attachmentFiles = chatInputRef.value?.getAttachments() || [];
+  const attachmentFiles = activePageRef.value?.getAttachments() || [];
   const hasAttachments = attachmentFiles.length > 0;
   if ((!text && !hasAttachments) || isBusy.value) return;
 
@@ -1286,7 +1127,7 @@ async function sendPreparedMessage(
 
   state.text = '';
   // 清空附件
-  chatInputRef.value?.clearAttachments();
+  activePageRef.value?.clearAttachments();
 
   // 防止发送后因当前剪贴板未变化导致被再次回填
   // 将"最后一次自动填充"的标记设置为当前已知的剪贴板值
@@ -1716,23 +1557,15 @@ function retryMessage(messageIndex: number) {
 
 async function consumeRequestedWindowView(requestedView?: unknown) {
   if (requestedView !== 'settings') return;
-  viewMode.value = 'settings';
+  navigateTo('settings');
   try { await chrome.storage.local.remove([GLOBAL_WIN_VIEW_KEY]); } catch { }
 }
 
 function openSettingsCenter() {
-  viewMode.value = 'settings';
+  navigateTo('settings');
 }
 
-function closeSettingsCenter() {
-  viewMode.value = 'chat';
-  nextTick(() => {
-    bindScrollableListener();
-    updateBottomGap();
-  });
-}
-
-async function changeTask(newTask: 'translate' | 'summarize' | 'rewrite' | 'polish' | 'chat') {
+async function changeTask(newTask: AssistantTask, options: { persist?: boolean } = {}) {
   if (state.task === newTask) return;
 
   state.task = newTask;
@@ -1762,14 +1595,16 @@ async function changeTask(newTask: 'translate' | 'summarize' | 'rewrite' | 'poli
   }
 
   // 保存当前选择的任务到配置（记忆功能）
-  saveConfig({ defaultTask: newTask }).catch(e => {
-    console.error('保存任务类型失败:', e);
-  });
+  if (options.persist !== false) {
+    saveConfig({ defaultTask: newTask }).catch(e => {
+      console.error('保存任务类型失败:', e);
+    });
 
-  // 同时保存到 local storage（用于快速恢复）
-  chrome.storage.local.set({ lastSelectedTask: newTask }).catch(e => {
-    console.error('保存最后选择的任务失败:', e);
-  });
+    // 同时保存到 local storage（用于快速恢复）
+    chrome.storage.local.set({ lastSelectedTask: newTask }).catch(e => {
+      console.error('保存最后选择的任务失败:', e);
+    });
+  }
 
   // 不创建新会话，不自动运行
 }
@@ -1823,13 +1658,13 @@ function viewAttachment(att: any) {
   const win = window.open('', '_blank');
   if (win) {
     win.document.write(`
-      <html>
-        <head><title>${att.name}</title></head>
-        <body style="margin:0;display:flex;align-items:center;justify-content:center;background:#000;">
-          <img src="${att.data}" style="max-width:100%;max-height:100vh;" />
-        </body>
-      </html>
-    `);
+ <html>
+ <head><title>${att.name}</title></head>
+ <body style="margin:0;display:flex;align-items:center;justify-content:center;background:#000;">
+ <img src="${att.data}" style="max-width:100%;max-height:100vh;" />
+ </body>
+ </html>
+ `);
   }
 }
 
@@ -1964,6 +1799,13 @@ onMounted(async () => {
   autoPasteGlobalAssistant.value = !!globalConfig.autoPasteGlobalAssistant;
   state.targetLang = globalConfig.translateTargetLang || 'zh-CN';
   state.prevLang = globalConfig.prevLanguage || 'en';
+  const activeRouteTask = routeNameToTask(currentRoute.value.name);
+  if (!hasInitialRoute) {
+    navigateTo(taskToRouteName(state.task), { replace: true });
+  } else if (activeRouteTask) {
+    await changeTask(activeRouteTask, { persist: false });
+  }
+  routesReady.value = true;
   if (clampSessionsByMaxCount()) {
     saveSessions();
     sessions.value = [...sessions.value];
@@ -2020,23 +1862,16 @@ onMounted(async () => {
   } catch { }
 
   windowFocusHandler = () => {
-    syncWindowFocusClass();
     if (autoPasteGlobalAssistant.value) {
       startClipboardMonitoring(true);
     }
   };
   windowBlurHandler = () => {
-    syncWindowFocusClass();
     stopClipboardMonitoring();
   };
-  visibilityChangeHandler = () => {
-    syncWindowFocusClass();
-  };
 
-  syncWindowFocusClass();
   window.addEventListener('focus', windowFocusHandler);
   window.addEventListener('blur', windowBlurHandler);
-  document.addEventListener('visibilitychange', visibilityChangeHandler);
   // 监听在助手页内的复制事件，抑制剪贴板回填
   onInAppCopy = (e: ClipboardEvent) => {
     try {
@@ -2076,10 +1911,7 @@ onMounted(async () => {
   } catch { }
 
   // 监听 footer 尺寸变化以动态设置内容底部留白
-  try {
-    footerResizeObserver = new ResizeObserver(() => updateBottomGap());
-    if (footerEl.value) footerResizeObserver.observe(footerEl.value);
-  } catch { }
+  syncFooterObserver();
   window.addEventListener('resize', updateBottomGap);
   await nextTick();
   updateBottomGap();
@@ -2093,10 +1925,6 @@ onBeforeUnmount(() => {
   if (windowBlurHandler) {
     window.removeEventListener('blur', windowBlurHandler);
     windowBlurHandler = null;
-  }
-  if (visibilityChangeHandler) {
-    document.removeEventListener('visibilitychange', visibilityChangeHandler);
-    visibilityChangeHandler = null;
   }
   document.documentElement.classList.remove('ifocal-window-inactive');
   stopClipboardMonitoring();
@@ -2166,11 +1994,11 @@ onBeforeUnmount(() => {
 .prose code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   /* font-size: 0.93rem; */
-  background-color: rgba(2, 6, 23, 0.06);
+  background-color: var(--color-olive-100);
   /* slate-950 @ ~6% */
   padding: 0.15em 0.35em;
   border-radius: 0.375rem;
-  /* rounded-md */
+  /* */
 }
 
 .prose code::before,
@@ -2226,6 +2054,27 @@ onBeforeUnmount(() => {
   animation: shimmer 2s linear infinite;
 }
 
+.ifocal-route-enter-active,
+.ifocal-route-leave-active {
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.ifocal-route-enter-from {
+  opacity: 0;
+  transform: translateY(8px) scale(0.995);
+}
+
+.ifocal-route-leave-to {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.995);
+}
+
+.ifocal-route-leave-active {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+}
+
 @keyframes shimmer {
   0% {
     background-position: 200% 0;
@@ -2243,5 +2092,9 @@ onBeforeUnmount(() => {
 .ifocal-scroll-style>div>:not([class]) {
   padding-top: 60px;
   padding-bottom: var(--ifocal-bottom-gap, 150px);
+}
+
+.prose :where(strong):not(:where([class~=not-prose], [class~=not-prose] *)) {
+  color: currentColor;
 }
 </style>
