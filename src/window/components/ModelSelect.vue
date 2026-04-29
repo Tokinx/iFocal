@@ -1,12 +1,14 @@
 <template>
   <DropdownMenu>
     <DropdownMenuTrigger as-child>
-      <Button variant="outline" :class="['justify-start truncate h-8 font-normal gap-1 px-3', bgClass, blurClass]">
+      <Button variant="outline"
+        :class="['justify-start truncate h-8 font-normal gap-1 px-3', bgClass, blurClass, buttonClass]">
         <span class="truncate text-sm">{{ currentModelName || 'GPT-5' }}</span>
         <Icon icon="ri:arrow-down-s-line" class="h-7 w-7 shrink-0" />
       </Button>
     </DropdownMenuTrigger>
-    <DropdownMenuContent align="start" :class="['w-56', bgClass, blurClass]">
+    <DropdownMenuContent align="start" :class="['', bgClass, blurClass]">
+      <Input v-model="keyword" placeholder="搜索模型" class="h-8 mb-1" />
       <ScrollArea class="h-60">
         <template v-for="(group, channelName, groupIndex) in filteredGroupedModels" :key="channelName">
           <DropdownMenuSeparator v-if="groupIndex" />
@@ -18,7 +20,6 @@
           </DropdownMenuItem>
         </template>
       </ScrollArea>
-      <Input v-model="keyword" placeholder="搜索模型" class="h-8 mt-1" />
     </DropdownMenuContent>
   </DropdownMenu>
 </template>
@@ -43,7 +44,8 @@ const props = defineProps<{
   groupedModels: Record<string, Array<{ key: string; model: string; channel: string }>>
   selectedPairKey: string
   bgClass?: string
-  blurClass?: string
+  blurClass?: string,
+  buttonClass?: string
 }>()
 
 const keyword = ref('')

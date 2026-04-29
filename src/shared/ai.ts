@@ -29,7 +29,7 @@ function resolveTemplate(task: string, templates: Partial<PromptTemplates> | und
   return '请基于以下内容给出有帮助的回答：\n\n{{text}}';
 }
 
-function renderTemplate(task: string, text: string, lang: string, templates: Partial<PromptTemplates> | undefined, prevLang?: string) {
+function renderRawTemplate(template: string, text: string, lang: string, prevLang?: string) {
   const targetCode = (lang || 'zh-CN').trim();
   const prevCode = (prevLang || 'en').trim();
   const targetLabel = getLanguageLabel(targetCode);
@@ -39,23 +39,26 @@ function renderTemplate(task: string, text: string, lang: string, templates: Par
     '{{prevLang}}': prevLabel || prevCode,
     '{{text}}': (text || '').trim()
   };
-  const tpl = resolveTemplate(task, templates);
+  const tpl = String(template || '');
   return Object.keys(vars).reduce((acc, key) => acc.split(key).join(vars[key]), tpl);
+}
+
+function renderTemplate(task: string, text: string, lang: string, templates: Partial<PromptTemplates> | undefined, prevLang?: string) {
+  return renderRawTemplate(resolveTemplate(task, templates), text, lang, prevLang);
 }
 
 export function makePrompt(task: string, text: string, lang: string, templates: Partial<PromptTemplates> | undefined, prevLang?: string) {
   return renderTemplate(task, text, lang, templates, prevLang);
 }
 
-export function makePromptParts(
-  task: string,
+export function makePromptPartsFromTemplate(
+  template: string,
   text: string,
   lang: string,
-  templates: Partial<PromptTemplates> | undefined,
   prevLang?: string
 ) {
   const textMarker = '__IFOCAL_USER_TEXT_MARKER__';
-  const rendered = renderTemplate(task, textMarker, lang, templates, prevLang);
+  const rendered = renderRawTemplate(template, textMarker, lang, prevLang);
   const hasMarker = rendered.includes(textMarker);
   const systemPrompt = hasMarker
     ? rendered.split(textMarker).join('').trim()
@@ -65,6 +68,16 @@ export function makePromptParts(
     systemPrompt,
     userPrompt
   };
+}
+
+export function makePromptParts(
+  task: string,
+  text: string,
+  lang: string,
+  templates: Partial<PromptTemplates> | undefined,
+  prevLang?: string
+) {
+  return makePromptPartsFromTemplate(resolveTemplate(task, templates), text, lang, prevLang);
 }
 
 export function makeMessage(

@@ -1,4 +1,5 @@
 import type { ComponentPublicInstance } from 'vue'
+import type { AssistantPreset } from '@/shared/assistants'
 import type { ReasoningEffort } from '@/shared/config'
 
 export type AssistantTask = 'translate' | 'summarize' | 'rewrite' | 'polish' | 'chat'
@@ -23,6 +24,7 @@ export interface WindowMessage {
 export interface WindowSession {
   id: string
   title: string
+  assistantId?: string
   task: AssistantTask
   messages: WindowMessage[]
   createdAt: number
@@ -36,9 +38,11 @@ export interface ModelOption {
 }
 
 export interface SidebarTask {
-  key: AssistantTask
+  id: string
   label: string
   icon: string
+  preset: AssistantPreset
+  deletable: boolean
 }
 
 export interface FileAttachment {

@@ -2,17 +2,22 @@
   <div ref="rootEl" class="relative flex h-full w-full text-foreground gap-2">
     <WindowSidebar
       :tasks="sidebarTasks"
-      :sessions="sessions"
+      :sessions="sidebarSessions"
       :current-session-id="currentSessionId"
+      :active-assistant-id="activeAssistantId"
       :active-route-name="currentRoute.name"
       :format-date="formatDate"
       @navigate="navigateTo"
       @newChat="startNewChatFromAside"
+      @selectAssistant="switchAssistant"
+      @addAssistant="openAssistantEditor(null)"
+      @editAssistant="openAssistantEditor"
+      @deleteAssistant="deleteAssistantWithHistory"
       @switchSession="switchSession"
       @deleteSession="deleteSession"
     />
 
-    <main class="relative min-h-0 flex-1 overflow-hidden">
+    <main class="relative min-h-0 flex-1">
       <Transition name="ifocal-route" mode="out-in">
         <component
           :is="activeAssistantPageComponent"
@@ -24,15 +29,41 @@
         <SettingsPage v-else key="settings" />
       </Transition>
     </main>
+
+    <AssistantEditorDialog
+      :open="assistantEditorOpen"
+      :assistant="editingAssistant"
+      :model-pairs="modelPairs"
+      @update:open="handleAssistantEditorOpen"
+      @save="saveAssistantFromEditor"
+      @delete="deleteAssistantWithHistory"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, nextTick, type ComponentPublicInstance } from 'vue';
 import { marked } from 'marked';
-import { DEFAULT_REASONING_EFFORT, SUPPORTED_LANGUAGES, loadConfig, saveConfig, getTaskSettings, updateTaskSettings, type ReasoningEffort } from '@/shared/config';
+import { DEFAULT_REASONING_EFFORT, SUPPORTED_LANGUAGES, loadConfig, saveConfig, type ReasoningEffort } from '@/shared/config';
+import {
+  ACTIVE_ASSISTANT_ID_STORAGE_KEY,
+  ASSISTANT_CONFIGS_STORAGE_KEY,
+  DEFAULT_ASSISTANT_ID,
+  DEFAULT_ASSISTANT_ID_STORAGE_KEY,
+  assistantIconForPreset,
+  assistantIdForPreset,
+  assistantPresetForTask,
+  assistantTaskForPreset,
+  createAssistantConfig,
+  normalizeAssistantConfigs,
+  resolveAssistantId,
+  type AssistantConfig,
+  type AssistantPreset,
+} from '@/shared/assistants';
 import { modelIdFromSpec, parseModelSpec } from '@/shared/model-utils';
+import { loadPromptTemplates } from '@/shared/prompt-templates';
 import WindowSidebar from './components/WindowSidebar.vue';
+import AssistantEditorDialog from './components/AssistantEditorDialog.vue';
 import ChatPage from './pages/ChatPage.vue';
 import TranslatePage from './pages/TranslatePage.vue';
 import SummaryPage from './pages/SummaryPage.vue';
@@ -48,13 +79,12 @@ type Channel = { name: string; type: string; apiKey?: string; apiUrl?: string; m
 type Message = WindowMessage;
 type Session = WindowSession;
 
-const sidebarTasks: SidebarTask[] = [
-  { key: 'chat', label: '聊天', icon: 'ri:chat-ai-line' },
-  { key: 'translate', label: '翻译', icon: 'ri:translate-ai' },
-  { key: 'summarize', label: '总结', icon: 'ri:quill-pen-ai-line' },
-];
-
 const modelPairs = ref<{ key: string; channel: string; model: string }[]>([]);
+const assistantConfigs = ref<AssistantConfig[]>([]);
+const activeAssistantId = ref(DEFAULT_ASSISTANT_ID);
+const defaultAssistantId = ref(DEFAULT_ASSISTANT_ID);
+const assistantEditorOpen = ref(false);
+const editingAssistantId = ref<string | null>(null);
 // 为每个任务类型独立存储模型选择
 const selectedModelByTask = ref<Record<string, string>>({
   translate: '',
@@ -104,6 +134,23 @@ const assistantPageMap = {
   summary: SummaryPage,
 } as const;
 
+const activeAssistant = computed(() => {
+  return assistantConfigs.value.find((assistant) => assistant.id === activeAssistantId.value) || assistantConfigs.value[0] || null;
+});
+
+const editingAssistant = computed(() => {
+  if (!editingAssistantId.value) return null;
+  return assistantConfigs.value.find((assistant) => assistant.id === editingAssistantId.value) || null;
+});
+
+const sidebarTasks = computed<SidebarTask[]>(() => assistantConfigs.value.map((assistant) => ({
+  id: assistant.id,
+  label: assistant.name,
+  icon: assistantIconForPreset(assistant.preset),
+  preset: assistant.preset,
+  deletable: assistant.deletable,
+})));
+
 const isAssistantRoute = computed(() => !!routeNameToTask(currentRoute.value.name));
 const activeAssistantPageComponent = computed(() => {
   const name = currentRoute.value.name;
@@ -120,7 +167,15 @@ watch(
       footerResizeObserver?.disconnect();
       return;
     }
-    await changeTask(task, { persist: routesReady.value });
+    if (routesReady.value) {
+      const currentPreset = activeAssistant.value?.preset;
+      if (currentPreset && currentPreset !== assistantPresetForTask(task)) {
+        const routeAssistantId = assistantIdForPreset(assistantPresetForTask(task));
+        if (assistantConfigs.value.some((assistant) => assistant.id === routeAssistantId)) {
+          await switchAssistant(routeAssistantId, { navigate: false });
+        }
+      }
+    }
     await nextTick();
     syncFooterObserver();
     bindScrollableListener();
@@ -217,11 +272,15 @@ watch(() => state.text, () => nextTick(() => updateBottomGap()));
 // 会话管理
 const sessions = ref<Session[]>([]);
 const currentSessionId = ref<string>('');
+const sidebarSessions = computed(() => {
+  return sessions.value.filter((session) => session.assistantId === activeAssistantId.value);
+});
 
 const currentSession = computed(() => {
-  return sessions.value.find(s => s.id === currentSessionId.value) || {
+  return sessions.value.find(s => s.id === currentSessionId.value && s.assistantId === activeAssistantId.value) || {
     id: '',
     title: '',
+    assistantId: activeAssistantId.value,
     task: state.task,
     messages: [],
     createdAt: Date.now(),
@@ -236,8 +295,8 @@ function setAiMessageRef(el: Element | ComponentPublicInstance | null, idx: numb
   }
 }
 
-// 获取当前任务的选中模型
-const selectedPairKey = computed(() => selectedModelByTask.value[state.task] || '');
+// 获取当前助手的选中模型
+const selectedPairKey = computed(() => activeAssistant.value?.modelKey || '');
 
 const currentModelName = computed(() => {
   const cur = modelPairs.value.find(p => p.key === selectedPairKey.value);
@@ -672,6 +731,67 @@ function parseKey(key: string): Pair | null {
   return null;
 }
 
+function getFirstAvailableModelKey(): string {
+  return modelPairs.value[0]?.key || '';
+}
+
+function normalizeStoredModelKey(rawKey: unknown): string {
+  const parsed = parseKey(String(rawKey || ''));
+  if (!parsed) return '';
+  const modelId = modelIdFromSpec(parsed.model);
+  if (!modelId) return '';
+  const normalizedKey = keyOf({ channel: parsed.channel, model: modelId });
+  return modelPairs.value.some((pair) => pair.key === normalizedKey) ? normalizedKey : '';
+}
+
+function getModelKeyByPreset(): Partial<Record<AssistantPreset, string>> {
+  const fallback = getFirstAvailableModelKey();
+  return {
+    chat: normalizeStoredModelKey(selectedModelByTask.value.chat) || fallback,
+    translate: normalizeStoredModelKey(selectedModelByTask.value.translate) || fallback,
+    summarize: normalizeStoredModelKey(selectedModelByTask.value.summarize) || fallback,
+  };
+}
+
+function normalizeAssistantModelKeys(configs: AssistantConfig[]): { configs: AssistantConfig[]; changed: boolean } {
+  const fallback = getFirstAvailableModelKey();
+  let changed = false;
+  const next = configs.map((assistant) => {
+    const normalized = normalizeStoredModelKey(assistant.modelKey);
+    const nextModelKey = normalized || fallback || '';
+    if (nextModelKey === assistant.modelKey) return assistant;
+    changed = true;
+    return { ...assistant, modelKey: nextModelKey, updatedAt: Date.now() };
+  });
+  return { configs: next, changed };
+}
+
+function localGet(keys: string[]): Promise<any> {
+  return new Promise((resolve) => {
+    try {
+      chrome.storage.local.get(keys, resolve);
+    } catch {
+      resolve({});
+    }
+  });
+}
+
+function localSet(payload: Record<string, unknown>): Promise<void> {
+  return new Promise((resolve, reject) => {
+    try {
+      chrome.storage.local.set(payload, () => {
+        if (chrome.runtime.lastError) {
+          reject(chrome.runtime.lastError);
+          return;
+        }
+        resolve();
+      });
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
 function formatDate(timestamp: number) {
   const date = new Date(timestamp);
   const now = new Date();
@@ -702,33 +822,119 @@ function normalizeContextMessagesCount(value: unknown): number {
   return [2, 6, 10].includes(count) ? count : 2;
 }
 
-function clampSessionsByMaxCount(limit = maxSessionsCount.value): boolean {
-  const maxCount = normalizeMaxSessionsCount(limit);
-  if (sessions.value.length <= maxCount) return false;
-  sessions.value = sessions.value.slice(0, maxCount);
-  if (!sessions.value.find((s: Session) => s.id === currentSessionId.value)) {
-    currentSessionId.value = sessions.value[0]?.id || '';
-  }
-  return true;
+function getAssistantById(id: string): AssistantConfig | null {
+  return assistantConfigs.value.find((assistant) => assistant.id === id) || null;
 }
 
-function startNewChat(autoRun = false) {
+function applyAssistantRuntime(assistant: AssistantConfig | null) {
+  if (!assistant) return;
+  state.task = assistantTaskForPreset(assistant.preset) as AssistantTask;
+  enableStreaming.value = assistant.settings.enableStreaming;
+  enableReasoning.value = assistant.settings.enableReasoning;
+  reasoningEffort.value = assistant.settings.reasoningEffort;
+  enableContext.value = assistant.settings.enableContext;
+  enableFileUpload.value = assistant.settings.enableFileUpload;
+}
+
+async function persistAssistantConfigs(configs = assistantConfigs.value) {
+  const payload = JSON.parse(JSON.stringify(configs));
+  await localSet({ [ASSISTANT_CONFIGS_STORAGE_KEY]: payload });
+}
+
+async function persistActiveAssistantId() {
+  await localSet({
+    [ACTIVE_ASSISTANT_ID_STORAGE_KEY]: activeAssistantId.value,
+    lastSelectedTask: state.task,
+  });
+}
+
+async function loadAssistants() {
+  const [templates, globalConfig, data] = await Promise.all([
+    loadPromptTemplates(),
+    loadConfig(),
+    localGet([
+      ASSISTANT_CONFIGS_STORAGE_KEY,
+      ACTIVE_ASSISTANT_ID_STORAGE_KEY,
+      DEFAULT_ASSISTANT_ID_STORAGE_KEY,
+      'lastSelectedTask',
+    ]),
+  ]);
+  const modelKeyByPreset = getModelKeyByPreset();
+  const rawConfigs = data?.[ASSISTANT_CONFIGS_STORAGE_KEY];
+  let configs = normalizeAssistantConfigs(rawConfigs, {
+    templates,
+    modelKeyByPreset,
+    defaultModelKey: getFirstAvailableModelKey(),
+  });
+  const normalizedModels = normalizeAssistantModelKeys(configs);
+  configs = normalizedModels.configs;
+
+  const defaultCandidate = data?.[DEFAULT_ASSISTANT_ID_STORAGE_KEY] || assistantIdForPreset(assistantPresetForTask(globalConfig.defaultTask));
+  defaultAssistantId.value = resolveAssistantId(defaultCandidate, configs);
+
+  const activeCandidate = data?.[ACTIVE_ASSISTANT_ID_STORAGE_KEY] || assistantIdForPreset(assistantPresetForTask(data?.lastSelectedTask || globalConfig.defaultTask));
+  activeAssistantId.value = resolveAssistantId(activeCandidate, configs, defaultAssistantId.value);
+  assistantConfigs.value = configs;
+  applyAssistantRuntime(activeAssistant.value);
+
+  if (!Array.isArray(rawConfigs) || normalizedModels.changed) {
+    await persistAssistantConfigs(configs);
+  }
+  await localSet({
+    [ACTIVE_ASSISTANT_ID_STORAGE_KEY]: activeAssistantId.value,
+    [DEFAULT_ASSISTANT_ID_STORAGE_KEY]: defaultAssistantId.value,
+  });
+}
+
+function clampSessionsByMaxCount(limit = maxSessionsCount.value): boolean {
+  const maxCount = normalizeMaxSessionsCount(limit);
+  const counts = new Map<string, number>();
+  const next: Session[] = [];
+  let touched = false;
+  for (const session of sessions.value) {
+    const assistantId = session.assistantId || DEFAULT_ASSISTANT_ID;
+    const count = counts.get(assistantId) || 0;
+    if (count < maxCount) {
+      counts.set(assistantId, count + 1);
+      next.push(session);
+      continue;
+    }
+    touched = true;
+    if (session.id === currentSessionId.value) currentSessionId.value = '';
+  }
+  if (touched) sessions.value = next;
+  if (currentSessionId.value && !sessions.value.some((s: Session) => s.id === currentSessionId.value && s.assistantId === activeAssistantId.value)) {
+    currentSessionId.value = '';
+  }
+  return touched;
+}
+
+function createSessionForActiveAssistant(save = true): Session {
+  const assistant = activeAssistant.value;
+  if (assistant) applyAssistantRuntime(assistant);
+  const now = Date.now();
   const newSession: Session = {
-    id: Date.now().toString(),
+    id: `${now}-${Math.random().toString(36).slice(2, 8)}`,
     title: '新对话',
+    assistantId: activeAssistantId.value,
     task: state.task,
     messages: [],
-    createdAt: Date.now(),
-    updatedAt: Date.now()
+    createdAt: now,
+    updatedAt: now
   };
   sessions.value.unshift(newSession);
 
   clampSessionsByMaxCount();
 
   currentSessionId.value = newSession.id;
+  if (save) saveSessions();
+  return newSession;
+}
+
+function startNewChat(autoRun = false) {
+  createSessionForActiveAssistant(true);
   state.text = '';
   lastAutoFilledClipboard = '';
-  saveSessions();
 
   // 如果需要自动运行，读取剪贴板到输入框（不自动发送）
   if (autoRun) {
@@ -744,12 +950,11 @@ function startNewChatFromAside() {
 }
 
 function switchSession(sessionId: string) {
-  currentSessionId.value = sessionId;
-  const session = sessions.value.find(s => s.id === sessionId);
-  if (session) {
-    state.task = session.task;
-    navigateTo(taskToRouteName(session.task));
-  }
+  const session = sessions.value.find(s => s.id === sessionId && s.assistantId === activeAssistantId.value);
+  if (!session) return;
+  currentSessionId.value = session.id;
+  state.task = session.task;
+  navigateTo(taskToRouteName(session.task));
   state.text = '';
   lastAutoFilledClipboard = '';
 
@@ -763,15 +968,8 @@ function deleteSession(sessionId: string) {
   if (index !== -1) {
     sessions.value.splice(index, 1);
 
-    // 如果删除的是当前会话，切换到第一个会话或创建新会话
     if (currentSessionId.value === sessionId) {
-      if (sessions.value.length > 0) {
-        currentSessionId.value = sessions.value[0].id;
-        const session = sessions.value[0];
-        state.task = session.task;
-      } else {
-        startNewChat(false);
-      }
+      currentSessionId.value = '';
     }
 
     saveSessions();
@@ -822,43 +1020,24 @@ async function loadSessions() {
     // 读取配置以决定是否启用自动粘贴
     const globalCfg = await loadConfig();
     const allowAutoPaste = !!globalCfg.autoPasteGlobalAssistant;
-    const data = await new Promise<any>(resolve => {
-      chrome.storage.local.get(['chatSessions', 'currentSessionId', 'lastSelectedTask'], resolve);
-    });
-
-
+    const data = await localGet(['chatSessions', 'currentSessionId']);
+    let sessionsLoaded = false;
 
     // 恢复会话列表
     if (data.chatSessions && Array.isArray(data.chatSessions) && data.chatSessions.length > 0) {
-      // 深拷贝以避免引用问题
-      sessions.value = JSON.parse(JSON.stringify(data.chatSessions));
-    } else {
-    }
-
-    // 恢复上次选择的模式
-    if (data.lastSelectedTask) {
-      state.task = data.lastSelectedTask;
+      sessions.value = JSON.parse(JSON.stringify(data.chatSessions))
+        .map((session: any) => normalizeLoadedSession(session))
+        .filter((session: Session | null): session is Session => !!session);
+      sessionsLoaded = true;
     }
 
     // 恢复当前会话
-    if (data.currentSessionId && sessions.value.find(s => s.id === data.currentSessionId)) {
+    if (data.currentSessionId && sessions.value.find(s => s.id === data.currentSessionId && s.assistantId === activeAssistantId.value)) {
       currentSessionId.value = data.currentSessionId;
-      const session = sessions.value.find(s => s.id === data.currentSessionId);
-      if (session) {
-        // 使用会话的 task，而不是全局的 lastSelectedTask
-        state.task = session.task;
-      }
-    } else if (sessions.value.length > 0) {
-      // 使用第一个会话
-      currentSessionId.value = sessions.value[0].id;
-      const session = sessions.value[0];
-      state.task = session.task;
-
     } else {
-      // 创建默认会话并读取剪贴板到输入框
-      startNewChat(allowAutoPaste);
-      return;
+      currentSessionId.value = '';
     }
+    if (sessionsLoaded) saveSessions();
 
     // 如果是初始加载，读取剪贴板到输入框（不自动发送）
     if (isInitialLoad.value) {
@@ -869,10 +1048,35 @@ async function loadSessions() {
     }
   } catch (e) {
     console.error('加载会话失败:', e);
-    // 兜底：创建默认会话，不自动读取剪贴板（除非配置允许）
     const globalCfgFallback = await loadConfig();
-    startNewChat(!!globalCfgFallback.autoPasteGlobalAssistant);
+    if (isInitialLoad.value) {
+      isInitialLoad.value = false;
+      if (globalCfgFallback.autoPasteGlobalAssistant) readClipboardToInput();
+    }
   }
+}
+
+function normalizeLoadedSession(raw: any): Session | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const rawTask = String(raw.task || 'chat');
+  const preset = assistantPresetForTask(rawTask);
+  const rawAssistantId = String(raw.assistantId || '').trim();
+  const assistantId = resolveAssistantId(
+    rawAssistantId || assistantIdForPreset(preset),
+    assistantConfigs.value,
+    DEFAULT_ASSISTANT_ID
+  );
+  const assistant = getAssistantById(assistantId);
+  if (!assistant) return null;
+  return {
+    id: String(raw.id || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`),
+    title: String(raw.title || '新对话'),
+    assistantId,
+    task: assistantTaskForPreset(assistant.preset) as AssistantTask,
+    messages: Array.isArray(raw.messages) ? raw.messages : [],
+    createdAt: Number(raw.createdAt) || Date.now(),
+    updatedAt: Number(raw.updatedAt) || Date.now(),
+  };
 }
 
 async function loadModels() {
@@ -1108,7 +1312,11 @@ async function sendPreparedMessage(
     attachments: safeAttachments
   };
 
-  const session = sessions.value.find(s => s.id === currentSessionId.value);
+  const assistantPromptSnapshot = activeAssistant.value?.prompt || '';
+  let session = sessions.value.find(s => s.id === currentSessionId.value && s.assistantId === activeAssistantId.value);
+  if (!session) {
+    session = createSessionForActiveAssistant(false);
+  }
   if (session) {
     session.messages.push(userMessage);
 
@@ -1119,6 +1327,7 @@ async function sendPreparedMessage(
     }
 
     session.updatedAt = Date.now();
+    session.assistantId = activeAssistantId.value;
     session.task = state.task;
 
     // 立即触发响应式更新，让用户消息显示出来并滚动到底部
@@ -1145,10 +1354,10 @@ async function sendPreparedMessage(
 
   // 如果启用流式，使用流式调用
   if (enableStreaming.value) {
-    await handleStreamingSend(text, pair, session, currentModelNameSnapshot, enableContextFlag, contextCount, enableReasoningFlag, reasoningEffortFlag, requestStartAt, requestId, attachments);
+    await handleStreamingSend(text, pair, session, currentModelNameSnapshot, assistantPromptSnapshot, enableContextFlag, contextCount, enableReasoningFlag, reasoningEffortFlag, requestStartAt, requestId, attachments);
   } else {
     inflightRequestId = requestId;
-    await handleNonStreamingSend(text, pair, session, currentModelNameSnapshot, enableContextFlag, contextCount, enableReasoningFlag, reasoningEffortFlag, requestStartAt, requestId, attachments);
+    await handleNonStreamingSend(text, pair, session, currentModelNameSnapshot, assistantPromptSnapshot, enableContextFlag, contextCount, enableReasoningFlag, reasoningEffortFlag, requestStartAt, requestId, attachments);
   }
 }
 
@@ -1158,6 +1367,7 @@ async function handleNonStreamingSend(
   pair: Pair | null,
   session: Session | undefined,
   currentModelNameSnapshot: string,
+  assistantPrompt: string,
   enableContext: boolean,
   contextCount: number,
   enableReasoning: boolean,
@@ -1174,6 +1384,7 @@ async function handleNonStreamingSend(
     prevLang: state.prevLang,
     enableReasoning,
     reasoningEffort,
+    assistantPrompt,
     requestId
   };
   if (pair) { msg.channel = pair.channel; msg.model = pair.model; }
@@ -1276,6 +1487,7 @@ async function handleStreamingSend(
   pair: Pair | null,
   session: Session | undefined,
   currentModelNameSnapshot: string,
+  assistantPrompt: string,
   enableContext: boolean,
   contextCount: number,
   enableReasoning: boolean,
@@ -1291,7 +1503,8 @@ async function handleStreamingSend(
     targetLang: state.targetLang,
     prevLang: state.prevLang,
     enableReasoning,
-    reasoningEffort
+    reasoningEffort,
+    assistantPrompt
   };
   if (pair) { msg.channel = pair.channel; msg.model = pair.model; }
 
@@ -1538,7 +1751,7 @@ function stopGenerating() {
 }
 
 function retryMessage(messageIndex: number) {
-  const session = sessions.value.find(s => s.id === currentSessionId.value);
+  const session = sessions.value.find(s => s.id === currentSessionId.value && s.assistantId === activeAssistantId.value);
   if (!session) return;
 
   const userMessage = session.messages[messageIndex];
@@ -1565,57 +1778,128 @@ function openSettingsCenter() {
   navigateTo('settings');
 }
 
-async function changeTask(newTask: AssistantTask, options: { persist?: boolean } = {}) {
-  if (state.task === newTask) return;
+async function switchAssistant(assistantId: string, options: { navigate?: boolean } = {}) {
+  const assistant = getAssistantById(assistantId);
+  if (!assistant) return;
 
-  state.task = newTask;
+  const changed = activeAssistantId.value !== assistant.id;
+  if (changed && isBusy.value) stopGenerating();
+  activeAssistantId.value = assistant.id;
+  applyAssistantRuntime(assistant);
 
-  // 如果切换后的任务没有选择模型，自动选择第一个可用模型
-  if (!selectedModelByTask.value[newTask] && modelPairs.value.length > 0) {
-    selectedModelByTask.value[newTask] = modelPairs.value[0].key;
-
-    // 保存到 storage
-    chrome.storage.local.set({
-      selectedModelByTask: selectedModelByTask.value
-    });
+  if (changed) {
+    currentSessionId.value = '';
+    state.text = '';
+    activePageRef.value?.clearAttachments();
+    lastAutoFilledClipboard = '';
   }
 
-  // 加载新任务的功能开关
+  if (options.navigate !== false) {
+    navigateTo(taskToRouteName(state.task));
+  }
+
   try {
-    const globalConfig = await loadConfig();
-    const taskSettings = getTaskSettings(globalConfig, newTask);
-    enableStreaming.value = taskSettings.enableStreaming;
-    enableReasoning.value = taskSettings.enableReasoning;
-    reasoningEffort.value = taskSettings.reasoningEffort;
-    enableContext.value = taskSettings.enableContext;
-    enableFileUpload.value = taskSettings.enableFileUpload;
-    console.log(`切换到任务 ${newTask}，功能开关已更新:`, taskSettings);
+    await persistActiveAssistantId();
   } catch (e) {
-    console.error('加载任务设置失败:', e);
+    console.error('保存当前助手失败:', e);
   }
 
-  // 保存当前选择的任务到配置（记忆功能）
-  if (options.persist !== false) {
-    saveConfig({ defaultTask: newTask }).catch(e => {
-      console.error('保存任务类型失败:', e);
-    });
+  autoScrollEnabled.value = true;
+  await nextTick();
+  syncFooterObserver();
+  bindScrollableListener();
+  updateBottomGap();
+  scrollToBottom(true);
+}
 
-    // 同时保存到 local storage（用于快速恢复）
-    chrome.storage.local.set({ lastSelectedTask: newTask }).catch(e => {
-      console.error('保存最后选择的任务失败:', e);
-    });
+function openAssistantEditor(assistantId: string | null) {
+  editingAssistantId.value = assistantId;
+  assistantEditorOpen.value = true;
+}
+
+function handleAssistantEditorOpen(open: boolean) {
+  assistantEditorOpen.value = open;
+  if (!open) editingAssistantId.value = null;
+}
+
+async function saveAssistantFromEditor(input: AssistantConfig) {
+  const now = Date.now();
+  const existingIndex = assistantConfigs.value.findIndex((assistant) => assistant.id === input.id);
+  const existing = existingIndex >= 0 ? assistantConfigs.value[existingIndex] : null;
+  const normalized = createAssistantConfig({
+    ...existing,
+    ...input,
+    id: existing?.id || input.id,
+    createdAt: existing?.createdAt || now,
+    updatedAt: now,
+    deletable: existing?.id === DEFAULT_ASSISTANT_ID ? false : input.deletable,
+  }, {
+    defaultModelKey: getFirstAvailableModelKey(),
+    now,
+  });
+  const nextAssistant = {
+    ...normalized,
+    modelKey: normalizeStoredModelKey(normalized.modelKey) || getFirstAvailableModelKey(),
+    updatedAt: now,
+  };
+  const nextConfigs = [...assistantConfigs.value];
+  if (existingIndex >= 0) {
+    nextConfigs.splice(existingIndex, 1, nextAssistant);
+  } else {
+    nextConfigs.push(nextAssistant);
+  }
+  assistantConfigs.value = nextConfigs;
+  await persistAssistantConfigs(nextConfigs);
+  assistantEditorOpen.value = false;
+  editingAssistantId.value = null;
+
+  if (!existing) {
+    await switchAssistant(nextAssistant.id);
+  } else if (activeAssistantId.value === nextAssistant.id) {
+    applyAssistantRuntime(nextAssistant);
+    navigateTo(taskToRouteName(state.task));
+  }
+}
+
+async function deleteAssistantWithHistory(assistantId: string) {
+  const assistant = getAssistantById(assistantId);
+  if (!assistant || !assistant.deletable) return;
+  const confirmed = window.confirm(`确定删除「${assistant.name}」及其全部历史会话吗？`);
+  if (!confirmed) return;
+
+  if (activeAssistantId.value === assistantId && isBusy.value) stopGenerating();
+  const nextConfigs = assistantConfigs.value.filter((item) => item.id !== assistantId);
+  assistantConfigs.value = nextConfigs;
+  sessions.value = sessions.value.filter((session) => session.assistantId !== assistantId);
+  if (defaultAssistantId.value === assistantId) {
+    defaultAssistantId.value = resolveAssistantId(DEFAULT_ASSISTANT_ID, nextConfigs);
+    await localSet({ [DEFAULT_ASSISTANT_ID_STORAGE_KEY]: defaultAssistantId.value });
   }
 
-  // 不创建新会话，不自动运行
+  if (activeAssistantId.value === assistantId) {
+    activeAssistantId.value = resolveAssistantId(defaultAssistantId.value, nextConfigs);
+    currentSessionId.value = '';
+    state.text = '';
+    activePageRef.value?.clearAttachments();
+    applyAssistantRuntime(activeAssistant.value);
+    navigateTo(taskToRouteName(state.task));
+    await persistActiveAssistantId();
+  }
+
+  await persistAssistantConfigs(nextConfigs);
+  saveSessions();
+  assistantEditorOpen.value = false;
+  editingAssistantId.value = null;
 }
 
 function selectModel(key: string) {
-  // 为当前任务保存模型选择
-  selectedModelByTask.value[state.task] = key;
-
-  // 保存到 storage
-  chrome.storage.local.set({
-    selectedModelByTask: selectedModelByTask.value
+  const assistant = activeAssistant.value;
+  if (!assistant) return;
+  const normalizedKey = normalizeStoredModelKey(key) || key;
+  const nextAssistant = { ...assistant, modelKey: normalizedKey, updatedAt: Date.now() };
+  assistantConfigs.value = assistantConfigs.value.map((item) => item.id === nextAssistant.id ? nextAssistant : item);
+  persistAssistantConfigs().catch((e) => {
+    console.error('保存助手模型失败:', e);
   });
 }
 
@@ -1694,11 +1978,25 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
+async function updateActiveAssistantSettings(patch: Partial<AssistantConfig['settings']>) {
+  const assistant = activeAssistant.value;
+  if (!assistant) return;
+  const nextAssistant: AssistantConfig = {
+    ...assistant,
+    settings: {
+      ...assistant.settings,
+      ...patch,
+    },
+    updatedAt: Date.now(),
+  };
+  assistantConfigs.value = assistantConfigs.value.map((item) => item.id === nextAssistant.id ? nextAssistant : item);
+  await persistAssistantConfigs();
+}
+
 async function toggleStreaming(checked: boolean) {
   enableStreaming.value = checked;
   try {
-    await updateTaskSettings(state.task, { enableStreaming: checked });
-    console.log(`任务 ${state.task} 的流式响应设置已保存:`, checked);
+    await updateActiveAssistantSettings({ enableStreaming: checked });
   } catch (e) {
     console.error('保存流式响应设置失败:', e);
   }
@@ -1707,8 +2005,7 @@ async function toggleStreaming(checked: boolean) {
 async function toggleReasoning(checked: boolean) {
   enableReasoning.value = checked;
   try {
-    await updateTaskSettings(state.task, { enableReasoning: checked });
-    console.log(`任务 ${state.task} 的思考模式设置已保存:`, checked);
+    await updateActiveAssistantSettings({ enableReasoning: checked });
   } catch (e) {
     console.error('保存思考模式设置失败:', e);
   }
@@ -1717,8 +2014,7 @@ async function toggleReasoning(checked: boolean) {
 async function changeReasoningEffort(effort: ReasoningEffort) {
   reasoningEffort.value = effort;
   try {
-    await updateTaskSettings(state.task, { reasoningEffort: effort });
-    console.log(`任务 ${state.task} 的思考等级设置已保存:`, effort);
+    await updateActiveAssistantSettings({ reasoningEffort: effort });
   } catch (e) {
     console.error('保存思考等级设置失败:', e);
   }
@@ -1728,8 +2024,7 @@ async function changeReasoningEffort(effort: ReasoningEffort) {
 async function toggleContext(checked: boolean) {
   enableContext.value = checked;
   try {
-    await updateTaskSettings(state.task, { enableContext: checked });
-    console.log(`任务 ${state.task} 的上下文设置已保存:`, checked);
+    await updateActiveAssistantSettings({ enableContext: checked });
   } catch (e) {
     console.error('保存上下文设置失败:', e);
   }
@@ -1738,8 +2033,7 @@ async function toggleContext(checked: boolean) {
 async function toggleFileUpload(checked: boolean) {
   enableFileUpload.value = checked;
   try {
-    await updateTaskSettings(state.task, { enableFileUpload: checked });
-    console.log(`任务 ${state.task} 的文件上传设置已保存:`, checked);
+    await updateActiveAssistantSettings({ enableFileUpload: checked });
   } catch (e) {
     console.error('保存文件上传设置失败:', e);
   }
@@ -1763,6 +2057,7 @@ async function toggleClipboardListening(checked: boolean) {
 
 onMounted(async () => {
   await loadModels();
+  await loadAssistants();
   await loadSessions();
 
   // 清理历史会话中可能遗留的 isStreaming 标记，避免误判忙碌态
@@ -1785,25 +2080,24 @@ onMounted(async () => {
   // 加载全局配置
   const globalConfig = await loadConfig();
 
-  // 根据当前任务加载对应的功能开关
-  const taskSettings = getTaskSettings(globalConfig, state.task);
-  enableStreaming.value = taskSettings.enableStreaming;
-  enableReasoning.value = taskSettings.enableReasoning;
-  reasoningEffort.value = taskSettings.reasoningEffort;
-  enableContext.value = taskSettings.enableContext;
-  enableFileUpload.value = taskSettings.enableFileUpload;
-
   maxSessionsCount.value = normalizeMaxSessionsCount(globalConfig.maxSessionsCount);
   contextMessagesCount.value = normalizeContextMessagesCount(globalConfig.contextMessagesCount);
   reduceVisualEffects.value = globalConfig.reduceVisualEffects || false;
   autoPasteGlobalAssistant.value = !!globalConfig.autoPasteGlobalAssistant;
   state.targetLang = globalConfig.translateTargetLang || 'zh-CN';
   state.prevLang = globalConfig.prevLanguage || 'en';
+  applyAssistantRuntime(activeAssistant.value);
   const activeRouteTask = routeNameToTask(currentRoute.value.name);
   if (!hasInitialRoute) {
     navigateTo(taskToRouteName(state.task), { replace: true });
   } else if (activeRouteTask) {
-    await changeTask(activeRouteTask, { persist: false });
+    const preset = assistantPresetForTask(activeRouteTask);
+    if (activeAssistant.value?.preset !== preset) {
+      const assistantId = assistantIdForPreset(preset);
+      if (assistantConfigs.value.some((assistant) => assistant.id === assistantId)) {
+        await switchAssistant(assistantId, { navigate: false });
+      }
+    }
   }
   routesReady.value = true;
   if (clampSessionsByMaxCount()) {
@@ -1815,19 +2109,6 @@ onMounted(async () => {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === 'sync' && changes.translateTargetLang) {
         state.targetLang = changes.translateTargetLang.newValue || 'zh-CN';
-      }
-      // 监听任务设置变化，更新当前任务的功能开关
-      if (area === 'sync' && changes.taskSettings) {
-        const newTaskSettings = changes.taskSettings.newValue;
-        if (newTaskSettings && newTaskSettings[state.task]) {
-          const currentTaskSettings = newTaskSettings[state.task];
-          enableStreaming.value = currentTaskSettings.enableStreaming ?? false;
-          enableReasoning.value = currentTaskSettings.enableReasoning ?? false;
-          reasoningEffort.value = currentTaskSettings.reasoningEffort ?? DEFAULT_REASONING_EFFORT;
-          enableContext.value = currentTaskSettings.enableContext ?? false;
-          enableFileUpload.value = currentTaskSettings.enableFileUpload ?? false;
-          console.log(`检测到任务 ${state.task} 的设置变化，已更新功能开关`);
-        }
       }
       if (area === 'sync' && changes.maxSessionsCount) {
         maxSessionsCount.value = normalizeMaxSessionsCount(changes.maxSessionsCount.newValue);
@@ -1852,6 +2133,18 @@ onMounted(async () => {
       }
       if (area === 'local' && changes[GLOBAL_WIN_VIEW_KEY]) {
         void consumeRequestedWindowView(changes[GLOBAL_WIN_VIEW_KEY].newValue);
+      }
+      if (area === 'local' && changes[ASSISTANT_CONFIGS_STORAGE_KEY]) {
+        const normalized = normalizeAssistantConfigs(changes[ASSISTANT_CONFIGS_STORAGE_KEY].newValue, {
+          modelKeyByPreset: getModelKeyByPreset(),
+          defaultModelKey: getFirstAvailableModelKey(),
+        });
+        assistantConfigs.value = normalizeAssistantModelKeys(normalized).configs;
+        activeAssistantId.value = resolveAssistantId(activeAssistantId.value, assistantConfigs.value, defaultAssistantId.value);
+        applyAssistantRuntime(activeAssistant.value);
+      }
+      if (area === 'local' && changes[DEFAULT_ASSISTANT_ID_STORAGE_KEY]) {
+        defaultAssistantId.value = resolveAssistantId(changes[DEFAULT_ASSISTANT_ID_STORAGE_KEY].newValue, assistantConfigs.value);
       }
     });
   } catch { }

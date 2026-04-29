@@ -123,7 +123,10 @@ chrome.runtime.onConnect.addListener((port) => {
       const channel = ensureChannel(cfg.channels, pair.channel);
       const targetLang = message.targetLang || cfg.translateTargetLang || 'zh-CN';
       const prevLang = message.prevLang || cfg.prevLanguage || 'en';
-      const { systemPrompt: taskSystemPrompt, userPrompt } = makePromptParts(message.task, text, targetLang, cfg.promptTemplates || {}, prevLang);
+      const assistantPrompt = typeof message.assistantPrompt === 'string' ? message.assistantPrompt.trim() : '';
+      const { systemPrompt: taskSystemPrompt, userPrompt } = assistantPrompt
+        ? makePromptPartsFromTemplate(assistantPrompt, text, targetLang, prevLang)
+        : makePromptParts(message.task, text, targetLang, cfg.promptTemplates || {}, prevLang);
       const prompt = userPrompt;
       const context = message.context || undefined;
       const enableReasoning = !!message.enableReasoning;
@@ -169,7 +172,10 @@ async function handleLegacyAction(request: any) {
   const channel = ensureChannel(cfg.channels, pair.channel);
   const targetLang = request.targetLang || cfg.translateTargetLang || 'zh-CN';
   const prevLang = request.prevLang || cfg.prevLanguage || 'en';
-  const { systemPrompt: taskSystemPrompt, userPrompt } = makePromptParts(request.task, text, targetLang, cfg.promptTemplates || {}, prevLang);
+  const assistantPrompt = typeof request.assistantPrompt === 'string' ? request.assistantPrompt.trim() : '';
+  const { systemPrompt: taskSystemPrompt, userPrompt } = assistantPrompt
+    ? makePromptPartsFromTemplate(assistantPrompt, text, targetLang, prevLang)
+    : makePromptParts(request.task, text, targetLang, cfg.promptTemplates || {}, prevLang);
   const prompt = userPrompt;
   const context = request.context || undefined;
   const enableStreaming = request.enableStreaming || false;
@@ -458,7 +464,7 @@ function pickModelFromConfig(task: string, requestPair: any, cfg: any) {
   return null;
 }
 
-import { makeMessage, makePromptParts } from '@/shared/ai';
+import { makeMessage, makePromptParts, makePromptPartsFromTemplate } from '@/shared/ai';
 import { channelContainsModelId, firstModelIdFromChannel, modelIdFromSpec } from '@/shared/model-utils';
 
 type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';

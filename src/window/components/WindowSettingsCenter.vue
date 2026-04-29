@@ -6,6 +6,14 @@ import { useChannels } from '@/options/composables/useChannels';
 import { defaultTemplates, initTemplates, loadPromptTemplates, promptTemplates, resetPromptTemplates, savePromptTemplates } from '@/shared/prompt-templates';
 import { useToast } from '@/options/composables/useToast';
 import { SUPPORTED_LANGUAGES, SUPPORTED_TASKS, DEFAULT_CONFIG, loadConfig, saveConfig, getTaskSettings, updateTaskSettings, type ReasoningEffort } from '@/shared/config';
+import {
+  ASSISTANT_CONFIGS_STORAGE_KEY,
+  DEFAULT_ASSISTANT_ID,
+  DEFAULT_ASSISTANT_ID_STORAGE_KEY,
+  normalizeAssistantConfigs,
+  resolveAssistantId,
+  type AssistantConfig,
+} from '@/shared/assistants';
 import { loadGlossary, parseGlossaryMixedText, parseGlossaryTermsText, serializeGlossaryTerms, stringifyGlossaryMixedText, saveGlossary as persistGlossary } from '@/shared/glossary';
 import { loadSettingsSnapshot, downloadSettingsSnapshot, parseSettingsImportFile, saveSettingsSnapshot } from '@/shared/settings-import-export';
 import { buildStylePresetsCss, CUSTOM_STYLE_SELECTION, DEFAULT_WRAPPER_STYLE_NAME, mergeTargetStylePresets, parseStyleNameFromCss, resolveSelectedStylePresetCss, upsertCustomStylePreset } from '@/shared/style-presets';
@@ -28,6 +36,8 @@ const toast = useToast();
 
 const defaultModel = ref<ModelPair>(null);
 const activeModel = ref<ModelPair>(null);
+const assistantConfigs = ref<AssistantConfig[]>([]);
+const defaultAssistantId = ref(DEFAULT_ASSISTANT_ID);
 // 使用全局配置
 const config = ref({ ...DEFAULT_CONFIG });
 // 样式选择/编辑
@@ -67,6 +77,50 @@ async function saveDefaultTask(value: string) {
     config.value.defaultTask = value;
     await saveConfig({ defaultTask: value });
     toast.success('默认任务已保存');
+  } catch {
+    toast.error('保存失败');
+  }
+}
+
+async function loadAssistantDefaults() {
+  const data = await new Promise<any>((resolve) => {
+    try {
+      chrome.storage.local.get([ASSISTANT_CONFIGS_STORAGE_KEY, DEFAULT_ASSISTANT_ID_STORAGE_KEY], resolve);
+    } catch {
+      resolve({});
+    }
+  });
+  const rawConfigs = data?.[ASSISTANT_CONFIGS_STORAGE_KEY];
+  const configs = normalizeAssistantConfigs(rawConfigs, {
+    templates: promptTemplates,
+    defaultModelKey: modelPairs.value[0]?.value || '',
+  });
+  assistantConfigs.value = configs;
+  defaultAssistantId.value = resolveAssistantId(data?.[DEFAULT_ASSISTANT_ID_STORAGE_KEY], configs);
+  if (!Array.isArray(rawConfigs)) {
+    try {
+      chrome.storage.local.set({
+        [ASSISTANT_CONFIGS_STORAGE_KEY]: JSON.parse(JSON.stringify(configs)),
+        [DEFAULT_ASSISTANT_ID_STORAGE_KEY]: defaultAssistantId.value,
+      });
+    } catch { }
+  }
+}
+
+async function saveDefaultAssistant(value: string) {
+  const nextId = resolveAssistantId(value, assistantConfigs.value);
+  defaultAssistantId.value = nextId;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      chrome.storage.local.set({ [DEFAULT_ASSISTANT_ID_STORAGE_KEY]: nextId }, () => {
+        if (chrome.runtime.lastError) {
+          reject(chrome.runtime.lastError);
+          return;
+        }
+        resolve();
+      });
+    });
+    toast.success('默认助手已保存');
   } catch {
     toast.error('保存失败');
   }
@@ -166,6 +220,7 @@ async function loadAll() {
       } catch { resolve(); }
     });
     initTemplates(await loadPromptTemplates());
+    await loadAssistantDefaults();
   } catch (error) {
     console.error('加载配置失败:', error);
   }
@@ -849,19 +904,19 @@ async function fetchAddFormModels() {
                   </Select>
                 </div>
               </div>
-              <!-- 默认任务 -->
+              <!-- 默认助手 -->
               <div class="flex items-center justify-between gap-4">
                 <div>
-                  <label class="text-sm font-medium leading-none block mb-1">默认任务</label>
-                  <p class="text-xs text-muted-foreground">打开助手窗口时默认进入的任务类型</p>
+                  <label class="text-sm font-medium leading-none block mb-1">默认助手</label>
+                  <p class="text-xs text-muted-foreground">打开助手窗口时默认进入的助手</p>
                 </div>
                 <div class="w-64">
-                  <Select :model-value="config.defaultTask" @update:modelValue="saveDefaultTask(String($event))">
+                  <Select :model-value="defaultAssistantId" @update:modelValue="saveDefaultAssistant(String($event))">
                     <SelectTrigger>
-                      <SelectValue placeholder="选择任务" />
+                      <SelectValue placeholder="选择助手" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem v-for="task in SUPPORTED_TASKS" :key="task.value" :value="task.value">{{ task.label }}
+                      <SelectItem v-for="assistant in assistantConfigs" :key="assistant.id" :value="assistant.id">{{ assistant.name }}
                       </SelectItem>
                     </SelectContent>
                   </Select>

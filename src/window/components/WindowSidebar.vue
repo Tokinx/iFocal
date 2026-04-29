@@ -11,16 +11,47 @@
       </Button>
 
       <div class="p-1 space-y-1 bg-white border border-olive-300/60 shadow-xs">
-        <Button
+        <div
           v-for="item in tasks"
-          :key="item.key"
-          variant="ghost"
-          class="w-full justify-start gap-2 hover:!bg-amber-800/80 hover:text-olive-100 border-none"
-          :class="activeRouteName === routeNameForTask(item.key) ? 'bg-amber-800/90 text-olive-100' : ''"
-          @click="$emit('navigate', routeNameForTask(item.key))"
+          :key="item.id"
+          role="button"
+          tabindex="0"
+          class="group flex min-h-9 w-full cursor-pointer items-center gap-2 px-3 text-sm transition-colors hover:bg-amber-800/80 hover:text-olive-100"
+          :class="activeRouteName !== 'settings' && activeAssistantId === item.id ? 'bg-amber-800/90 text-olive-100' : 'text-foreground'"
+          @click="$emit('selectAssistant', item.id)"
+          @keydown.enter.prevent="$emit('selectAssistant', item.id)"
+          @keydown.space.prevent="$emit('selectAssistant', item.id)"
         >
-          <Icon :icon="item.icon" class="h-4 w-4" />
-          {{ item.label }}
+          <Icon :icon="item.icon" class="h-4 w-4 shrink-0" />
+          <span class="min-w-0 flex-1 truncate text-left">{{ item.label }}</span>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            class="h-6 w-6 shrink-0 opacity-0 transition-opacity hover:bg-white/20 group-hover:opacity-100"
+            title="编辑助手"
+            @click.stop="$emit('editAssistant', item.id)"
+          >
+            <Icon icon="ri:edit-2-line" class="h-3 w-3" />
+          </Button>
+          <Button
+            v-if="item.deletable"
+            variant="ghost"
+            size="icon-xs"
+            class="h-6 w-6 shrink-0 opacity-0 transition-opacity hover:bg-white/20 group-hover:opacity-100"
+            title="删除助手"
+            @click.stop="$emit('deleteAssistant', item.id)"
+          >
+            <Icon icon="ri:delete-bin-line" class="h-3 w-3" />
+          </Button>
+        </div>
+
+        <Button
+          variant="ghost"
+          class="w-full justify-center gap-2 border-none text-olive-500 hover:!bg-olive-100 hover:text-amber-800"
+          title="添加助手"
+          @click="$emit('addAssistant')"
+        >
+          <Icon icon="ri:add-line" class="h-4 w-4" />
         </Button>
       </div>
 
@@ -78,13 +109,14 @@
 import { Icon } from '@iconify/vue'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import type { AssistantTask, SidebarTask, WindowSession } from '../types'
+import type { SidebarTask, WindowSession } from '../types'
 import type { WindowRouteName } from '../router'
 
 defineProps<{
   tasks: SidebarTask[]
   sessions: WindowSession[]
   currentSessionId: string
+  activeAssistantId: string
   activeRouteName: WindowRouteName
   formatDate: (timestamp: number) => string
 }>()
@@ -92,13 +124,11 @@ defineProps<{
 defineEmits<{
   (e: 'navigate', route: WindowRouteName): void
   (e: 'newChat'): void
+  (e: 'selectAssistant', assistantId: string): void
+  (e: 'addAssistant'): void
+  (e: 'editAssistant', assistantId: string): void
+  (e: 'deleteAssistant', assistantId: string): void
   (e: 'switchSession', sessionId: string): void
   (e: 'deleteSession', sessionId: string): void
 }>()
-
-function routeNameForTask(task: AssistantTask): WindowRouteName {
-  if (task === 'translate') return 'translate'
-  if (task === 'summarize') return 'summary'
-  return 'chat'
-}
 </script>
