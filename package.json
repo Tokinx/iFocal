@@ -6,6 +6,7 @@
     "scripts": {
         "dev": "vite",
         "build": "vite build",
+        "build:watch": "vite build --watch",
         "preview": "vite preview",
         "check:encoding": "node scripts/normalize-encoding.mjs --check",
         "fix:encoding": "node scripts/normalize-encoding.mjs --fix",
