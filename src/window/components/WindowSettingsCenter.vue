@@ -448,14 +448,6 @@ async function onLangChange() {
 }
 watch(assistantModelValue, (val) => { const pair = parsePair(val); try { chrome.storage.sync.set({ activeModel: pair || null }); } catch { } });
 
-// 切换自动粘贴开关时持久化
-watch(() => config.value.autoPasteGlobalAssistant, async (val) => {
-  try {
-    config.value.autoPasteGlobalAssistant = !!val;
-    await saveConfig({ autoPasteGlobalAssistant: config.value.autoPasteGlobalAssistant });
-  } catch { }
-});
-
 // 导入导出
 const importerRef = ref<HTMLInputElement | null>(null);
 async function onExport() {

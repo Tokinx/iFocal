@@ -3,13 +3,17 @@ import { DEFAULT_REASONING_EFFORT, DEFAULT_TASK_SETTINGS, type ReasoningEffort, 
 
 export type AssistantPreset = 'chat' | 'translate' | 'summarize';
 
+export interface AssistantSettings extends TaskSettings {
+  enableClipboardListening: boolean;
+}
+
 export interface AssistantConfig {
   id: string;
   name: string;
   preset: AssistantPreset;
   prompt: string;
   modelKey: string;
-  settings: TaskSettings;
+  settings: AssistantSettings;
   deletable: boolean;
   createdAt: number;
   updatedAt: number;
@@ -46,6 +50,7 @@ export interface NormalizeAssistantOptions {
   templates?: Partial<PromptTemplates>;
   modelKeyByPreset?: Partial<Record<AssistantPreset, string>>;
   defaultModelKey?: string;
+  defaultClipboardListening?: boolean;
   now?: number;
 }
 
@@ -84,8 +89,8 @@ export function defaultPromptForPreset(preset: AssistantPreset, templates?: Part
   return value || fallback;
 }
 
-export function defaultSettingsForPreset(preset: AssistantPreset): TaskSettings {
-  return normalizeAssistantSettings(DEFAULT_TASK_SETTINGS[preset], preset);
+export function defaultSettingsForPreset(preset: AssistantPreset, defaultClipboardListening = false): AssistantSettings {
+  return normalizeAssistantSettings(DEFAULT_TASK_SETTINGS[preset], preset, defaultClipboardListening);
 }
 
 export function createAssistantId(): string {
@@ -100,7 +105,7 @@ export function createDefaultAssistantConfigs(options: NormalizeAssistantOptions
     preset: def.preset,
     prompt: defaultPromptForPreset(def.preset, options.templates),
     modelKey: options.modelKeyByPreset?.[def.preset] || options.defaultModelKey || '',
-    settings: defaultSettingsForPreset(def.preset),
+    settings: defaultSettingsForPreset(def.preset, options.defaultClipboardListening),
     deletable: def.deletable,
     createdAt: now,
     updatedAt: now,
@@ -120,7 +125,7 @@ export function createAssistantConfig(input: Partial<AssistantConfig> = {}, opti
     preset,
     prompt,
     modelKey: String(input.modelKey || options.modelKeyByPreset?.[preset] || options.defaultModelKey || '').trim(),
-    settings: normalizeAssistantSettings(input.settings, preset),
+    settings: normalizeAssistantSettings(input.settings, preset, options.defaultClipboardListening),
     deletable: isBuiltInChat ? false : typeof input.deletable === 'boolean' ? input.deletable : true,
     createdAt: Number(input.createdAt) || now,
     updatedAt: Number(input.updatedAt) || now,
@@ -156,14 +161,21 @@ export function resolveAssistantId(candidate: unknown, assistants: AssistantConf
   return assistants[0]?.id || DEFAULT_ASSISTANT_ID;
 }
 
-function normalizeAssistantSettings(raw: unknown, preset: AssistantPreset): TaskSettings {
-  const source = raw && typeof raw === 'object' ? raw as Partial<TaskSettings> : {};
+function normalizeAssistantSettings(raw: unknown, preset: AssistantPreset, defaultClipboardListening = false): AssistantSettings {
+  const source = raw && typeof raw === 'object' ? raw as Partial<AssistantSettings> & Record<string, unknown> : {};
   const fallback = DEFAULT_TASK_SETTINGS[preset] || DEFAULT_TASK_SETTINGS.chat;
+  const legacyClipboard = (source as any).autoPasteGlobalAssistant;
   return {
     enableContext: typeof source.enableContext === 'boolean' ? source.enableContext : fallback.enableContext,
     enableStreaming: typeof source.enableStreaming === 'boolean' ? source.enableStreaming : fallback.enableStreaming,
     enableReasoning: typeof source.enableReasoning === 'boolean' ? source.enableReasoning : fallback.enableReasoning,
     enableFileUpload: typeof source.enableFileUpload === 'boolean' ? source.enableFileUpload : fallback.enableFileUpload,
+    enableClipboardListening:
+      typeof source.enableClipboardListening === 'boolean'
+        ? source.enableClipboardListening
+        : typeof legacyClipboard === 'boolean'
+          ? legacyClipboard
+          : !!defaultClipboardListening,
     reasoningEffort: normalizeReasoningEffort(source.reasoningEffort ?? fallback.reasoningEffort),
   };
 }
