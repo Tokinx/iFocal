@@ -3,7 +3,6 @@ import { onMounted, ref, watch, computed, reactive } from 'vue';
 import { Icon } from '@iconify/vue';
 import { iconOfNav, iconOfChannelType, iconOfAction } from '@/shared/icons';
 import { useChannels } from '@/options/composables/useChannels';
-import { defaultTemplates, initTemplates, loadPromptTemplates, promptTemplates, resetPromptTemplates, savePromptTemplates } from '@/shared/prompt-templates';
 import { useToast } from '@/options/composables/useToast';
 import { SUPPORTED_LANGUAGES, SUPPORTED_TASKS, DEFAULT_CONFIG, loadConfig, saveConfig, getTaskSettings, updateTaskSettings, type ReasoningEffort } from '@/shared/config';
 import {
@@ -92,7 +91,6 @@ async function loadAssistantDefaults() {
   });
   const rawConfigs = data?.[ASSISTANT_CONFIGS_STORAGE_KEY];
   const configs = normalizeAssistantConfigs(rawConfigs, {
-    templates: promptTemplates,
     defaultModelKey: modelPairs.value[0]?.value || '',
   });
   assistantConfigs.value = configs;
@@ -219,7 +217,6 @@ async function loadAll() {
         });
       } catch { resolve(); }
     });
-    initTemplates(await loadPromptTemplates());
     await loadAssistantDefaults();
   } catch (error) {
     console.error('加载配置失败:', error);
@@ -1213,39 +1210,6 @@ async function fetchAddFormModels() {
               <Button class="bg-primary text-primary-foreground flex items-center gap-1" @click="saveGlossary">
                 <Icon :icon="iconOfAction('save')" width="16" /> 保存术语库
               </Button>
-            </div>
-          </div>
-        </section>
-
-        <!-- Prompt 模板（移动至其它设置） -->
-        <section v-if="nav === 'debug'" :id="'opt-prompts'" class="space-y-4">
-          <header class="flex items-center h-10 text-base font-semibold">Prompt 模板</header>
-          <div class="space-y-3">
-            <p class="text-xs text-muted-foreground">可使用占位符 <code v-pre>{{targetLang}}</code>、<code
-                v-pre>{{prevLang}}</code> 与 <code v-pre>{{text}}</code>。</p>
-            <div class="space-y-4">
-              <div>
-                <Label class="mb-1 block">翻译模板</Label>
-                <Textarea v-model="promptTemplates.translate" class="min-h-28"
-                  :placeholder="defaultTemplates.translate" />
-              </div>
-              <div>
-                <Label class="mb-1 block">聊天模板</Label>
-                <Textarea v-model="promptTemplates.chat" class="min-h-28" :placeholder="defaultTemplates.chat" />
-              </div>
-              <div>
-                <Label class="mb-1 block">总结模板</Label>
-                <Textarea v-model="promptTemplates.summarize" class="min-h-28"
-                  :placeholder="defaultTemplates.summarize" />
-              </div>
-            </div>
-            <div class="flex items-center gap-2">
-              <Button class="bg-primary text-primary-foreground"
-                @click="async () => { await savePromptTemplates(); toast.success('模板已保存'); }">
-                <Icon :icon="iconOfAction('save')" width="16" /> 保存模板
-              </Button>
-              <Button variant="ghost"
-                @click="async () => { await resetPromptTemplates(); toast.info('已恢复默认模板'); }">重置模板</Button>
             </div>
           </div>
         </section>

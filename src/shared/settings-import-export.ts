@@ -1,6 +1,5 @@
 import { CONFIG_KEYS } from '@/shared/config';
 import { GLOSSARY_STORAGE_KEYS } from '@/shared/glossary';
-import { PROMPT_TEMPLATES_STORAGE_KEY } from '@/shared/prompt-templates';
 
 export const EXTRA_SETTINGS_KEYS = [
   'channels',
@@ -14,7 +13,6 @@ export const EXTRA_SETTINGS_KEYS = [
 export const SETTINGS_EXPORT_KEYS = [
   ...CONFIG_KEYS,
   ...GLOSSARY_STORAGE_KEYS,
-  PROMPT_TEMPLATES_STORAGE_KEY,
   ...EXTRA_SETTINGS_KEYS,
 ] as const;
 
