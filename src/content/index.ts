@@ -5,6 +5,7 @@ const DOC_STYLE = `
 .ifocal-target-block-wrapper{display: inline-block;margin: 8px 0;}
 .ifocal-target-inline-wrapper{}
 .ifocal-tx{display:inline;overflow-wrap:anywhere;word-break:break-word;hyphens:auto}
+.ifocal-fullpage-translation{display:block;margin-top:6px}
 @keyframes ifocal-spin{to{transform:rotate(360deg)}}
 .ifocal-loading{width:12px;height:12px;border:2px solid rgba(15,23,42,0.18);border-top-color:#0f172a;border-radius:50%;animation:ifocal-spin .8s linear infinite;display:inline-block;vertical-align:middle;line-height:1;flex:0 0 auto}
 .ifocal-loading-wrap{display:flex;align-items:center;justify-content:center;min-height:56px}
@@ -134,6 +135,8 @@ let uiShadow: ShadowRoot | null = null;
 const SHADOW_STYLE = `
 .ifocal-overlay{position:absolute;z-index:2147483647;max-width:420px;width:100%;background:rgba(255,255,255,0.88);border-radius:12px;box-shadow:0 12px 32px rgba(15,23,42,0.18);color:#0f172a;line-height:1.55;backdrop-filter:saturate(180%) blur(12px);-webkit-backdrop-filter:saturate(180%) blur(12px);pointer-events:auto}
 .ifocal-overlay-body{white-space:pre-wrap;max-height:50vh;overflow-y:auto;position:relative;padding:0 12px 12px;}
+.ifocal-status-overlay{position:fixed;right:16px;bottom:16px;top:auto;left:auto;width:280px;max-width:calc(100vw - 32px);min-width:0;border-radius:10px;background:rgba(255,255,255,0.96);box-shadow:0 10px 24px rgba(15,23,42,0.14);pointer-events:none}
+.ifocal-status-overlay .ifocal-overlay-body{max-height:30vh;padding:10px 12px;font-size:12px;line-height:1.45}
 .ifocal-overlay-header{cursor:move;display:flex;align-items:center;justify-content:space-between;padding:12px;}
 .ifocal-header-left{display:flex;align-items:center;gap:8px}
 .ifocal-dd-wrap{position:relative}
@@ -250,16 +253,24 @@ type OverlayHandle = {
   setText: (text: string) => void;
   append: (text: string) => void;
   setLoading: (flag: boolean) => void;
+  _body?: HTMLElement;
   _port?: chrome.runtime.Port | null;
 };
 
 type ChannelPair = { channel: string; model: string } | null;
+type SelectionTranslationMode = 'ai' | 'machine';
+type OverlayTranslateRunner = (overlay: OverlayHandle, task: string, text: string, pair: ChannelPair, lang: string, prevLang?: string) => void;
+type FullPageTarget = { element: HTMLElement; text: string };
 
 type StorageConfig = {
   channels?: Array<{ name: string; models?: string[] }>;
   defaultModel?: ChannelPair;
   translateTargetLang?: string;
   prevLanguage?: string;
+  selectionTranslationMode?: SelectionTranslationMode;
+  mtDefaultChannelId?: string;
+  wrapperStyleName?: string;
+  targetStylePresets?: Array<{ name: string; css: string }>;
 };
 
 function parseModelSpec(spec: string | null | undefined): { modelId: string; displayName: string } {
@@ -276,6 +287,10 @@ function channelHasModelId(channel: { models?: string[] } | null | undefined, mo
   if (!id) return false;
   const models = Array.isArray(channel?.models) ? channel!.models! : [];
   return models.some((m) => parseModelSpec(m).modelId === id);
+}
+
+function normalizeSelectionTranslationMode(value: unknown): SelectionTranslationMode {
+  return value === 'machine' ? 'machine' : 'ai';
 }
 
 function firstModelIdFromChannel(channel: { models?: string[] } | null | undefined): string | null {
@@ -304,8 +319,10 @@ let hoverInInputArea = false;
 let actionKey = 'Alt';
 let displayMode: 'insert' | 'overlay' = 'insert';
 let enableSelectionTranslation = true;
+let selectionTranslationMode: SelectionTranslationMode = 'ai';
 let lastOverlay: OverlayHandle | null = null;
 let keydownCooldown = false;
+let fullPageTranslateRunning = false;
 
 let lastSelectionText = '';
 let lastSelectionRect: DOMRect | null = null;
@@ -337,6 +354,7 @@ function createOverlayAt(left: number, top: number, loadingStyle: OverlayLoading
   let loadingNode: HTMLElement | null = null;
   const overlay: OverlayHandle = {
     root,
+    _body: body,
     setText(text) {
       body.textContent = text;
     },
@@ -396,7 +414,7 @@ let SUPPORTED_LANGUAGES: Lang[] = [
 // 重载 
 function readHotkeys() {
   try {
-    chrome.storage.sync.get(['actionKey', 'hoverKey', 'selectKey', 'displayMode', 'enableSelectionTranslation'], (items) => {
+    chrome.storage.sync.get(['actionKey', 'hoverKey', 'selectKey', 'displayMode', 'enableSelectionTranslation', 'selectionTranslationMode'], (items) => {
       if (items?.actionKey) actionKey = items.actionKey;
       else if (items?.hoverKey) actionKey = items.hoverKey;
       else if (items?.selectKey) actionKey = items.selectKey;
@@ -404,6 +422,7 @@ function readHotkeys() {
         displayMode = items.displayMode;
       }
       enableSelectionTranslation = typeof items?.enableSelectionTranslation === 'boolean' ? items.enableSelectionTranslation : true;
+      selectionTranslationMode = normalizeSelectionTranslationMode(items?.selectionTranslationMode);
     });
     chrome.storage.onChanged.addListener((changes, areaName) => {
       if (areaName !== 'sync') return;
@@ -413,6 +432,7 @@ function readHotkeys() {
         displayMode = mode || 'insert';
       }
       if (changes.enableSelectionTranslation) enableSelectionTranslation = !!changes.enableSelectionTranslation.newValue;
+      if (changes.selectionTranslationMode) selectionTranslationMode = normalizeSelectionTranslationMode(changes.selectionTranslationMode.newValue);
     });
   } catch (error) {
     console.warn('failed to read hotkeys', error);
@@ -514,13 +534,11 @@ function findTextBlockElement(target: EventTarget | null): HTMLElement | null {
   const element = target instanceof HTMLElement ? target : null;
   if (!element) return null;
   if (isInputArea(element)) return null;
-  if (isIfocalElement(element)) return null;
   const BLOCK_TAGS = new Set(['P', 'DIV', 'ARTICLE', 'SECTION', 'LI', 'TD', 'A', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6']);
-  const INVALID_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT']);
   let current: HTMLElement | null = element;
   while (current && current !== document.body) {
     if (isIfocalElement(current)) return null;
-    if (INVALID_TAGS.has(current.tagName)) return null;
+    if (isExcludedTranslateElement(current)) return null;
     const text = (current.innerText || '').trim();
     if (text && BLOCK_TAGS.has(current.tagName)) return current;
     current = current.parentElement;
@@ -556,7 +574,7 @@ document.addEventListener('mouseup', (ev) => {
   const selection = window.getSelection();
   const selectedText = selection ? selection.toString().trim() : '';
   const anchor = getSelectionAnchorNode();
-  if (isIfocalElement(ev.target as any) || isIfocalElement(anchor)) {
+  if (isIfocalElement(ev.target as any) || isIfocalElement(anchor) || isExcludedTranslateElement(ev.target as any) || isExcludedTranslateElement(anchor)) {
     overlayAutoFollow = false;
     hideSelectionDot();
     maybeDetachScrollListener();
@@ -579,8 +597,8 @@ document.addEventListener('selectionchange', () => {
   const selection = window.getSelection();
   const text = selection ? selection.toString().trim() : '';
   const anchor = getSelectionAnchorNode();
-  if (!text || isIfocalElement(anchor)) {
-    if (text && isIfocalElement(anchor)) {
+  if (!text || isIfocalElement(anchor) || isExcludedTranslateElement(anchor)) {
+    if (text && (isIfocalElement(anchor) || isExcludedTranslateElement(anchor))) {
       overlayAutoFollow = false;
       maybeDetachScrollListener();
     }
@@ -600,7 +618,7 @@ document.addEventListener('touchend', (ev) => {
     const selection = window.getSelection();
     const selectedText = selection ? selection.toString().trim() : '';
     const anchor = getSelectionAnchorNode();
-    if (isIfocalElement(ev.target as any) || isIfocalElement(anchor)) {
+    if (isIfocalElement(ev.target as any) || isIfocalElement(anchor) || isExcludedTranslateElement(ev.target as any) || isExcludedTranslateElement(anchor)) {
       overlayAutoFollow = false;
       hideSelectionDot();
       maybeDetachScrollListener();
@@ -644,7 +662,7 @@ function getSelectionRect(): DOMRect | null {
   if (!selection || selection.rangeCount === 0) return null;
   const range = selection.getRangeAt(0);
   const anchor = selection.anchorNode;
-  if (isIfocalElement(anchor)) return null;
+  if (isIfocalElement(anchor) || isExcludedTranslateElement(anchor)) return null;
   const rects = range.getClientRects();
   const last = rects && rects.length ? rects[rects.length - 1] : range.getBoundingClientRect();
   if (last && last.width >= 0 && last.height >= 0) return last as DOMRect;
@@ -689,6 +707,322 @@ function maybeDetachScrollListener() {
   currentScrollContainer = null; currentScrollHandler = null;
 }
 
+function normalizePageText(text: string): string {
+  return String(text || '')
+    .replace(/\u00a0/g, ' ')
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+}
+
+const TRANSLATE_EXCLUDED_SELECTOR = 'script,style,noscript,code,pre,kbd,samp,var,textarea,input,select,option,svg,canvas';
+
+function isExcludedTranslateElement(target: EventTarget | Node | null): boolean {
+  try {
+    const node = target as Node | null;
+    const element = node instanceof HTMLElement
+      ? node
+      : (node?.parentElement || null);
+    if (!element) return false;
+    return !!element.closest(TRANSLATE_EXCLUDED_SELECTOR);
+  } catch {
+    return false;
+  }
+}
+
+function extractTranslatableText(element: HTMLElement): string {
+  try {
+    const clone = element.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll(`${TRANSLATE_EXCLUDED_SELECTOR}, .ifocal-fullpage-translation, .ifocal-overlay, .ifocal-dot, #ifocal-host, [aria-hidden="true"], [hidden]`)
+      .forEach((node) => node.remove());
+    return normalizePageText(clone.textContent || '');
+  } catch {
+    return normalizePageText(element.innerText || element.textContent || '');
+  }
+}
+
+function machineTranslateTexts(texts: string[], targetLang: string, channelId?: string): Promise<{ ok?: boolean; translations?: string[]; errors?: string[]; error?: string }> {
+  return new Promise((resolve) => {
+    const payload: any = {
+      action: 'machineTranslateBatch',
+      texts,
+      sourceLang: 'auto',
+      targetLang: targetLang || 'zh-CN',
+      format: 'plain',
+    };
+    if (channelId) payload.channelId = channelId;
+    try {
+      chrome.runtime.sendMessage(payload, (resp: any) => {
+        const runtimeError = chrome.runtime.lastError?.message;
+        if (runtimeError) {
+          resolve({ ok: false, error: runtimeError, translations: [], errors: [runtimeError] });
+          return;
+        }
+        if (!resp) {
+          resolve({ ok: false, error: '无响应', translations: [], errors: ['无响应'] });
+          return;
+        }
+        resolve(resp);
+      });
+    } catch (error: any) {
+      resolve({ ok: false, error: String(error?.message || error || '调用失败'), translations: [], errors: [String(error?.message || error || '调用失败')] });
+    }
+  });
+}
+
+function createFixedOverlay(loadingStyle: OverlayLoadingStyle = 'spinner') {
+  const overlay = createOverlayAt(0, 0, loadingStyle);
+  overlay.root.classList.add('ifocal-status-overlay');
+  overlay.root.style.left = 'auto';
+  overlay.root.style.top = 'auto';
+  overlay.root.style.right = '16px';
+  overlay.root.style.bottom = '16px';
+  overlay.root.style.width = '280px';
+  overlay.root.style.maxWidth = 'calc(100vw - 32px)';
+  return overlay;
+}
+
+function setOverlayMessage(overlay: OverlayHandle, text: string) {
+  overlay.setLoading(false);
+  overlay.setText(text);
+}
+
+function setOverlayLoadingMessage(overlay: OverlayHandle, text: string) {
+  const body = overlay._body;
+  if (!body) {
+    overlay.setLoading(true);
+    return;
+  }
+  body.innerHTML = '';
+  const wrap = document.createElement('div');
+  wrap.className = 'ifocal-loading-wrap';
+  wrap.style.justifyContent = 'flex-start';
+  wrap.style.gap = '8px';
+  wrap.style.minHeight = '0';
+  const spin = document.createElement('span');
+  spin.className = 'ifocal-loading';
+  spin.setAttribute('aria-label', 'Loading translation');
+  const label = document.createElement('span');
+  label.textContent = text;
+  wrap.appendChild(spin);
+  wrap.appendChild(label);
+  body.appendChild(wrap);
+}
+
+function shouldUseMachineTranslation(mode: unknown): boolean {
+  return normalizeSelectionTranslationMode(mode) === 'machine';
+}
+
+function startMachineTranslateForOverlay(overlay: OverlayHandle, text: string, lang: string, channelId?: string) {
+  overlay.setLoading(true);
+  void machineTranslateTexts([text], lang, channelId).then((resp) => {
+    overlay.setLoading(false);
+    const translated = Array.isArray(resp?.translations) ? String(resp.translations[0] || '') : '';
+    const error = Array.isArray(resp?.errors) ? String(resp.errors.find(Boolean) || '') : '';
+    if ((resp?.ok || translated) && translated) {
+      overlay.setText(translated);
+      return;
+    }
+    overlay.setText(`【错误】${error || resp?.error || '未知错误'}`);
+  });
+}
+
+function createMachineOverlayRunner(channelId?: string): OverlayTranslateRunner {
+  return (overlay, _task, text, _pair, lang) => {
+    startMachineTranslateForOverlay(overlay, text, lang, channelId);
+  };
+}
+
+function createSelectionRunner(cfg: StorageConfig): { runner: OverlayTranslateRunner; showModelSelector: boolean } {
+  if (shouldUseMachineTranslation(cfg.selectionTranslationMode || selectionTranslationMode)) {
+    return { runner: createMachineOverlayRunner(cfg.mtDefaultChannelId), showModelSelector: false };
+  }
+  return { runner: startStreamForOverlay, showModelSelector: true };
+}
+
+function applyInlineTranslationResult(wrapper: HTMLElement, text: string, targetLang: string, sourceText: string) {
+  try {
+    if (targetLang) wrapper.setAttribute('lang', targetLang);
+    const rtl = targetLang && /^(ar|he|fa|ur|yi)(-|$)/i.test(targetLang);
+    if (rtl) wrapper.setAttribute('dir', 'rtl'); else wrapper.removeAttribute('dir');
+    wrapper.innerHTML = '';
+    const styleName = (wrapper.getAttribute('data-tx-style') || '').trim() || 'ifocal-target-style-dotted';
+    const spacer = document.createElement('font');
+    spacer.className = 'notranslate';
+    spacer.innerHTML = '&nbsp;&nbsp;';
+    wrapper.appendChild(spacer);
+    const resultWrapper = document.createElement('font');
+    resultWrapper.className = `notranslate ifocal-target-inline-wrapper ${styleName}`.trim();
+    const inner = document.createElement('font');
+    inner.className = 'notranslate ifocal-target-inner';
+    inner.textContent = text;
+    resultWrapper.appendChild(inner);
+    wrapper.appendChild(resultWrapper);
+    try { wrapper.setAttribute('data-tx-done', '1'); } catch { }
+    const block = wrapper.closest('p,div,section,article,li,td,a,h1,h2,h3,h4,h5,h6') as HTMLElement | null;
+    if (block && sourceText) {
+      try { block.setAttribute('aria-busy', 'false'); } catch {}
+    }
+  } catch {}
+}
+
+function appendFullPageTranslation(element: HTMLElement, translatedText: string, targetLang: string, styleName: string) {
+  const host = document.createElement('span');
+  host.className = 'ifocal-fullpage-translation notranslate';
+  host.setAttribute('data-ifocal-full-page', '1');
+
+  const wrapper = sharedCreateWrapper(`fullpage_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`, targetLang);
+  try { wrapper.setAttribute('data-tx-style', styleName); } catch {}
+  if (targetLang) wrapper.setAttribute('lang', targetLang);
+  if (/^(ar|he|fa|ur|yi)(-|$)/i.test(targetLang || '')) wrapper.setAttribute('dir', 'rtl');
+  else wrapper.removeAttribute('dir');
+
+  const resultWrapper = document.createElement('font');
+  resultWrapper.className = `notranslate ifocal-target-block-wrapper ${styleName}`.trim();
+  const inner = document.createElement('font');
+  inner.className = 'notranslate ifocal-target-inner';
+  inner.textContent = translatedText;
+  resultWrapper.appendChild(inner);
+  wrapper.appendChild(resultWrapper);
+  host.appendChild(wrapper);
+  element.appendChild(host);
+}
+
+function clearFullPageTranslations() {
+  try {
+    document.querySelectorAll('.ifocal-fullpage-translation[data-ifocal-full-page="1"]').forEach((node) => node.remove());
+  } catch {}
+}
+
+function isVisibleForFullPageTranslate(element: HTMLElement): boolean {
+  try {
+    if (!element.isConnected) return false;
+    if (isIfocalElement(element)) return false;
+    if (isInputArea(element)) return false;
+    if (isExcludedTranslateElement(element)) return false;
+    if ((element.getAttribute('aria-hidden') || '').toLowerCase() === 'true') return false;
+    const style = window.getComputedStyle(element);
+    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+    return element.getClientRects().length > 0;
+  } catch {
+    return false;
+  }
+}
+
+const FULL_PAGE_CORE_SELECTOR = 'p,li,td,th,blockquote,h1,h2,h3,h4,h5,h6,figcaption,caption,summary,dt,dd';
+const FULL_PAGE_FALLBACK_SELECTOR = 'div,section,article';
+const FULL_PAGE_MAX_TEXT_LENGTH = 1200;
+
+function collectFullPageTargets(): FullPageTarget[] {
+  const targets: FullPageTarget[] = [];
+  const seen = new Set<HTMLElement>();
+  const pushTarget = (element: HTMLElement) => {
+    if (seen.has(element)) return;
+    if (!isVisibleForFullPageTranslate(element)) return;
+    const text = extractTranslatableText(element);
+    if (!text || text.length < 2 || text.length > FULL_PAGE_MAX_TEXT_LENGTH) return;
+    if (element.querySelector('.ifocal-fullpage-translation[data-ifocal-full-page="1"]')) return;
+    seen.add(element);
+    targets.push({ element, text });
+  };
+
+  document.querySelectorAll(FULL_PAGE_CORE_SELECTOR).forEach((node) => {
+    const element = node as HTMLElement;
+    if (element.querySelector(FULL_PAGE_CORE_SELECTOR)) return;
+    pushTarget(element);
+  });
+
+  document.querySelectorAll(FULL_PAGE_FALLBACK_SELECTOR).forEach((node) => {
+    const element = node as HTMLElement;
+    if (element.querySelector(FULL_PAGE_CORE_SELECTOR)) return;
+    if (element.querySelector(FULL_PAGE_FALLBACK_SELECTOR)) return;
+    pushTarget(element);
+  });
+
+  return targets;
+}
+
+async function translateFullPage() {
+  if (fullPageTranslateRunning) {
+    const overlay = createFixedOverlay();
+    setOverlayMessage(overlay, '网页全文翻译正在执行，请稍候。');
+    window.setTimeout(() => {
+      try { overlay.root.remove(); } catch {}
+    }, 1800);
+    return { ok: false, error: 'running' };
+  }
+
+  fullPageTranslateRunning = true;
+  const overlay = createFixedOverlay('spinner');
+  overlay.setLoading(true);
+
+  try {
+    clearFullPageTranslations();
+    const cfg = await new Promise<StorageConfig>((resolve) => {
+      try {
+        chrome.storage.sync.get(['translateTargetLang', 'mtDefaultChannelId', 'wrapperStyleName', 'targetStylePresets'], (items: any) => {
+          resolve(items || {});
+        });
+      } catch {
+        resolve({});
+      }
+    });
+    const targetLang = String(cfg.translateTargetLang || 'zh-CN').trim() || 'zh-CN';
+    const channelId = String(cfg.mtDefaultChannelId || '').trim() || undefined;
+    const styleName = String(cfg.wrapperStyleName || 'ifocal-target-style-dotted').trim() || 'ifocal-target-style-dotted';
+
+    ensureDocLoadingStyle();
+    ensureTargetStylePresets(cfg.targetStylePresets || null);
+
+    const targets = collectFullPageTargets();
+    if (!targets.length) {
+      setOverlayMessage(overlay, '未找到可翻译的网页正文。');
+      window.setTimeout(() => {
+        try { overlay.root.remove(); } catch {}
+      }, 2200);
+      return { ok: true, translated: 0, failed: 0 };
+    }
+
+    const batchSize = 20;
+    let translatedCount = 0;
+    let failedCount = 0;
+
+    for (let start = 0; start < targets.length; start += batchSize) {
+      const chunk = targets.slice(start, start + batchSize);
+      setOverlayLoadingMessage(overlay, '网页全文翻译中...');
+      const resp = await machineTranslateTexts(chunk.map((item) => item.text), targetLang, channelId);
+      const translations = Array.isArray(resp?.translations) ? resp.translations : [];
+      const errors = Array.isArray(resp?.errors) ? resp.errors : [];
+
+      chunk.forEach((item, index) => {
+        const translatedText = String(translations[index] || '').trim();
+        const error = String(errors[index] || '').trim();
+        if (translatedText) {
+          appendFullPageTranslation(item.element, translatedText, targetLang, styleName);
+          translatedCount += 1;
+        } else if (error || resp?.error) {
+          failedCount += 1;
+        }
+      });
+
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+    }
+
+    setOverlayMessage(overlay, '网页全文翻译完成');
+    window.setTimeout(() => {
+      try { overlay.root.remove(); } catch {}
+    }, 2600);
+    return { ok: true, translated: translatedCount, failed: failedCount };
+  } catch (error: any) {
+    setOverlayMessage(overlay, `网页全文翻译失败\n${String(error?.message || error || '未知错误')}`);
+    return { ok: false, error: String(error?.message || error || '未知错误') };
+  } finally {
+    fullPageTranslateRunning = false;
+  }
+}
+
 function showSelectionDot(rect: DOMRect) {
   const shadow = ensureUiRoot();
   try { hideSelectionDot(); } catch {}
@@ -703,12 +1037,13 @@ function showSelectionDot(rect: DOMRect) {
     const overlay = createOverlayAt(left, top + 16, 'skeleton');
     overlayAutoFollow = true;
     overlay.setLoading(true);
-    chrome.storage.sync.get(['channels', 'defaultModel', 'translateTargetLang', 'prevLanguage'], (cfg: StorageConfig) => {
+    chrome.storage.sync.get(['channels', 'defaultModel', 'translateTargetLang', 'prevLanguage', 'selectionTranslationMode', 'mtDefaultChannelId'], (cfg: StorageConfig) => {
       const pair = pickPair(cfg);
       const lang = cfg.translateTargetLang || 'zh-CN';
       const prevLang = cfg.prevLanguage || 'en';
-      attachOverlayHeaderVue(overlay, cfg, pair, lang, prevLang, lastSelectionText);
-      startStreamForOverlay(overlay, 'translate', lastSelectionText, pair, lang, prevLang);
+      const { runner, showModelSelector } = createSelectionRunner(cfg);
+      attachOverlayHeaderVue(overlay, cfg, pair, lang, prevLang, lastSelectionText, runner, showModelSelector);
+      runner(overlay, 'translate', lastSelectionText, pair, lang, prevLang);
     });
     hideSelectionDot();
   };
@@ -758,12 +1093,13 @@ function toggleHoverTranslate(blockEl: HTMLElement) {
       const overlay = createOverlayAt(rect.left + window.scrollX, rect.bottom + window.scrollY + 8);
       overlay.setLoading(true);
       const source = (blockEl.innerText || '').trim();
-      chrome.storage.sync.get(['channels', 'defaultModel', 'translateTargetLang', 'prevLanguage'], (cfg: StorageConfig) => {
+      chrome.storage.sync.get(['channels', 'defaultModel', 'translateTargetLang', 'prevLanguage', 'selectionTranslationMode', 'mtDefaultChannelId'], (cfg: StorageConfig) => {
         const pair = pickPair(cfg);
         const lang = cfg.translateTargetLang || 'zh-CN';
         const prevLang = cfg.prevLanguage || 'en';
-        attachOverlayHeaderVue(overlay, cfg, pair, lang, prevLang, source);
-        startStreamForOverlay(overlay, 'translate', source, pair, lang, prevLang);
+        const { runner, showModelSelector } = createSelectionRunner(cfg);
+        attachOverlayHeaderVue(overlay, cfg, pair, lang, prevLang, source, runner, showModelSelector);
+        runner(overlay, 'translate', source, pair, lang, prevLang);
       });
       return;
     }
@@ -777,7 +1113,7 @@ function toggleHoverTranslate(blockEl: HTMLElement) {
       return;
     }
 
-    chrome.storage.sync.get(['translateTargetLang', 'wrapperStyleName', 'targetStylePresets'], (cfg: StorageConfig & any) => {
+    chrome.storage.sync.get(['translateTargetLang', 'wrapperStyleName', 'targetStylePresets', 'selectionTranslationMode', 'mtDefaultChannelId'], (cfg: StorageConfig & any) => {
       const sourceText = (blockEl.innerText || '').trim();
       const langCode = (cfg.translateTargetLang || 'zh-CN').trim();
       const styleName = (cfg.wrapperStyleName || 'ifocal-target-style-dotted').trim();
@@ -789,6 +1125,17 @@ function toggleHoverTranslate(blockEl: HTMLElement) {
       blockEl.appendChild(wrapper);
       sharedApplyWrapperLoading(wrapper, sourceText);
       try { blockEl.setAttribute('aria-busy', 'true'); } catch {}
+
+      if (shouldUseMachineTranslation(cfg.selectionTranslationMode || selectionTranslationMode)) {
+        void machineTranslateTexts([sourceText], langCode, cfg.mtDefaultChannelId).then((response) => {
+          blockEl.dataset.fcTranslated = '1';
+          const msg = Array.isArray(response?.translations) ? String(response.translations[0] || '') : '';
+          const error = Array.isArray(response?.errors) ? String(response.errors.find(Boolean) || '') : '';
+          const resultText = msg || (error || response?.error ? `【错误】${error || response?.error || '未知错误'}` : '');
+          applyInlineTranslationResult(wrapper, resultText, langCode, sourceText);
+        });
+        return;
+      }
 
       chrome.runtime.sendMessage({ action: 'performAiAction', task: 'translate', text: sourceText }, (response: { ok?: boolean; result?: string; error?: string } | undefined) => {
         try { void chrome.runtime.lastError; } catch { }
@@ -830,12 +1177,13 @@ function triggerSelectionTranslate() {
   const rect = lastSelectionRect || getSelectionRect();
   const overlay = rect ? createOverlayAt(rect.left + window.scrollX, rect.bottom + window.scrollY + 8, 'skeleton') : createOverlayAt(80, 80, 'skeleton');
   overlay.setLoading(true);
-  chrome.storage.sync.get(['channels', 'defaultModel', 'translateTargetLang', 'prevLanguage'], (cfg: StorageConfig) => {
+  chrome.storage.sync.get(['channels', 'defaultModel', 'translateTargetLang', 'prevLanguage', 'selectionTranslationMode', 'mtDefaultChannelId'], (cfg: StorageConfig) => {
     const pair = pickPair(cfg);
     const lang = cfg.translateTargetLang || 'zh-CN';
     const prevLang = cfg.prevLanguage || 'en';
-    attachOverlayHeaderVue(overlay, cfg, pair, lang, prevLang, lastSelectionText);
-    startStreamForOverlay(overlay, 'translate', lastSelectionText, pair, lang, prevLang);
+    const { runner, showModelSelector } = createSelectionRunner(cfg);
+    attachOverlayHeaderVue(overlay, cfg, pair, lang, prevLang, lastSelectionText, runner, showModelSelector);
+    runner(overlay, 'translate', lastSelectionText, pair, lang, prevLang);
   });
 }
 
@@ -859,7 +1207,7 @@ function startStreamForOverlay(overlay: OverlayHandle, task: string, text: strin
   }
 }
 
-function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair: ChannelPair, lang: string, prevLang: string, text: string) {
+function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair: ChannelPair, lang: string, prevLang: string, text: string, runTranslate: OverlayTranslateRunner = startStreamForOverlay, showModelSelector = true) {
   const header = document.createElement('div');
   header.className = 'ifocal-overlay-header';
   let currentPair: ChannelPair = pair ? { ...pair } : null;
@@ -872,43 +1220,44 @@ function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair
 
   // 自定义下拉使用预定义 CSS 类，减少内联样式
 
-  // 模型下拉
-  const modelWrap = document.createElement('div');
-  modelWrap.className = 'ifocal-dd-wrap';
-  const modelBtn = document.createElement('button');
-  modelBtn.className = 'ifocal-dd-btn';
-  modelBtn.textContent = currentPair ? resolveModelDisplayName(cfg, currentPair) : 'Models';
   const modelMenu = document.createElement('div');
   modelMenu.className = 'ifocal-dd-menu hidden';
-  const pairs: Array<{ channel: string; model: string; displayName: string }> = [];
-  const list = Array.isArray(cfg.channels) ? cfg.channels : [];
-  list.forEach((ch) => (ch.models || []).forEach((m) => {
-    const parsed = parseModelSpec(m);
-    if (!parsed.modelId) return;
-    pairs.push({ channel: ch.name, model: parsed.modelId, displayName: parsed.displayName || parsed.modelId });
-  }));
-  pairs.forEach((p) => {
-    const item = document.createElement('div');
-    item.className = 'ifocal-dd-item';
-    const title = document.createElement('div');
-    title.className = 'title';
-    title.textContent = p.displayName;
-    item.appendChild(title);
-    item.addEventListener('click', (ev) => {
-      ev.stopPropagation(); ev.preventDefault();
-      currentPair = { channel: p.channel, model: p.model };
-      modelBtn.textContent = p.displayName;
-      // 划词/悬浮翻译面板切换模型后，同步更新全局默认模型
-      chrome.storage.sync.set({ defaultModel: currentPair }, () => {
-        startStreamForOverlay(overlay, 'translate', text, currentPair, currentLangValue, currentPrevLangValue);
+  if (showModelSelector) {
+    const modelWrap = document.createElement('div');
+    modelWrap.className = 'ifocal-dd-wrap';
+    const modelBtn = document.createElement('button');
+    modelBtn.className = 'ifocal-dd-btn';
+    modelBtn.textContent = currentPair ? resolveModelDisplayName(cfg, currentPair) : 'Models';
+    const pairs: Array<{ channel: string; model: string; displayName: string }> = [];
+    const list = Array.isArray(cfg.channels) ? cfg.channels : [];
+    list.forEach((ch) => (ch.models || []).forEach((m) => {
+      const parsed = parseModelSpec(m);
+      if (!parsed.modelId) return;
+      pairs.push({ channel: ch.name, model: parsed.modelId, displayName: parsed.displayName || parsed.modelId });
+    }));
+    pairs.forEach((p) => {
+      const item = document.createElement('div');
+      item.className = 'ifocal-dd-item';
+      const title = document.createElement('div');
+      title.className = 'title';
+      title.textContent = p.displayName;
+      item.appendChild(title);
+      item.addEventListener('click', (ev) => {
+        ev.stopPropagation(); ev.preventDefault();
+        currentPair = { channel: p.channel, model: p.model };
+        modelBtn.textContent = p.displayName;
+        chrome.storage.sync.set({ defaultModel: currentPair }, () => {
+          runTranslate(overlay, 'translate', text, currentPair, currentLangValue, currentPrevLangValue);
+        });
+        modelMenu.classList.add('hidden');
       });
-      modelMenu.classList.add('hidden');
+      modelMenu.appendChild(item);
     });
-    modelMenu.appendChild(item);
-  });
-  modelBtn.addEventListener('click', (ev) => { ev.stopPropagation(); ev.preventDefault(); modelMenu.classList.toggle('hidden'); });
-  modelWrap.appendChild(modelBtn);
-  modelWrap.appendChild(modelMenu);
+    modelBtn.addEventListener('click', (ev) => { ev.stopPropagation(); ev.preventDefault(); modelMenu.classList.toggle('hidden'); });
+    modelWrap.appendChild(modelBtn);
+    modelWrap.appendChild(modelMenu);
+    left.appendChild(modelWrap);
+  }
 
   // 语言下拉（读取 shared 列表）
   const langWrap = document.createElement('div');
@@ -931,7 +1280,7 @@ function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair
         currentPrevLangValue = oldLang;
         currentLangValue = L.value;
         langBtn.textContent = L.label;
-        startStreamForOverlay(overlay, 'translate', text, currentPair, currentLangValue, currentPrevLangValue);
+        runTranslate(overlay, 'translate', text, currentPair, currentLangValue, currentPrevLangValue);
       });
       langMenu.classList.add('hidden');
     });
@@ -941,7 +1290,6 @@ function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair
   langWrap.appendChild(langBtn);
   langWrap.appendChild(langMenu);
 
-  left.appendChild(modelWrap);
   left.appendChild(langWrap);
 
   // 右侧：Close Icon
@@ -1043,6 +1391,10 @@ document.addEventListener('keydown', (event) => {
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.action === 'translateFullPage') {
+    void translateFullPage().then(sendResponse).catch((error) => sendResponse({ ok: false, error: String(error?.message || error || '未知错误') }));
+    return true;
+  }
   if (message?.type === 'get-page-content') {
     const title = document.title || 'Current page';
     const article = document.querySelector('article');

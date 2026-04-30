@@ -3,7 +3,7 @@
   "name": "iFocal",
   "version": "0.4.0",
   "description": "iFocal assistant with selection/overlay translate and a global window, built with Vue + shadcn-vue.",
-  "permissions": ["storage","clipboardRead"],
+  "permissions": ["storage", "clipboardRead", "contextMenus", "tabs"],
   "host_permissions": [
     "<all_urls>"
   ],
@@ -32,6 +32,12 @@
         "default": "Ctrl+Shift+O"
       },
       "description": "Open iFocal global assistant window"
+    },
+    "translate-full-page": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Y"
+      },
+      "description": "Translate current page with machine translation"
     }
   },
   "web_accessible_resources": [

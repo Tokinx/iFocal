@@ -113,6 +113,7 @@ export const DEFAULT_CONFIG = {
   displayMode: 'insert' as 'insert' | 'overlay',
   // 划词：是否启用划词翻译（显示小圆点）
   enableSelectionTranslation: true,
+  selectionTranslationMode: 'ai' as 'ai' | 'machine',
 
 
   // 快捷键设置
@@ -259,6 +260,7 @@ export const CONFIG_KEYS = [
   'defaultTask',
   'displayMode',
   'enableSelectionTranslation',
+  'selectionTranslationMode',
   'actionKey',
   'autoPasteGlobalAssistant',
   'maxSessionsCount',

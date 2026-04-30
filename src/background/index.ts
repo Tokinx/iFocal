@@ -14,6 +14,7 @@ let isOpeningGlobalWindow = false; // 打开全局窗口的重入保护
 // 全局助手窗口单例 ID 存储键
 const GLOBAL_WIN_KEY = 'globalAssistantWindowId';
 const GLOBAL_WIN_VIEW_KEY = 'globalAssistantWindowRequestedView';
+const CONTEXT_MENU_TRANSLATE_FULL_PAGE = 'ifocal-translate-full-page';
 
 // 监听窗口关闭，若为全局助手，则清理存储的 ID
 // 非流式请求中断：为每个 requestId 维护 AbortController
@@ -54,19 +55,84 @@ async function setStoredGlobalWindowId(id: number | null): Promise<void> {
   });
 }
 
+function ensureContextMenus() {
+  try {
+    chrome.contextMenus.removeAll(() => {
+      try { void chrome.runtime.lastError; } catch { }
+      try {
+        chrome.contextMenus.create({
+          id: CONTEXT_MENU_TRANSLATE_FULL_PAGE,
+          title: '网页全文翻译',
+          contexts: ['page', 'selection'],
+        }, () => {
+          try { void chrome.runtime.lastError; } catch { }
+        });
+      } catch { }
+    });
+  } catch { }
+}
+
+function sendFullPageTranslateMessage(tabId: number, frameId?: number): Promise<void> {
+  return new Promise((resolve) => {
+    try {
+      const message = { action: 'translateFullPage' };
+      const callback = () => {
+        try { void chrome.runtime.lastError; } catch { }
+        resolve();
+      };
+      if (typeof frameId === 'number') chrome.tabs.sendMessage(tabId, message, { frameId }, callback);
+      else chrome.tabs.sendMessage(tabId, message, callback);
+    } catch {
+      resolve();
+    }
+  });
+}
+
+async function triggerFullPageTranslateInActiveTab() {
+  try {
+    const tabId = await new Promise<number | null>((resolve) => {
+      try {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          resolve(typeof tabs?.[0]?.id === 'number' ? tabs[0]!.id! : null);
+        });
+      } catch {
+        resolve(null);
+      }
+    });
+    if (typeof tabId !== 'number') return;
+    await sendFullPageTranslateMessage(tabId);
+  } catch { }
+}
+
 chrome.runtime.onInstalled.addListener(async () => {
-  // 无侧边栏与全文翻译：无需创建上下文菜单
+  ensureContextMenus();
 });
+
+try {
+  chrome.runtime.onStartup.addListener(() => {
+    ensureContextMenus();
+  });
+} catch { }
+
+ensureContextMenus();
 
 chrome.action.onClicked.addListener(async () => {
   openOrFocusGlobalWindow();
 });
 
-// 已移除：上下文菜单点击处理
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId !== CONTEXT_MENU_TRANSLATE_FULL_PAGE) return;
+  if (typeof tab?.id !== 'number') return;
+  void sendFullPageTranslateMessage(tab.id, typeof info.frameId === 'number' ? info.frameId : undefined);
+});
 
 chrome.commands.onCommand.addListener((command) => {
   if (command === 'open-global-window') {
     openOrFocusGlobalWindow();
+    return;
+  }
+  if (command === 'translate-full-page') {
+    void triggerFullPageTranslateInActiveTab();
   }
 });
 

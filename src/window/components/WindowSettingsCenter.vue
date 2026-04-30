@@ -331,6 +331,8 @@ async function saveBasics() {
   try {
     const k = (config.value.actionKey || 'Alt').trim() || 'Alt';
     const lang = (config.value.translateTargetLang || 'zh-CN').trim() || 'zh-CN';
+    const selectionTranslationMode = config.value.selectionTranslationMode === 'machine' ? 'machine' : 'ai';
+    const mtDefaultId = normalizeMachineTranslateDefaultChannelId(mtDefaultChannelId.value, machineChannels.value);
     if (!k) {
       toast.error('快捷键不能为空');
       return;
@@ -341,6 +343,9 @@ async function saveBasics() {
     config.value.translateTargetLang = lang;
     config.value.displayMode = config.value.displayMode || 'insert';
     if (typeof config.value.enableSelectionTranslation !== 'boolean') config.value.enableSelectionTranslation = true;
+    config.value.selectionTranslationMode = selectionTranslationMode;
+    mtDefaultChannelId.value = mtDefaultId;
+    (config.value as any).mtDefaultChannelId = mtDefaultId;
 
     // 保存配置
     // 样式保存：选择预设或自定义
@@ -363,6 +368,8 @@ async function saveBasics() {
       wrapperStyleName: wrapperStyleNameToSave,
       targetStylePresets: presetsToSave,
       enableSelectionTranslation: config.value.enableSelectionTranslation,
+      selectionTranslationMode,
+      mtDefaultChannelId: mtDefaultId,
       maxSessionsCount: config.value.maxSessionsCount || 10,
       contextMessagesCount: normalizeContextMessagesCount(config.value.contextMessagesCount),
       reduceVisualEffects: config.value.reduceVisualEffects || false
@@ -1184,29 +1191,6 @@ async function fetchAddFormModels() {
             内置 Google 与 Microsoft 翻译为非官方实验接口，免密但可能受网络、限流或上游策略影响，生产稳定性要求高时建议添加官方自备密钥渠道。
           </div>
 
-          <div class="flex items-center justify-between gap-4 border p-4">
-            <div>
-              <label class="text-sm font-medium leading-none block mb-1">默认机器翻译渠道</label>
-              <p class="text-xs text-muted-foreground">后续全文翻译和批量翻译默认使用该渠道</p>
-            </div>
-            <div class="flex items-center gap-2">
-              <Select v-model="mtDefaultChannelId">
-                <SelectTrigger class="w-72">
-                  <SelectValue placeholder="选择机器翻译渠道" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem v-for="ch in machineChannels.filter((item) => item.enabled)" :key="ch.id" :value="ch.id">
-                    {{ ch.name }}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              <Button class="bg-primary text-primary-foreground flex items-center gap-1"
-                @click="saveMachineTranslateSettings()">
-                <Icon :icon="iconOfAction('save')" width="16" /> 保存
-              </Button>
-            </div>
-          </div>
-
           <div v-if="showAddMachineChannel" class="border p-4 space-y-3">
             <div class="flex items-center justify-between gap-4">
               <div>
@@ -1521,6 +1505,9 @@ async function fetchAddFormModels() {
                 </div>
               </div>
             </div>
+
+            <div class="border-t"></div>
+
             <div class="flex items-center justify-between gap-4">
               <div>
                 <label class="text-sm font-medium leading-none block mb-1">划词翻译</label>
@@ -1528,6 +1515,41 @@ async function fetchAddFormModels() {
               </div>
               <div>
                 <Switch v-model="config.enableSelectionTranslation" />
+              </div>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <label class="text-sm font-medium leading-none block mb-1">划词/悬浮翻译方法</label>
+                <p class="text-xs text-muted-foreground">AI 智能翻译使用默认模型进行翻译效果更好，传统机器翻译使用机器翻译速度更快</p>
+              </div>
+              <div class="w-60">
+                <Select v-model="config.selectionTranslationMode">
+                  <SelectTrigger class="w-full">
+                    <SelectValue placeholder="选择翻译方法" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ai">AI 智能翻译</SelectItem>
+                    <SelectItem value="machine">传统机器翻译</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <label class="text-sm font-medium leading-none block mb-1">机器翻译渠道</label>
+                <p class="text-xs text-muted-foreground">网页全文翻译、批量翻译默认使用该渠道</p>
+              </div>
+              <div class="w-60">
+                <Select v-model="mtDefaultChannelId">
+                  <SelectTrigger class="w-full">
+                    <SelectValue placeholder="选择机器翻译渠道" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem v-for="ch in machineChannels.filter((item) => item.enabled)" :key="ch.id" :value="ch.id">
+                      {{ ch.name }}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div class="flex items-center justify-between gap-4">
