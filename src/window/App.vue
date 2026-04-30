@@ -50,7 +50,6 @@ import {
   ASSISTANT_CONFIGS_STORAGE_KEY,
   DEFAULT_ASSISTANT_ID,
   DEFAULT_ASSISTANT_ID_STORAGE_KEY,
-  assistantIconForPreset,
   assistantIdForPreset,
   assistantPresetForTask,
   assistantTaskForPreset,
@@ -146,7 +145,7 @@ const editingAssistant = computed(() => {
 const sidebarTasks = computed<SidebarTask[]>(() => assistantConfigs.value.map((assistant) => ({
   id: assistant.id,
   label: assistant.name,
-  icon: assistantIconForPreset(assistant.preset),
+  icon: assistant.icon,
   preset: assistant.preset,
   deletable: assistant.deletable,
 })));

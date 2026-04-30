@@ -12,15 +12,32 @@
         </div>
 
         <div class="grid grid-cols-2 items-center gap-4">
-          <div>
+          <div class="space-y-1">
             <Label class="text-sm font-medium">助手名称</Label>
-            <Input v-model="draft.name" placeholder="例如：论文润色助手" />
+            <div class="flex items-center gap-2">
+              <DropdownMenu v-model:open="iconPickerOpen">
+                <DropdownMenuTrigger as-child>
+                  <Button variant="outline" class="h-9 w-9 shrink-0 px-0" :title="currentIconTitle">
+                    <Icon :icon="draft.icon" class="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" class="p-2 grid grid-cols-4 gap-2 w-42 min-w-none">
+                  <Button v-for="iconOption in ASSISTANT_ICON_OPTIONS" :key="iconOption.value" variant="outline"
+                    class="h-8 w-8 p-0"
+                    :class="draft.icon === iconOption.value ? '!bg-amber-800/90 !text-olive-100 border-amber-800/90' : ''"
+                    :title="iconOption.label" @click="updateIcon(iconOption.value)">
+                    <Icon :icon="iconOption.value" class="h-4 w-4" />
+                  </Button>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Input v-model="draft.name" placeholder="例如：论文润色助手" />
+            </div>
           </div>
-
-          <div>
+          <div class="space-y-1">
             <Label class="text-sm font-medium">默认模型</Label>
             <ModelSelect :current-model-name="currentModelName" :grouped-models="groupedModels"
-              :selected-pair-key="draft.modelKey" @selectModel="updateModelKey" buttonClass="w-full h-9 justify-between" />
+              :selected-pair-key="draft.modelKey" @selectModel="updateModelKey"
+              buttonClass="w-full h-9 justify-between" />
           </div>
         </div>
 
@@ -35,7 +52,7 @@
             <span class="text-xs text-muted-foreground">{{ draft.prompt.length }} 字</span>
           </div>
           <Textarea v-model="draft.prompt" class="resize-none h-40" placeholder="输入助手提示词" />
-          <div class="flex justify-end">
+          <div class="flex">
             <DropdownMenu>
               <DropdownMenuTrigger as-child>
                 <Button variant="outline" size="sm" class="gap-1">
@@ -43,7 +60,7 @@
                   预设提示词
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" class="w-52">
+              <DropdownMenuContent align="start" class="w-52">
                 <DropdownMenuItem v-for="preset in ASSISTANT_PRESET_OPTIONS" :key="preset.value" class="cursor-pointer"
                   @click="applyPresetPrompt(preset.value)">
                   <Icon :icon="preset.icon" class="mr-2 h-4 w-4" />
@@ -81,7 +98,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import ModelSelect from './ModelSelect.vue';
 import {
+  ASSISTANT_ICON_OPTIONS,
   ASSISTANT_PRESET_OPTIONS,
+  assistantIconForPreset,
   defaultAssistantNameForPreset,
   defaultPromptForPreset,
   defaultSettingsForPreset,
@@ -102,9 +121,11 @@ const emit = defineEmits<{
 }>();
 
 const error = ref('');
+const iconPickerOpen = ref(false);
 const draft = reactive<AssistantConfig>({
   id: '',
   name: '',
+  icon: 'ri:chat-ai-line',
   preset: 'chat',
   prompt: '',
   modelKey: '',
@@ -127,6 +148,10 @@ const currentModelName = computed(() => {
   return props.modelPairs.find((item) => item.key === draft.modelKey)?.model || '';
 });
 
+const currentIconTitle = computed(() => {
+  return ASSISTANT_ICON_OPTIONS.find((item) => item.value === draft.icon)?.label || '助手图标';
+});
+
 watch(
   () => [props.open, props.assistant, props.modelPairs] as const,
   () => resetDraft(),
@@ -139,6 +164,7 @@ function resetDraft() {
   const preset = source?.preset || 'chat';
   draft.id = source?.id || '';
   draft.name = source?.name || defaultAssistantNameForPreset(preset);
+  draft.icon = source?.icon || assistantIconForPreset(preset);
   draft.preset = preset;
   draft.prompt = source?.prompt || defaultPromptForPreset(preset);
   draft.modelKey = source?.modelKey || props.modelPairs[0]?.key || '';
@@ -150,14 +176,21 @@ function resetDraft() {
 
 function applyPresetPrompt(preset: AssistantPreset) {
   const shouldRename = !props.assistant && (!draft.name || ASSISTANT_PRESET_OPTIONS.some((item) => draft.name === defaultAssistantNameForPreset(item.value)));
+  const prevDefaultIcon = assistantIconForPreset(draft.preset);
   draft.preset = preset;
   draft.prompt = defaultPromptForPreset(preset);
   draft.settings = { ...defaultSettingsForPreset(preset) };
+  if (!draft.icon || draft.icon === prevDefaultIcon) draft.icon = assistantIconForPreset(preset);
   if (shouldRename) draft.name = defaultAssistantNameForPreset(preset);
 }
 
 function updateModelKey(value: unknown) {
   draft.modelKey = String(value || '').trim();
+}
+
+function updateIcon(value: unknown) {
+  draft.icon = String(value || '').trim();
+  iconPickerOpen.value = false;
 }
 
 function submit() {

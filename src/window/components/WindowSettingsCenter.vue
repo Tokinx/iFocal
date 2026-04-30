@@ -952,7 +952,7 @@ async function fetchAddFormModels() {
                   <label class="text-sm font-medium leading-none block mb-1">默认模型</label>
                   <p class="text-xs text-muted-foreground">用于划词翻译、默认调用与助手输出</p>
                 </div>
-                <div class="w-50">
+                <div class="w-60">
                   <ModelSelect :current-model-name="defaultModelCurrentName" :grouped-models="settingsGroupedModels"
                     :selected-pair-key="defaultModelValue" buttonClass="w-full h-9 justify-between"
                     @selectModel="handleDefaultModelSelect" />
@@ -964,7 +964,7 @@ async function fetchAddFormModels() {
                   <label class="text-sm font-medium leading-none block mb-1">默认助手</label>
                   <p class="text-xs text-muted-foreground">打开助手窗口时默认进入的助手</p>
                 </div>
-                <div class="w-50">
+                <div class="w-60">
                   <Select :model-value="defaultAssistantId" @update:modelValue="saveDefaultAssistant(String($event))">
                     <SelectTrigger class="w-full">
                       <SelectValue placeholder="选择助手" />
@@ -983,7 +983,7 @@ async function fetchAddFormModels() {
                   <label class="text-sm font-medium leading-none block mb-1">默认目标语言</label>
                   <p class="text-xs text-muted-foreground">用于调整输出和翻译结果的语言</p>
                 </div>
-                <div class="w-50">
+                <div class="w-60">
                   <Select v-model="config.translateTargetLang">
                     <SelectTrigger class="w-full">
                       <SelectValue placeholder="语言" />
@@ -1001,7 +1001,7 @@ async function fetchAddFormModels() {
                   <label class="text-sm font-medium leading-none block mb-1">会话保存数量</label>
                   <p class="text-xs text-muted-foreground">全局助手最多保存的历史会话数量</p>
                 </div>
-                <div class="w-50">
+                <div class="w-60">
                   <Select v-model="config.maxSessionsCount">
                     <SelectTrigger class="w-full">
                       <SelectValue placeholder="选择数量" />
@@ -1019,7 +1019,7 @@ async function fetchAddFormModels() {
                   <label class="text-sm font-medium leading-none block mb-1">上下文消息数量</label>
                   <p class="text-xs text-muted-foreground">开启上下文时，携带最近 N 条历史消息</p>
                 </div>
-                <div class="w-50">
+                <div class="w-60">
                   <Select v-model="config.contextMessagesCount">
                     <SelectTrigger class="w-full">
                       <SelectValue placeholder="选择数量" />
@@ -1058,7 +1058,7 @@ async function fetchAddFormModels() {
                 <label class="text-sm font-medium leading-none block mb-1">悬浮翻译</label>
                 <p class="text-xs text-muted-foreground">设置触发键（如 Alt）</p>
               </div>
-              <div class="w-50">
+              <div class="w-60">
                 <Input v-model="config.actionKey" placeholder="如 Alt" />
               </div>
             </div>
@@ -1068,7 +1068,7 @@ async function fetchAddFormModels() {
                 <label class="text-sm font-medium leading-none block mb-1">悬浮翻译结果显示方式</label>
                 <p class="text-xs text-muted-foreground">插入原文下方或覆盖原文</p>
               </div>
-              <div class="w-50">
+              <div class="w-60">
                 <Select v-model="config.displayMode">
                   <SelectTrigger class="w-full">
                     <SelectValue placeholder="显示方式" />
@@ -1148,7 +1148,7 @@ async function fetchAddFormModels() {
                   <label class="text-sm font-medium leading-none block mb-1">译文样式</label>
                   <p class="text-xs text-muted-foreground">用于页面注入译文的外观</p>
                 </div>
-                <div class="w-50">
+                <div class="w-60">
                   <Select v-model="styleSelection">
                     <SelectTrigger class="w-full">
                       <SelectValue placeholder="选择样式" />

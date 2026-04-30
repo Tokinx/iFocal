@@ -12,6 +12,7 @@ export interface AssistantSettings extends TaskSettings {
 export interface AssistantConfig {
   id: string;
   name: string;
+  icon: string;
   preset: AssistantPreset;
   prompt: string;
   modelKey: string;
@@ -35,15 +36,31 @@ export const ASSISTANT_PRESET_OPTIONS: Array<{ value: AssistantPreset; label: st
   { value: 'summarize', label: '总结', icon: 'ri:quill-pen-ai-line' },
 ];
 
+export const ASSISTANT_ICON_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'ri:chat-ai-line', label: '聊天' },
+  { value: 'ri:translate-ai', label: '翻译' },
+  { value: 'ri:quill-pen-ai-line', label: '总结' },
+  { value: 'ri:lightbulb-ai-line', label: '灵感' },
+  { value: 'ri:search-ai-line', label: '搜索' },
+  { value: 'ri:file-ai-line', label: '文档' },
+  { value: 'ri:apps-2-ai-line', label: '通用' },
+  { value: 'ri:dvd-ai-line', label: '创作' },
+  { value: 'proicons:bolt', label: '闪电' },
+  { value: 'proicons:bug', label: '调试' },
+  { value: 'ri:pencil-ai-line', label: '写作' },
+  { value: 'ri:settings-4-line', label: '设置' },
+];
+
 const DEFAULT_ASSISTANT_DEFS: Array<{
   id: string;
   name: string;
+  icon: string;
   preset: AssistantPreset;
   deletable: boolean;
 }> = [
-  { id: CHAT_ASSISTANT_ID, name: '聊天助手', preset: 'chat', deletable: false },
-  { id: TRANSLATE_ASSISTANT_ID, name: '翻译专家', preset: 'translate', deletable: true },
-  { id: SUMMARY_ASSISTANT_ID, name: '总结内容', preset: 'summarize', deletable: true },
+  { id: CHAT_ASSISTANT_ID, name: '聊天助手', icon: 'ri:chat-ai-line', preset: 'chat', deletable: false },
+  { id: TRANSLATE_ASSISTANT_ID, name: '翻译专家', icon: 'ri:translate-ai', preset: 'translate', deletable: true },
+  { id: SUMMARY_ASSISTANT_ID, name: '总结内容', icon: 'ri:quill-pen-ai-line', preset: 'summarize', deletable: true },
 ];
 
 export const DEFAULT_ASSISTANT_ID = CHAT_ASSISTANT_ID;
@@ -109,6 +126,7 @@ export function createDefaultAssistantConfigs(options: NormalizeAssistantOptions
   return DEFAULT_ASSISTANT_DEFS.map((def) => createAssistantConfig({
     id: def.id,
     name: def.name,
+    icon: def.icon,
     preset: def.preset,
     prompt: defaultPromptForPreset(def.preset, options.templates),
     modelKey: options.modelKeyByPreset?.[def.preset] || options.defaultModelKey || '',
@@ -133,6 +151,7 @@ export function createAssistantConfig(input: Partial<AssistantConfig> = {}, opti
   return {
     id,
     name,
+    icon: normalizeAssistantIcon(input.icon, preset),
     preset,
     prompt,
     modelKey: String(input.modelKey || options.modelKeyByPreset?.[preset] || options.defaultModelKey || '').trim(),
@@ -212,4 +231,10 @@ function normalizeReasoningEffort(value: unknown): ReasoningEffort {
   const effort = String(value || '').toLowerCase();
   if (effort === 'low' || effort === 'medium' || effort === 'high' || effort === 'xhigh') return effort;
   return DEFAULT_REASONING_EFFORT;
+}
+
+function normalizeAssistantIcon(value: unknown, preset: AssistantPreset): string {
+  const icon = String(value || '').trim();
+  if (icon && ASSISTANT_ICON_OPTIONS.some((item) => item.value === icon)) return icon;
+  return assistantIconForPreset(preset);
 }
