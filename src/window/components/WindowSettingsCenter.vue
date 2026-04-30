@@ -1174,11 +1174,14 @@ async function fetchAddFormModels() {
               </div>
               <div class=" border p-3">
                 <div class="text-base">
-                  <font class="notranslate ifocal-target-wrapper">
-                    <font :class="`notranslate ifocal-target-inline-wrapper ${activeStyleName}`">
-                      <font class="notranslate ifocal-target-inner">翻译结果</font>
+                  <div>I wasted time, and now doth time waste me.</div>
+                  <div>
+                    <font class="notranslate ifocal-target-wrapper">
+                      <font :class="`notranslate ifocal-target-inline-wrapper ${activeStyleName}`">
+                        <font class="notranslate ifocal-target-inner">我荒废了时间，时间便把我荒废。</font>
+                      </font>
                     </font>
-                  </font>
+                  </div>
                 </div>
               </div>
             </div>

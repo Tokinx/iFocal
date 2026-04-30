@@ -150,6 +150,94 @@ export const DEFAULT_CONFIG = {
   background-color: yellow;
   font-family: inherit;
 }`
+    },
+    {
+      name: 'ifocal-target-style-blur-hover',
+      description: '模糊效果',
+      css: `.ifocal-target-inline-wrapper.ifocal-target-style-blur-hover .ifocal-target-inner,
+.ifocal-target-block-wrapper.ifocal-target-style-blur-hover .ifocal-target-inner{
+  filter: blur(3px);
+  transition: filter .18s ease;
+  font-family: inherit;
+}
+.ifocal-target-inline-wrapper.ifocal-target-style-blur-hover:hover .ifocal-target-inner,
+.ifocal-target-block-wrapper.ifocal-target-style-blur-hover:hover .ifocal-target-inner{
+  filter: blur(0);
+}`
+    },
+    {
+      name: 'ifocal-target-style-wavy',
+      description: '波浪线',
+      css: `.ifocal-target-inline-wrapper.ifocal-target-style-wavy .ifocal-target-inner,
+.ifocal-target-block-wrapper.ifocal-target-style-wavy .ifocal-target-inner{
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  font-family: inherit;
+}`
+    },
+    {
+      name: 'ifocal-target-style-muted',
+      description: '弱化',
+      css: `.ifocal-target-inline-wrapper.ifocal-target-style-muted .ifocal-target-inner,
+.ifocal-target-block-wrapper.ifocal-target-style-muted .ifocal-target-inner{
+  opacity: .6;
+  font-family: inherit;
+}`
+    },
+    {
+      name: 'ifocal-target-style-dashed-border',
+      description: '虚线边框',
+      css: `.ifocal-target-inline-wrapper.ifocal-target-style-dashed-border .ifocal-target-inner,
+.ifocal-target-block-wrapper.ifocal-target-style-dashed-border .ifocal-target-inner{
+  border: 1px dashed currentColor;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: inherit;
+}`
+    },
+    {
+      name: 'ifocal-target-style-divider',
+      description: '分割线',
+      css: `.ifocal-target-inline-wrapper.ifocal-target-style-divider .ifocal-target-inner,
+.ifocal-target-block-wrapper.ifocal-target-style-divider .ifocal-target-inner{
+  position: relative;
+  display: inline-block;
+  padding-top: 4px;
+  margin-top: 4px;
+  font-family: inherit;
+}
+.ifocal-target-inline-wrapper.ifocal-target-style-divider .ifocal-target-inner::before,
+.ifocal-target-block-wrapper.ifocal-target-style-divider .ifocal-target-inner::before{
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  min-width: 24px;
+  width: 100%;
+  max-width: 30%;
+  border-top: 1.5px solid currentColor;
+  opacity: .45;
+}`
+    },
+    {
+      name: 'ifocal-target-style-italic',
+      description: '斜体',
+      css: `.ifocal-target-inline-wrapper.ifocal-target-style-italic .ifocal-target-inner,
+.ifocal-target-block-wrapper.ifocal-target-style-italic .ifocal-target-inner{
+  font-style: italic;
+  font-family: inherit;
+}`
+    },
+    {
+      name: 'ifocal-target-style-bold',
+      description: '加粗',
+      css: `.ifocal-target-inline-wrapper.ifocal-target-style-bold .ifocal-target-inner,
+.ifocal-target-block-wrapper.ifocal-target-style-bold .ifocal-target-inner{
+  font-weight: 700;
+  font-family: inherit;
+}`
     }
   ]
 };
@@ -199,9 +287,9 @@ export async function loadConfig(): Promise<typeof DEFAULT_CONFIG> {
 
         // 兼容性迁移：如果存在旧的全局开关，迁移到新结构
         const hasOldSettings = items.enableContext !== undefined ||
-                               items.enableStreaming !== undefined ||
-                               items.enableReasoning !== undefined ||
-                               items.enableFileUpload !== undefined;
+          items.enableStreaming !== undefined ||
+          items.enableReasoning !== undefined ||
+          items.enableFileUpload !== undefined;
 
         if (hasOldSettings && items.taskSettings === undefined) {
           console.log('检测到旧配置格式，正在迁移到新结构...');
