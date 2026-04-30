@@ -5,6 +5,8 @@ export type AssistantPreset = 'chat' | 'translate' | 'summarize';
 
 export interface AssistantSettings extends TaskSettings {
   enableClipboardListening: boolean;
+  targetLang: string;
+  prevLang: string;
 }
 
 export interface AssistantConfig {
@@ -51,6 +53,8 @@ export interface NormalizeAssistantOptions {
   modelKeyByPreset?: Partial<Record<AssistantPreset, string>>;
   defaultModelKey?: string;
   defaultClipboardListening?: boolean;
+  defaultTargetLang?: string;
+  defaultPrevLang?: string;
   now?: number;
 }
 
@@ -89,8 +93,11 @@ export function defaultPromptForPreset(preset: AssistantPreset, templates?: Part
   return value || fallback;
 }
 
-export function defaultSettingsForPreset(preset: AssistantPreset, defaultClipboardListening = false): AssistantSettings {
-  return normalizeAssistantSettings(DEFAULT_TASK_SETTINGS[preset], preset, defaultClipboardListening);
+export function defaultSettingsForPreset(
+  preset: AssistantPreset,
+  defaults: Partial<Pick<AssistantSettings, 'enableClipboardListening' | 'targetLang' | 'prevLang'>> = {},
+): AssistantSettings {
+  return normalizeAssistantSettings(DEFAULT_TASK_SETTINGS[preset], preset, defaults);
 }
 
 export function createAssistantId(): string {
@@ -105,7 +112,11 @@ export function createDefaultAssistantConfigs(options: NormalizeAssistantOptions
     preset: def.preset,
     prompt: defaultPromptForPreset(def.preset, options.templates),
     modelKey: options.modelKeyByPreset?.[def.preset] || options.defaultModelKey || '',
-    settings: defaultSettingsForPreset(def.preset, options.defaultClipboardListening),
+    settings: defaultSettingsForPreset(def.preset, {
+      enableClipboardListening: options.defaultClipboardListening,
+      targetLang: options.defaultTargetLang,
+      prevLang: options.defaultPrevLang,
+    }),
     deletable: def.deletable,
     createdAt: now,
     updatedAt: now,
@@ -125,7 +136,11 @@ export function createAssistantConfig(input: Partial<AssistantConfig> = {}, opti
     preset,
     prompt,
     modelKey: String(input.modelKey || options.modelKeyByPreset?.[preset] || options.defaultModelKey || '').trim(),
-    settings: normalizeAssistantSettings(input.settings, preset, options.defaultClipboardListening),
+    settings: normalizeAssistantSettings(input.settings, preset, {
+      enableClipboardListening: options.defaultClipboardListening,
+      targetLang: options.defaultTargetLang,
+      prevLang: options.defaultPrevLang,
+    }),
     deletable: isBuiltInChat ? false : typeof input.deletable === 'boolean' ? input.deletable : true,
     createdAt: Number(input.createdAt) || now,
     updatedAt: Number(input.updatedAt) || now,
@@ -161,10 +176,16 @@ export function resolveAssistantId(candidate: unknown, assistants: AssistantConf
   return assistants[0]?.id || DEFAULT_ASSISTANT_ID;
 }
 
-function normalizeAssistantSettings(raw: unknown, preset: AssistantPreset, defaultClipboardListening = false): AssistantSettings {
+function normalizeAssistantSettings(
+  raw: unknown,
+  preset: AssistantPreset,
+  defaults: Partial<Pick<AssistantSettings, 'enableClipboardListening' | 'targetLang' | 'prevLang'>> = {},
+): AssistantSettings {
   const source = raw && typeof raw === 'object' ? raw as Partial<AssistantSettings> & Record<string, unknown> : {};
   const fallback = DEFAULT_TASK_SETTINGS[preset] || DEFAULT_TASK_SETTINGS.chat;
   const legacyClipboard = (source as any).autoPasteGlobalAssistant;
+  const normalizedDefaultTargetLang = normalizeLanguageCode(defaults.targetLang, 'zh-CN');
+  const normalizedDefaultPrevLang = normalizeLanguageCode(defaults.prevLang, 'en');
   return {
     enableContext: typeof source.enableContext === 'boolean' ? source.enableContext : fallback.enableContext,
     enableStreaming: typeof source.enableStreaming === 'boolean' ? source.enableStreaming : fallback.enableStreaming,
@@ -175,9 +196,16 @@ function normalizeAssistantSettings(raw: unknown, preset: AssistantPreset, defau
         ? source.enableClipboardListening
         : typeof legacyClipboard === 'boolean'
           ? legacyClipboard
-          : !!defaultClipboardListening,
+          : !!defaults.enableClipboardListening,
+    targetLang: normalizeLanguageCode(source.targetLang, normalizedDefaultTargetLang),
+    prevLang: normalizeLanguageCode(source.prevLang, normalizedDefaultPrevLang),
     reasoningEffort: normalizeReasoningEffort(source.reasoningEffort ?? fallback.reasoningEffort),
   };
+}
+
+function normalizeLanguageCode(value: unknown, fallback: string): string {
+  const code = String(value || '').trim();
+  return code || fallback;
 }
 
 function normalizeReasoningEffort(value: unknown): ReasoningEffort {

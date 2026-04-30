@@ -829,6 +829,8 @@ function getAssistantById(id: string): AssistantConfig | null {
 function applyAssistantRuntime(assistant: AssistantConfig | null) {
   if (!assistant) return;
   state.task = assistantTaskForPreset(assistant.preset) as AssistantTask;
+  state.targetLang = String(assistant.settings.targetLang || 'zh-CN').trim() || 'zh-CN';
+  state.prevLang = String(assistant.settings.prevLang || 'en').trim() || 'en';
   enableStreaming.value = assistant.settings.enableStreaming;
   enableReasoning.value = assistant.settings.enableReasoning;
   reasoningEffort.value = assistant.settings.reasoningEffort;
@@ -870,11 +872,16 @@ async function loadAssistants() {
   const needsClipboardMigration = Array.isArray(rawConfigs) && rawConfigs.some((item: any) => (
     !item?.settings || typeof item.settings.enableClipboardListening !== 'boolean'
   ));
+  const needsLanguageMigration = Array.isArray(rawConfigs) && rawConfigs.some((item: any) => (
+    !item?.settings || typeof item.settings.targetLang !== 'string' || typeof item.settings.prevLang !== 'string'
+  ));
   let configs = normalizeAssistantConfigs(rawConfigs, {
     templates,
     modelKeyByPreset,
     defaultModelKey: getFirstAvailableModelKey(),
     defaultClipboardListening: !!globalConfig.autoPasteGlobalAssistant,
+    defaultTargetLang: globalConfig.translateTargetLang || 'zh-CN',
+    defaultPrevLang: globalConfig.prevLanguage || 'en',
   });
   const normalizedModels = normalizeAssistantModelKeys(configs);
   configs = normalizedModels.configs;
@@ -887,7 +894,7 @@ async function loadAssistants() {
   assistantConfigs.value = configs;
   applyAssistantRuntime(activeAssistant.value);
 
-  if (!Array.isArray(rawConfigs) || normalizedModels.changed || needsClipboardMigration) {
+  if (!Array.isArray(rawConfigs) || normalizedModels.changed || needsClipboardMigration || needsLanguageMigration) {
     await persistAssistantConfigs(configs);
   }
   await localSet({
@@ -1103,8 +1110,6 @@ function normalizeLoadedSession(raw: any): Session | null {
 }
 
 async function loadModels() {
-  const globalConfig = await loadConfig();
-
   const cfg: any = await new Promise(resolve => chrome.storage.sync.get(['channels', 'defaultModel', 'activeModel'], resolve));
   const localData: any = await new Promise(resolve => chrome.storage.local.get(['selectedModelByTask'], resolve));
 
@@ -1119,8 +1124,6 @@ async function loadModels() {
     };
   }).filter((p): p is { key: string; channel: string; model: string } => !!p));
   modelPairs.value = pairs;
-  state.targetLang = globalConfig.translateTargetLang;
-  state.prevLang = globalConfig.prevLanguage || 'en';
 
   // 加载每个任务的模型选择
   if (localData.selectedModelByTask) {
@@ -1940,15 +1943,11 @@ function selectLanguage(lang: string) {
   state.prevLang = oldTargetLang;
   state.targetLang = lang;
 
-  saveConfig({
-    translateTargetLang: lang,
-    prevLanguage: oldTargetLang
-  }).catch(error => {
-    console.error('保存语言设置失败:', error);
-    chrome.storage.sync.set({
-      translateTargetLang: lang,
-      prevLanguage: oldTargetLang
-    });
+  updateActiveAssistantSettings({
+    targetLang: lang,
+    prevLang: oldTargetLang,
+  }).catch((error) => {
+    console.error('保存助手目标语言设置失败:', error);
   });
 }
 
@@ -2112,8 +2111,6 @@ onMounted(async () => {
   maxSessionsCount.value = normalizeMaxSessionsCount(globalConfig.maxSessionsCount);
   contextMessagesCount.value = normalizeContextMessagesCount(globalConfig.contextMessagesCount);
   reduceVisualEffects.value = globalConfig.reduceVisualEffects || false;
-  state.targetLang = globalConfig.translateTargetLang || 'zh-CN';
-  state.prevLang = globalConfig.prevLanguage || 'en';
   applyAssistantRuntime(activeAssistant.value);
   const activeRouteTask = routeNameToTask(currentRoute.value.name);
   if (!hasInitialRoute) {
@@ -2135,9 +2132,6 @@ onMounted(async () => {
 
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'sync' && changes.translateTargetLang) {
-        state.targetLang = changes.translateTargetLang.newValue || 'zh-CN';
-      }
       if (area === 'sync' && changes.maxSessionsCount) {
         maxSessionsCount.value = normalizeMaxSessionsCount(changes.maxSessionsCount.newValue);
         if (clampSessionsByMaxCount()) {
