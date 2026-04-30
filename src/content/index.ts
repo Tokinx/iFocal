@@ -258,7 +258,7 @@ type OverlayHandle = {
 };
 
 type ChannelPair = { channel: string; model: string } | null;
-type SelectionTranslationMode = 'ai' | 'machine';
+type TranslationMode = 'ai' | 'machine';
 type OverlayTranslateRunner = (overlay: OverlayHandle, task: string, text: string, pair: ChannelPair, lang: string, prevLang?: string) => void;
 type FullPageTarget = { element: HTMLElement; text: string };
 
@@ -267,7 +267,8 @@ type StorageConfig = {
   defaultModel?: ChannelPair;
   translateTargetLang?: string;
   prevLanguage?: string;
-  selectionTranslationMode?: SelectionTranslationMode;
+  selectionTranslationMode?: TranslationMode;
+  hoverTranslationMode?: TranslationMode;
   mtDefaultChannelId?: string;
   wrapperStyleName?: string;
   targetStylePresets?: Array<{ name: string; css: string }>;
@@ -289,7 +290,7 @@ function channelHasModelId(channel: { models?: string[] } | null | undefined, mo
   return models.some((m) => parseModelSpec(m).modelId === id);
 }
 
-function normalizeSelectionTranslationMode(value: unknown): SelectionTranslationMode {
+function normalizeTranslationMode(value: unknown): TranslationMode {
   return value === 'machine' ? 'machine' : 'ai';
 }
 
@@ -319,7 +320,8 @@ let hoverInInputArea = false;
 let actionKey = 'Alt';
 let displayMode: 'insert' | 'overlay' = 'insert';
 let enableSelectionTranslation = true;
-let selectionTranslationMode: SelectionTranslationMode = 'ai';
+let selectionTranslationMode: TranslationMode = 'ai';
+let hoverTranslationMode: TranslationMode = 'ai';
 let lastOverlay: OverlayHandle | null = null;
 let keydownCooldown = false;
 let fullPageTranslateRunning = false;
@@ -414,7 +416,7 @@ let SUPPORTED_LANGUAGES: Lang[] = [
 // 重载 
 function readHotkeys() {
   try {
-    chrome.storage.sync.get(['actionKey', 'hoverKey', 'selectKey', 'displayMode', 'enableSelectionTranslation', 'selectionTranslationMode'], (items) => {
+    chrome.storage.sync.get(['actionKey', 'hoverKey', 'selectKey', 'displayMode', 'enableSelectionTranslation', 'selectionTranslationMode', 'hoverTranslationMode'], (items) => {
       if (items?.actionKey) actionKey = items.actionKey;
       else if (items?.hoverKey) actionKey = items.hoverKey;
       else if (items?.selectKey) actionKey = items.selectKey;
@@ -422,7 +424,8 @@ function readHotkeys() {
         displayMode = items.displayMode;
       }
       enableSelectionTranslation = typeof items?.enableSelectionTranslation === 'boolean' ? items.enableSelectionTranslation : true;
-      selectionTranslationMode = normalizeSelectionTranslationMode(items?.selectionTranslationMode);
+      selectionTranslationMode = normalizeTranslationMode(items?.selectionTranslationMode);
+      hoverTranslationMode = normalizeTranslationMode(items?.hoverTranslationMode ?? items?.selectionTranslationMode);
     });
     chrome.storage.onChanged.addListener((changes, areaName) => {
       if (areaName !== 'sync') return;
@@ -432,7 +435,8 @@ function readHotkeys() {
         displayMode = mode || 'insert';
       }
       if (changes.enableSelectionTranslation) enableSelectionTranslation = !!changes.enableSelectionTranslation.newValue;
-      if (changes.selectionTranslationMode) selectionTranslationMode = normalizeSelectionTranslationMode(changes.selectionTranslationMode.newValue);
+      if (changes.selectionTranslationMode) selectionTranslationMode = normalizeTranslationMode(changes.selectionTranslationMode.newValue);
+      if (changes.hoverTranslationMode) hoverTranslationMode = normalizeTranslationMode(changes.hoverTranslationMode.newValue);
     });
   } catch (error) {
     console.warn('failed to read hotkeys', error);
@@ -811,8 +815,16 @@ function setOverlayLoadingMessage(overlay: OverlayHandle, text: string) {
   body.appendChild(wrap);
 }
 
+function resolveSelectionTranslationMode(cfg?: StorageConfig | null): TranslationMode {
+  return normalizeTranslationMode(cfg?.selectionTranslationMode ?? selectionTranslationMode);
+}
+
+function resolveHoverTranslationMode(cfg?: StorageConfig | null): TranslationMode {
+  return normalizeTranslationMode(cfg?.hoverTranslationMode ?? cfg?.selectionTranslationMode ?? hoverTranslationMode);
+}
+
 function shouldUseMachineTranslation(mode: unknown): boolean {
-  return normalizeSelectionTranslationMode(mode) === 'machine';
+  return normalizeTranslationMode(mode) === 'machine';
 }
 
 function startMachineTranslateForOverlay(overlay: OverlayHandle, text: string, lang: string, channelId?: string) {
@@ -836,36 +848,17 @@ function createMachineOverlayRunner(channelId?: string): OverlayTranslateRunner 
 }
 
 function createSelectionRunner(cfg: StorageConfig): { runner: OverlayTranslateRunner; showModelSelector: boolean } {
-  if (shouldUseMachineTranslation(cfg.selectionTranslationMode || selectionTranslationMode)) {
+  if (shouldUseMachineTranslation(resolveSelectionTranslationMode(cfg))) {
     return { runner: createMachineOverlayRunner(cfg.mtDefaultChannelId), showModelSelector: false };
   }
   return { runner: startStreamForOverlay, showModelSelector: true };
 }
 
-function applyInlineTranslationResult(wrapper: HTMLElement, text: string, targetLang: string, sourceText: string) {
-  try {
-    if (targetLang) wrapper.setAttribute('lang', targetLang);
-    const rtl = targetLang && /^(ar|he|fa|ur|yi)(-|$)/i.test(targetLang);
-    if (rtl) wrapper.setAttribute('dir', 'rtl'); else wrapper.removeAttribute('dir');
-    wrapper.innerHTML = '';
-    const styleName = (wrapper.getAttribute('data-tx-style') || '').trim() || 'ifocal-target-style-dotted';
-    const spacer = document.createElement('font');
-    spacer.className = 'notranslate';
-    spacer.innerHTML = '&nbsp;&nbsp;';
-    wrapper.appendChild(spacer);
-    const resultWrapper = document.createElement('font');
-    resultWrapper.className = `notranslate ifocal-target-inline-wrapper ${styleName}`.trim();
-    const inner = document.createElement('font');
-    inner.className = 'notranslate ifocal-target-inner';
-    inner.textContent = text;
-    resultWrapper.appendChild(inner);
-    wrapper.appendChild(resultWrapper);
-    try { wrapper.setAttribute('data-tx-done', '1'); } catch { }
-    const block = wrapper.closest('p,div,section,article,li,td,a,h1,h2,h3,h4,h5,h6') as HTMLElement | null;
-    if (block && sourceText) {
-      try { block.setAttribute('aria-busy', 'false'); } catch {}
-    }
-  } catch {}
+function createHoverRunner(cfg: StorageConfig): { runner: OverlayTranslateRunner; showModelSelector: boolean } {
+  if (shouldUseMachineTranslation(resolveHoverTranslationMode(cfg))) {
+    return { runner: createMachineOverlayRunner(cfg.mtDefaultChannelId), showModelSelector: false };
+  }
+  return { runner: startStreamForOverlay, showModelSelector: true };
 }
 
 function appendFullPageTranslation(element: HTMLElement, translatedText: string, targetLang: string, styleName: string) {
@@ -1093,11 +1086,11 @@ function toggleHoverTranslate(blockEl: HTMLElement) {
       const overlay = createOverlayAt(rect.left + window.scrollX, rect.bottom + window.scrollY + 8);
       overlay.setLoading(true);
       const source = (blockEl.innerText || '').trim();
-      chrome.storage.sync.get(['channels', 'defaultModel', 'translateTargetLang', 'prevLanguage', 'selectionTranslationMode', 'mtDefaultChannelId'], (cfg: StorageConfig) => {
+      chrome.storage.sync.get(['channels', 'defaultModel', 'translateTargetLang', 'prevLanguage', 'selectionTranslationMode', 'hoverTranslationMode', 'mtDefaultChannelId'], (cfg: StorageConfig) => {
         const pair = pickPair(cfg);
         const lang = cfg.translateTargetLang || 'zh-CN';
         const prevLang = cfg.prevLanguage || 'en';
-        const { runner, showModelSelector } = createSelectionRunner(cfg);
+        const { runner, showModelSelector } = createHoverRunner(cfg);
         attachOverlayHeaderVue(overlay, cfg, pair, lang, prevLang, source, runner, showModelSelector);
         runner(overlay, 'translate', source, pair, lang, prevLang);
       });
@@ -1113,7 +1106,7 @@ function toggleHoverTranslate(blockEl: HTMLElement) {
       return;
     }
 
-    chrome.storage.sync.get(['translateTargetLang', 'wrapperStyleName', 'targetStylePresets', 'selectionTranslationMode', 'mtDefaultChannelId'], (cfg: StorageConfig & any) => {
+    chrome.storage.sync.get(['translateTargetLang', 'wrapperStyleName', 'targetStylePresets', 'selectionTranslationMode', 'hoverTranslationMode', 'mtDefaultChannelId'], (cfg: StorageConfig & any) => {
       const sourceText = (blockEl.innerText || '').trim();
       const langCode = (cfg.translateTargetLang || 'zh-CN').trim();
       const styleName = (cfg.wrapperStyleName || 'ifocal-target-style-dotted').trim();
@@ -1126,13 +1119,13 @@ function toggleHoverTranslate(blockEl: HTMLElement) {
       sharedApplyWrapperLoading(wrapper, sourceText);
       try { blockEl.setAttribute('aria-busy', 'true'); } catch {}
 
-      if (shouldUseMachineTranslation(cfg.selectionTranslationMode || selectionTranslationMode)) {
+      if (shouldUseMachineTranslation(resolveHoverTranslationMode(cfg))) {
         void machineTranslateTexts([sourceText], langCode, cfg.mtDefaultChannelId).then((response) => {
           blockEl.dataset.fcTranslated = '1';
           const msg = Array.isArray(response?.translations) ? String(response.translations[0] || '') : '';
           const error = Array.isArray(response?.errors) ? String(response.errors.find(Boolean) || '') : '';
           const resultText = msg || (error || response?.error ? `【错误】${error || response?.error || '未知错误'}` : '');
-          applyInlineTranslationResult(wrapper, resultText, langCode, sourceText);
+          sharedApplyWrapperResult(wrapper, resultText, langCode, undefined, sourceText);
         });
         return;
       }

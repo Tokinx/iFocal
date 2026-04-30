@@ -114,6 +114,7 @@ export const DEFAULT_CONFIG = {
   // 划词：是否启用划词翻译（显示小圆点）
   enableSelectionTranslation: true,
   selectionTranslationMode: 'ai' as 'ai' | 'machine',
+  hoverTranslationMode: 'ai' as 'ai' | 'machine',
 
 
   // 快捷键设置
@@ -261,6 +262,7 @@ export const CONFIG_KEYS = [
   'displayMode',
   'enableSelectionTranslation',
   'selectionTranslationMode',
+  'hoverTranslationMode',
   'actionKey',
   'autoPasteGlobalAssistant',
   'maxSessionsCount',
@@ -302,6 +304,9 @@ export async function loadConfig(): Promise<typeof DEFAULT_CONFIG> {
             }
           }
         });
+        if (items.selectionTranslationMode !== undefined && items.hoverTranslationMode === undefined) {
+          config.hoverTranslationMode = items.selectionTranslationMode === 'machine' ? 'machine' : 'ai';
+        }
         config.mtChannels = normalizeMachineTranslateChannels((config as any).mtChannels);
         config.mtDefaultChannelId = normalizeMachineTranslateDefaultChannelId((config as any).mtDefaultChannelId, config.mtChannels);
 

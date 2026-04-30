@@ -332,6 +332,7 @@ async function saveBasics() {
     const k = (config.value.actionKey || 'Alt').trim() || 'Alt';
     const lang = (config.value.translateTargetLang || 'zh-CN').trim() || 'zh-CN';
     const selectionTranslationMode = config.value.selectionTranslationMode === 'machine' ? 'machine' : 'ai';
+    const hoverTranslationMode = config.value.hoverTranslationMode === 'machine' ? 'machine' : selectionTranslationMode;
     const mtDefaultId = normalizeMachineTranslateDefaultChannelId(mtDefaultChannelId.value, machineChannels.value);
     if (!k) {
       toast.error('快捷键不能为空');
@@ -344,6 +345,7 @@ async function saveBasics() {
     config.value.displayMode = config.value.displayMode || 'insert';
     if (typeof config.value.enableSelectionTranslation !== 'boolean') config.value.enableSelectionTranslation = true;
     config.value.selectionTranslationMode = selectionTranslationMode;
+    config.value.hoverTranslationMode = hoverTranslationMode;
     mtDefaultChannelId.value = mtDefaultId;
     (config.value as any).mtDefaultChannelId = mtDefaultId;
 
@@ -369,6 +371,7 @@ async function saveBasics() {
       targetStylePresets: presetsToSave,
       enableSelectionTranslation: config.value.enableSelectionTranslation,
       selectionTranslationMode,
+      hoverTranslationMode,
       mtDefaultChannelId: mtDefaultId,
       maxSessionsCount: config.value.maxSessionsCount || 10,
       contextMessagesCount: normalizeContextMessagesCount(config.value.contextMessagesCount),
@@ -1017,7 +1020,7 @@ async function fetchAddFormModels() {
 
     <!-- 右侧内容 -->
     <ScrollArea class="flex-1 min-h-0">
-      <main class="space-y-6 p-6">
+      <main class="px-4 py-2">
         <!-- 渠道管理 -->
         <section v-if="nav === 'channels'" :id="'opt-channels'" class="space-y-4">
           <header class="flex items-center h-10 text-base font-semibold">
@@ -1028,7 +1031,6 @@ async function fetchAddFormModels() {
               添加渠道
             </Button>
           </header>
-
 
           <div v-if="!channels.length" class="text-sm text-muted-foreground">暂无渠道，请先添加。</div>
           <div v-else class="space-y-3">
@@ -1269,7 +1271,8 @@ async function fetchAddFormModels() {
                   <div class="flex-1 w-0 truncate">
                     <div class="font-medium inline-flex items-center gap-2">
                       <span>{{ ch.name || machineProviderLabel(ch.provider) }}</span>
-                      <span v-if="machineProviderModeLabel(ch.provider)" class="px-1.5 py-0.5 text-[11px] text-emerald-600 bg-emerald-100">
+                      <span v-if="machineProviderModeLabel(ch.provider)"
+                        class="px-1.5 py-0.5 text-[11px] text-emerald-600 bg-emerald-100">
                         {{ machineProviderModeLabel(ch.provider) }}
                       </span>
                       <span v-if="machineProviderExperimental(ch.provider)"
@@ -1410,8 +1413,8 @@ async function fetchAddFormModels() {
               <!-- 默认模型 -->
               <div class="flex items-center justify-between gap-4">
                 <div>
-                  <label class="text-sm font-medium leading-none block mb-1">默认模型</label>
-                  <p class="text-xs text-muted-foreground">用于划词翻译、默认调用与助手输出</p>
+                  <label class="text-sm font-medium leading-none block mb-1">智能模型</label>
+                  <p class="text-xs text-muted-foreground">更智能，默认用于划词翻译等低并发场景</p>
                 </div>
                 <div class="w-60">
                   <ModelSelect :current-model-name="defaultModelCurrentName" :grouped-models="settingsGroupedModels"
@@ -1419,10 +1422,29 @@ async function fetchAddFormModels() {
                     @selectModel="handleDefaultModelSelect" />
                 </div>
               </div>
-              <!-- 默认助手 -->
               <div class="flex items-center justify-between gap-4">
                 <div>
-                  <label class="text-sm font-medium leading-none block mb-1">默认助手</label>
+                  <label class="text-sm font-medium leading-none block mb-1">机器翻译</label>
+                  <p class="text-xs text-muted-foreground">更快速，默认用于网页全文翻译等到并发场景</p>
+                </div>
+                <div class="w-60">
+                  <Select v-model="mtDefaultChannelId">
+                    <SelectTrigger class="w-full">
+                      <SelectValue placeholder="选择机器翻译渠道" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem v-for="ch in machineChannels.filter((item) => item.enabled)" :key="ch.id"
+                        :value="ch.id">
+                        {{ ch.name }}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <!-- 默认助手 -->
+              <!-- <div class="flex items-center justify-between gap-4">
+                <div>
+                  <label class="text-sm font-medium leading-none block mb-1">会话助手</label>
                   <p class="text-xs text-muted-foreground">打开助手窗口时默认进入的助手</p>
                 </div>
                 <div class="w-60">
@@ -1437,26 +1459,7 @@ async function fetchAddFormModels() {
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
-              <!-- 默认目标语言 -->
-              <div class="flex items-center justify-between gap-4">
-                <div>
-                  <label class="text-sm font-medium leading-none block mb-1">默认目标语言</label>
-                  <p class="text-xs text-muted-foreground">用于调整输出和翻译结果的语言</p>
-                </div>
-                <div class="w-60">
-                  <Select v-model="config.translateTargetLang">
-                    <SelectTrigger class="w-full">
-                      <SelectValue placeholder="语言" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem v-for="lang in SUPPORTED_LANGUAGES" :key="lang.value" :value="lang.value">{{
-                        lang.label
-                      }}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
+              </div> -->
               <div class="flex items-center justify-between gap-4">
                 <div>
                   <label class="text-sm font-medium leading-none block mb-1">会话保存数量</label>
@@ -1508,6 +1511,25 @@ async function fetchAddFormModels() {
 
             <div class="border-t"></div>
 
+            <!-- 默认目标语言 -->
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <label class="text-sm font-medium leading-none block mb-1">目标语言</label>
+                <p class="text-xs text-muted-foreground">用于调整输出和翻译结果的语言</p>
+              </div>
+              <div class="w-60">
+                <Select v-model="config.translateTargetLang">
+                  <SelectTrigger class="w-full">
+                    <SelectValue placeholder="语言" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem v-for="lang in SUPPORTED_LANGUAGES" :key="lang.value" :value="lang.value">{{
+                      lang.label
+                    }}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
             <div class="flex items-center justify-between gap-4">
               <div>
                 <label class="text-sm font-medium leading-none block mb-1">划词翻译</label>
@@ -1519,8 +1541,8 @@ async function fetchAddFormModels() {
             </div>
             <div class="flex items-center justify-between gap-4">
               <div>
-                <label class="text-sm font-medium leading-none block mb-1">划词/悬浮翻译方法</label>
-                <p class="text-xs text-muted-foreground">AI 智能翻译使用默认模型进行翻译效果更好，传统机器翻译使用机器翻译速度更快</p>
+                <label class="text-sm font-medium leading-none block mb-1">划词翻译方法</label>
+                <p class="text-xs text-muted-foreground">智能翻译效果更好，传统翻译速度更快</p>
               </div>
               <div class="w-60">
                 <Select v-model="config.selectionTranslationMode">
@@ -1528,26 +1550,8 @@ async function fetchAddFormModels() {
                     <SelectValue placeholder="选择翻译方法" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="ai">AI 智能翻译</SelectItem>
-                    <SelectItem value="machine">传统机器翻译</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div class="flex items-center justify-between gap-4">
-              <div>
-                <label class="text-sm font-medium leading-none block mb-1">机器翻译渠道</label>
-                <p class="text-xs text-muted-foreground">网页全文翻译、批量翻译默认使用该渠道</p>
-              </div>
-              <div class="w-60">
-                <Select v-model="mtDefaultChannelId">
-                  <SelectTrigger class="w-full">
-                    <SelectValue placeholder="选择机器翻译渠道" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem v-for="ch in machineChannels.filter((item) => item.enabled)" :key="ch.id" :value="ch.id">
-                      {{ ch.name }}
-                    </SelectItem>
+                    <SelectItem value="ai">智能模型</SelectItem>
+                    <SelectItem value="machine">机器翻译</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1561,10 +1565,27 @@ async function fetchAddFormModels() {
                 <Input v-model="config.actionKey" placeholder="如 Alt" />
               </div>
             </div>
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <label class="text-sm font-medium leading-none block mb-1">悬浮翻译方法</label>
+                <p class="text-xs text-muted-foreground">智能翻译效果更好，传统翻译速度更快</p>
+              </div>
+              <div class="w-60">
+                <Select v-model="config.hoverTranslationMode">
+                  <SelectTrigger class="w-full">
+                    <SelectValue placeholder="选择翻译方法" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ai">智能模型</SelectItem>
+                    <SelectItem value="machine">机器翻译</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
             <!-- 结果显示方式 -->
             <div class="flex items-center justify-between gap-4">
               <div>
-                <label class="text-sm font-medium leading-none block mb-1">悬浮翻译结果显示方式</label>
+                <label class="text-sm font-medium leading-none block mb-1">翻译结果显示方式</label>
                 <p class="text-xs text-muted-foreground">插入原文下方或覆盖原文</p>
               </div>
               <div class="w-60">
