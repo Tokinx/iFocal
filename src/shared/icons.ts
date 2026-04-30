@@ -6,7 +6,7 @@ export function iconOfNav(id: string): string {
     case 'channels':
       return 'proicons:sparkle-2';
     case 'settings':
-      return 'proicons:pencil-sparkle';
+      return 'ri:settings-4-line';
     case 'debug':
       return 'proicons:bug';
     case 'keys':

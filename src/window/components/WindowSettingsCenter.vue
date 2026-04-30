@@ -762,7 +762,8 @@ async function fetchAddFormModels() {
             { id: 'debug', label: '其它设置' },
             { id: 'about', label: '关于插件' }
           ] as Array<{ id: 'channels' | 'settings' | 'debug' | 'about'; label: string }>" :key="item.id"
-            variant="ghost" class="w-full justify-center gap-1 text-olive-500 hover:bg-olive-100 hover:text-amber-800/80"
+            variant="ghost"
+            class="w-full justify-center gap-1 text-olive-500 hover:bg-olive-100 hover:text-amber-800/80"
             :class="nav === (item.id as any) ? 'bg-olive-100 !text-amber-800' : ''" @click="nav = item.id as any">
             <Icon :icon="iconOfNav(item.id)" width="16" class="opacity-80" />
             <span>{{ item.label }}</span>
@@ -796,27 +797,28 @@ async function fetchAddFormModels() {
               <div class="flex items-center justify-between gap-2">
                 <div class="text-sm flex items-center gap-2 flex-1">
                   <!-- 拖拽手柄 -->
-                  <Button variant="ghost" size="icon" class="h-6 w-6 shrink-0 cursor-grab active:cursor-grabbing"
+                  <!-- <Button variant="ghost" size="icon" class="h-8 w-8 shrink-0 cursor-grab active:cursor-grabbing"
                     @mousedown="enableDrag(idx)" @mouseup="disableDrag(idx)" @mouseleave="disableDrag(idx)"
                     title="拖拽排序">
-                    <Icon icon="lucide:grip-vertical" width="16" class="text-muted-foreground" />
-                  </Button>
-                  <Button variant="ghost" size="icon" class="h-6 w-6 shrink-0"
+                    <Icon icon="lucide:grip-vertical" class="text-muted-foreground !w-6 !h-6" />
+                  </Button> -->
+                  <Button variant="ghost" size="icon" class="h-8 w-8 shrink-0" @mousedown="enableDrag(idx)"
+                    @mouseup="disableDrag(idx)" @mouseleave="disableDrag(idx)"
                     @click="channelExpanded[idx] = !channelExpanded[idx]" :title="channelExpanded[idx] ? '收起' : '展开'">
-                    <Icon :icon="channelExpanded[idx] ? 'lucide:chevron-down' : 'lucide:chevron-right'" width="16" />
+                    <Icon :icon="channelExpanded[idx] ? 'lucide:chevron-down' : 'lucide:chevron-right'" />
                   </Button>
-                  <div class="flex-1">
+                  <div class="flex-1 w-0">
                     <div class="font-medium inline-flex items-center gap-2">
                       <!-- <Icon :icon="iconOfChannelType(ch.type)" width="16" /> -->
                       {{ ch.name || '未命名' }}
                     </div>
-                    <div class="text-muted-foreground">{{ ch.type }} · {{ ch.apiUrl || '-' }}</div>
+                    <div class="text-muted-foreground truncate" :title="ch.apiUrl">{{ ch.type }} · {{ ch.apiUrl }}</div>
                   </div>
                 </div>
                 <div class="flex items-center gap-2 w-64">
                   <div class="w-full">
                     <Select v-model="testModel[idx]">
-                      <SelectTrigger>
+                      <SelectTrigger class="w-full">
                         <SelectValue placeholder="选择模型" />
                       </SelectTrigger>
                       <SelectContent>
@@ -841,7 +843,7 @@ async function fetchAddFormModels() {
                   </div>
                   <div class="w-64">
                     <Select v-model="ch.type">
-                      <SelectTrigger>
+                      <SelectTrigger class="w-full">
                         <SelectValue placeholder="选择类型" />
                       </SelectTrigger>
                       <SelectContent>
@@ -903,7 +905,7 @@ async function fetchAddFormModels() {
                     <p class="text-xs text-muted-foreground">每行一个，支持 id#name 格式自定义显示名称</p>
                   </div>
                   <div class="w-[32rem] space-y-2 shrink-0">
-                    <Textarea v-model="modelsTextByIndex[idx]" class="min-h-28"
+                    <Textarea v-model="modelsTextByIndex[idx]" class="h-36"
                       placeholder="gpt-4o&#10;gpt-4o-mini#GPT-4o Mini" />
                     <Button variant="outline" size="sm" class="flex items-center gap-1" @click="fetchModels(idx)"
                       :disabled="fetchingModels[idx]">
@@ -942,9 +944,9 @@ async function fetchAddFormModels() {
                   <label class="text-sm font-medium leading-none block mb-1">默认模型</label>
                   <p class="text-xs text-muted-foreground">用于默认调用与助手输出</p>
                 </div>
-                <div class="w-64">
+                <div class="w-50">
                   <Select v-model="defaultModelValue">
-                    <SelectTrigger>
+                    <SelectTrigger class="w-full">
                       <SelectValue placeholder="未设置" />
                     </SelectTrigger>
                     <SelectContent>
@@ -967,13 +969,14 @@ async function fetchAddFormModels() {
                   <label class="text-sm font-medium leading-none block mb-1">默认助手</label>
                   <p class="text-xs text-muted-foreground">打开助手窗口时默认进入的助手</p>
                 </div>
-                <div class="w-64">
+                <div class="w-50">
                   <Select :model-value="defaultAssistantId" @update:modelValue="saveDefaultAssistant(String($event))">
-                    <SelectTrigger>
+                    <SelectTrigger class="w-full">
                       <SelectValue placeholder="选择助手" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem v-for="assistant in assistantConfigs" :key="assistant.id" :value="assistant.id">{{ assistant.name }}
+                      <SelectItem v-for="assistant in assistantConfigs" :key="assistant.id" :value="assistant.id">{{
+                        assistant.name }}
                       </SelectItem>
                     </SelectContent>
                   </Select>
@@ -985,15 +988,15 @@ async function fetchAddFormModels() {
                   <label class="text-sm font-medium leading-none block mb-1">默认目标语言</label>
                   <p class="text-xs text-muted-foreground">用于翻译结果的语言</p>
                 </div>
-                <div class="w-64">
+                <div class="w-50">
                   <Select v-model="config.translateTargetLang">
-                    <SelectTrigger>
+                    <SelectTrigger class="w-full">
                       <SelectValue placeholder="语言" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem v-for="lang in SUPPORTED_LANGUAGES" :key="lang.value" :value="lang.value">{{
                         lang.label
-                      }}</SelectItem>
+                        }}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -1004,9 +1007,9 @@ async function fetchAddFormModels() {
                   <label class="text-sm font-medium leading-none block mb-1">结果显示方式</label>
                   <p class="text-xs text-muted-foreground">插入原文下方或覆盖原文</p>
                 </div>
-                <div class="w-64">
+                <div class="w-50">
                   <Select v-model="config.displayMode">
-                    <SelectTrigger>
+                    <SelectTrigger class="w-full">
                       <SelectValue placeholder="显示方式" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1030,7 +1033,7 @@ async function fetchAddFormModels() {
                   <label class="text-sm font-medium leading-none block mb-1">悬浮翻译</label>
                   <p class="text-xs text-muted-foreground">设置触发键（如 Alt）</p>
                 </div>
-                <div class="w-36">
+                <div class="w-50">
                   <Input v-model="config.actionKey" placeholder="如 Alt" />
                 </div>
               </div>
@@ -1039,9 +1042,9 @@ async function fetchAddFormModels() {
                   <label class="text-sm font-medium leading-none block mb-1">会话保存数量</label>
                   <p class="text-xs text-muted-foreground">全局助手最多保存的历史会话数量</p>
                 </div>
-                <div class="w-36">
+                <div class="w-50">
                   <Select v-model="config.maxSessionsCount">
-                    <SelectTrigger>
+                    <SelectTrigger class="w-full">
                       <SelectValue placeholder="选择数量" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1057,9 +1060,9 @@ async function fetchAddFormModels() {
                   <label class="text-sm font-medium leading-none block mb-1">上下文消息数量</label>
                   <p class="text-xs text-muted-foreground">开启上下文时，携带最近 N 条历史消息</p>
                 </div>
-                <div class="w-36">
+                <div class="w-50">
                   <Select v-model="config.contextMessagesCount">
-                    <SelectTrigger>
+                    <SelectTrigger class="w-full">
                       <SelectValue placeholder="选择数量" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1151,15 +1154,16 @@ async function fetchAddFormModels() {
                   <label class="text-sm font-medium leading-none block mb-1">译文样式</label>
                   <p class="text-xs text-muted-foreground">用于页面注入译文的外观</p>
                 </div>
-                <div class="w-64">
+                <div class="w-50">
                   <Select v-model="styleSelection">
-                    <SelectTrigger>
+                    <SelectTrigger class="w-full">
                       <SelectValue placeholder="选择样式" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem v-for="p in (config as any).targetStylePresets || []" :key="p.name" :value="p.name">
-                        <span class="inline-flex items-center gap-2">{{ p.description || p.name
-                        }}</span>
+                        <span class="inline-flex items-center gap-2">
+                          {{ p.description || p.name }}
+                        </span>
                       </SelectItem>
                       <SelectItem value="__custom__">自定义（编辑 CSS）</SelectItem>
                     </SelectContent>
@@ -1202,13 +1206,9 @@ async function fetchAddFormModels() {
             <div class="flex flex-wrap gap-3">
               <div class="w-56 space-y-1">
                 <Label class="block">模型</Label>
-                <ModelSelect
-                  :current-model-name="debugCurrentModelName"
-                  :grouped-models="debugGroupedModels"
-                  :selected-pair-key="assistantModelValue"
-                  buttonClass="w-full h-9 justify-between"
-                  @selectModel="handleDebugModelSelect"
-                />
+                <ModelSelect :current-model-name="debugCurrentModelName" :grouped-models="debugGroupedModels"
+                  :selected-pair-key="assistantModelValue" buttonClass="w-full h-9 justify-between"
+                  @selectModel="handleDebugModelSelect" />
               </div>
               <div class="w-40 space-y-1">
                 <Label class="block">任务</Label>
@@ -1231,7 +1231,7 @@ async function fetchAddFormModels() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem v-for="lang in SUPPORTED_LANGUAGES" :key="lang.value" :value="lang.value">{{ lang.label
-                      }}
+                    }}
                     </SelectItem>
                   </SelectContent>
                 </Select>
@@ -1303,7 +1303,7 @@ async function fetchAddFormModels() {
             </div>
             <div class="w-64">
               <Select v-model="addForm.type">
-                <SelectTrigger>
+                <SelectTrigger class="w-full">
                   <SelectValue placeholder="选择类型" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1357,7 +1357,7 @@ async function fetchAddFormModels() {
             <p class="text-xs text-muted-foreground">每行一个，支持 id#name 格式自定义显示名称</p>
           </div>
           <div class="w-[32rem] space-y-2 shrink-0">
-            <Textarea v-model="addForm.modelsText" class="min-h-28" placeholder="gpt-4o&#10;gpt-4o-mini#GPT-4o Mini" />
+            <Textarea v-model="addForm.modelsText" class="h-40" placeholder="gpt-4o&#10;gpt-4o-mini#GPT-4o Mini" />
             <Button variant="outline" size="sm" class="flex items-center gap-1" @click="fetchAddFormModels"
               :disabled="fetchingAddFormModels">
               <Icon v-if="!fetchingAddFormModels" icon="lucide:download" width="14" />
