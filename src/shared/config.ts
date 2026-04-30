@@ -1,4 +1,10 @@
 // 全局配置文件，用于存储所有页面共享的配置选项
+import {
+  DEFAULT_MACHINE_TRANSLATE_CHANNEL_ID,
+  DEFAULT_MACHINE_TRANSLATE_CHANNELS,
+  normalizeMachineTranslateChannels,
+  normalizeMachineTranslateDefaultChannelId,
+} from '@/shared/machine-translation';
 
 // 支持的语言列表
 export const SUPPORTED_LANGUAGES = [
@@ -124,6 +130,10 @@ export const DEFAULT_CONFIG = {
 
   // 性能优化
   reduceVisualEffects: false, // 减弱视觉效果（关闭 backdrop-blur）
+
+  // 机器翻译渠道：用于后续网页全文翻译与批量翻译
+  mtChannels: DEFAULT_MACHINE_TRANSLATE_CHANNELS,
+  mtDefaultChannelId: DEFAULT_MACHINE_TRANSLATE_CHANNEL_ID,
 
   // 新增：译文样式名称（应用到译文包裹元素），默认点状下划线
   wrapperStyleName: 'ifocal-target-style-dotted',
@@ -255,6 +265,8 @@ export const CONFIG_KEYS = [
   'contextMessagesCount',
   'taskSettings',
   'reduceVisualEffects',
+  'mtChannels',
+  'mtDefaultChannelId',
   'wrapperStyleName',
   'targetStylePresets'
 ];
@@ -279,11 +291,17 @@ export async function loadConfig(): Promise<typeof DEFAULT_CONFIG> {
             else if (key === 'taskSettings') {
               (config as any)[key] = normalizeTaskSettingsMap(items[key]);
             }
+            // 特殊处理：机器翻译渠道始终补齐内置免费渠道
+            else if (key === 'mtChannels') {
+              (config as any)[key] = normalizeMachineTranslateChannels(items[key]);
+            }
             else {
               (config as any)[key] = items[key];
             }
           }
         });
+        config.mtChannels = normalizeMachineTranslateChannels((config as any).mtChannels);
+        config.mtDefaultChannelId = normalizeMachineTranslateDefaultChannelId((config as any).mtDefaultChannelId, config.mtChannels);
 
         // 兼容性迁移：如果存在旧的全局开关，迁移到新结构
         const hasOldSettings = items.enableContext !== undefined ||

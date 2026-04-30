@@ -17,6 +17,15 @@ import { loadGlossary, parseGlossaryMixedText, parseGlossaryTermsText, serialize
 import { loadSettingsSnapshot, downloadSettingsSnapshot, parseSettingsImportFile, saveSettingsSnapshot } from '@/shared/settings-import-export';
 import { buildStylePresetsCss, CUSTOM_STYLE_SELECTION, DEFAULT_WRAPPER_STYLE_NAME, mergeTargetStylePresets, parseStyleNameFromCss, resolveSelectedStylePresetCss, upsertCustomStylePreset } from '@/shared/style-presets';
 import { modelIdFromSpec, parseModelSpec } from '@/shared/model-utils';
+import {
+  MACHINE_TRANSLATE_PROVIDER_OPTIONS,
+  createMachineTranslateChannel,
+  getMachineTranslateProviderMeta,
+  normalizeMachineTranslateChannels,
+  normalizeMachineTranslateDefaultChannelId,
+  type MachineTranslateChannel,
+  type MachineTranslateProvider,
+} from '@/shared/machine-translation';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import ModelSelect from './ModelSelect.vue';
 
@@ -29,7 +38,7 @@ withDefaults(defineProps<{
 type ModelPair = { channel: string; model: string } | null;
 
 // 左侧导航：默认显示"通用设置"
-const nav = ref<'channels' | 'settings' | 'debug' | 'about'>('settings');
+const nav = ref<'channels' | 'machine' | 'settings' | 'debug' | 'about'>('settings');
 
 const { channels, modelPairs, addForm, addChannel, testModel, initTestModels, editForm, saveEdit, removeChannel, restoreChannelsSnapshot } = useChannels();
 const toast = useToast();
@@ -40,6 +49,28 @@ const assistantConfigs = ref<AssistantConfig[]>([]);
 const defaultAssistantId = ref(DEFAULT_ASSISTANT_ID);
 // 使用全局配置
 const config = ref({ ...DEFAULT_CONFIG });
+const machineChannels = ref<MachineTranslateChannel[]>(normalizeMachineTranslateChannels(DEFAULT_CONFIG.mtChannels));
+const mtDefaultChannelId = ref(DEFAULT_CONFIG.mtDefaultChannelId);
+const mtExpanded = reactive<boolean[]>([]);
+const mtTesting = reactive<boolean[]>([]);
+const mtShowApiKey = reactive<boolean[]>([]);
+const mtShowSecretKey = reactive<boolean[]>([]);
+const showAddMachineChannel = ref(false);
+const mtProviderOptions = computed(() => MACHINE_TRANSLATE_PROVIDER_OPTIONS.filter((provider) => {
+  return provider.value !== 'google-free' && provider.value !== 'microsoft-free';
+}));
+const mtAddForm = reactive({
+  provider: 'deeplx' as MachineTranslateProvider,
+  name: '',
+  apiUrl: '',
+  apiKey: '',
+  secretKey: '',
+  region: '',
+  qps: 4,
+  maxConcurrent: 4,
+  timeoutMs: 20000,
+  enabled: true,
+});
 // 样式选择/编辑
 const styleSelection = ref<string>(DEFAULT_WRAPPER_STYLE_NAME);
 const customCss = ref<string>('');
@@ -56,6 +87,63 @@ const reasoningEffortOptions: Array<{ value: ReasoningEffort; label: string }> =
 function normalizeContextMessagesCount(value: unknown): number {
   const num = Number(value);
   return ALLOWED_CONTEXT_MESSAGE_COUNTS.includes(num) ? num : 2;
+}
+
+function syncMachineChannelUiState() {
+  machineChannels.value.forEach((_, index) => {
+    mtExpanded[index] = !!mtExpanded[index];
+    mtTesting[index] = !!mtTesting[index];
+    mtShowApiKey[index] = !!mtShowApiKey[index];
+    mtShowSecretKey[index] = !!mtShowSecretKey[index];
+  });
+  mtExpanded.length = machineChannels.value.length;
+  mtTesting.length = machineChannels.value.length;
+  mtShowApiKey.length = machineChannels.value.length;
+  mtShowSecretKey.length = machineChannels.value.length;
+}
+
+function machineProviderLabel(provider: MachineTranslateProvider) {
+  return getMachineTranslateProviderMeta(provider).label;
+}
+
+function machineProviderDescription(provider: MachineTranslateProvider) {
+  return getMachineTranslateProviderMeta(provider).description;
+}
+
+function machineProviderNeedsApiKey(provider: MachineTranslateProvider) {
+  return getMachineTranslateProviderMeta(provider).requiresApiKey;
+}
+
+function machineProviderShowsApiKey(provider: MachineTranslateProvider) {
+  return provider !== 'google-free' && provider !== 'microsoft-free';
+}
+
+function machineProviderNeedsSecretKey(provider: MachineTranslateProvider) {
+  return !!getMachineTranslateProviderMeta(provider).requiresSecretKey;
+}
+
+function machineProviderSupportsRegion(provider: MachineTranslateProvider) {
+  return !!getMachineTranslateProviderMeta(provider).supportsRegion;
+}
+
+function machineProviderExperimental(provider: MachineTranslateProvider) {
+  return !!getMachineTranslateProviderMeta(provider).experimental;
+}
+
+function machineProviderModeLabel(provider: MachineTranslateProvider) {
+  if (provider === 'google-free' || provider === 'microsoft-free') return '内置免费';
+  if (provider === 'google-official' || provider === 'microsoft-official' || provider === 'deepl' || provider === 'baidu') return '官方';
+  if (provider === 'deeplx') return '自建';
+  return '';
+}
+
+function applyMachineProviderDefaults(target: { provider: MachineTranslateProvider; name?: string; apiUrl?: string; qps?: number; maxConcurrent?: number; timeoutMs?: number }) {
+  const meta = getMachineTranslateProviderMeta(target.provider);
+  if (!target.name) target.name = meta.label;
+  if (!target.apiUrl) target.apiUrl = meta.defaultApiUrl;
+  target.qps = Number(target.qps) || meta.defaultQps;
+  target.maxConcurrent = Number(target.maxConcurrent) || meta.defaultMaxConcurrent;
+  target.timeoutMs = Number(target.timeoutMs) || meta.defaultTimeoutMs;
 }
 
 function taskSettingsOf(task: string) {
@@ -186,6 +274,9 @@ async function loadAll() {
     const globalConfig = await loadConfig();
     config.value = { ...globalConfig };
     config.value.contextMessagesCount = normalizeContextMessagesCount(config.value.contextMessagesCount);
+    machineChannels.value = normalizeMachineTranslateChannels((globalConfig as any).mtChannels);
+    mtDefaultChannelId.value = normalizeMachineTranslateDefaultChannelId((globalConfig as any).mtDefaultChannelId, machineChannels.value);
+    syncMachineChannelUiState();
     (config.value as any).targetStylePresets = mergeTargetStylePresets((config.value as any).targetStylePresets);
     styleSelection.value = String((config.value as any).wrapperStyleName || DEFAULT_WRAPPER_STYLE_NAME).trim() || DEFAULT_WRAPPER_STYLE_NAME;
     ensureOptionPresetStyles((config.value as any).targetStylePresets);
@@ -526,6 +617,142 @@ function handleTestChannel(idx: number) {
   } catch { toast.error('测试调用失败'); }
 }
 
+async function saveMachineTranslateSettings(showToast = true) {
+  try {
+    const channels = normalizeMachineTranslateChannels(machineChannels.value);
+    const defaultId = normalizeMachineTranslateDefaultChannelId(mtDefaultChannelId.value, channels);
+    machineChannels.value = channels;
+    mtDefaultChannelId.value = defaultId;
+    (config.value as any).mtChannels = channels;
+    (config.value as any).mtDefaultChannelId = defaultId;
+    await saveConfig({ mtChannels: channels, mtDefaultChannelId: defaultId } as any);
+    syncMachineChannelUiState();
+    if (showToast) toast.success('机器翻译设置已保存');
+  } catch (e: any) {
+    toast.error(String(e?.message || e || '保存失败'));
+  }
+}
+
+function openAddMachineChannel() {
+  resetMachineAddForm();
+  showAddMachineChannel.value = true;
+}
+
+function closeAddMachineChannel() {
+  showAddMachineChannel.value = false;
+}
+
+function resetMachineAddForm() {
+  mtAddForm.provider = 'deeplx';
+  mtAddForm.name = '';
+  mtAddForm.apiUrl = '';
+  mtAddForm.apiKey = '';
+  mtAddForm.secretKey = '';
+  mtAddForm.region = '';
+  mtAddForm.enabled = true;
+  applyMachineProviderDefaults(mtAddForm);
+}
+
+function handleMachineAddProviderChange(value: string) {
+  mtAddForm.provider = value as MachineTranslateProvider;
+  mtAddForm.name = '';
+  mtAddForm.apiUrl = '';
+  mtAddForm.apiKey = '';
+  mtAddForm.secretKey = '';
+  mtAddForm.region = '';
+  applyMachineProviderDefaults(mtAddForm);
+}
+
+function handleMachineChannelProviderChange(channel: MachineTranslateChannel, value: string) {
+  channel.provider = value as MachineTranslateProvider;
+  const meta = getMachineTranslateProviderMeta(channel.provider);
+  channel.apiUrl = meta.defaultApiUrl;
+  channel.qps = meta.defaultQps;
+  channel.maxConcurrent = meta.defaultMaxConcurrent;
+  channel.timeoutMs = meta.defaultTimeoutMs;
+  if (!machineProviderShowsApiKey(channel.provider)) channel.apiKey = undefined;
+  if (!machineProviderNeedsSecretKey(channel.provider)) channel.secretKey = undefined;
+  if (!machineProviderSupportsRegion(channel.provider)) channel.region = undefined;
+  if (!channel.name) channel.name = meta.label;
+}
+
+async function handleAddMachineChannel() {
+  const channel = createMachineTranslateChannel(mtAddForm.provider);
+  channel.name = (mtAddForm.name || '').trim() || machineProviderLabel(mtAddForm.provider);
+  channel.apiUrl = (mtAddForm.apiUrl || '').trim() || getMachineTranslateProviderMeta(mtAddForm.provider).defaultApiUrl;
+  channel.apiKey = (mtAddForm.apiKey || '').trim() || undefined;
+  channel.secretKey = (mtAddForm.secretKey || '').trim() || undefined;
+  channel.region = (mtAddForm.region || '').trim() || undefined;
+  channel.enabled = !!mtAddForm.enabled;
+  channel.qps = Number(mtAddForm.qps) || getMachineTranslateProviderMeta(mtAddForm.provider).defaultQps;
+  channel.maxConcurrent = Number(mtAddForm.maxConcurrent) || getMachineTranslateProviderMeta(mtAddForm.provider).defaultMaxConcurrent;
+  channel.timeoutMs = Number(mtAddForm.timeoutMs) || getMachineTranslateProviderMeta(mtAddForm.provider).defaultTimeoutMs;
+  machineChannels.value = [...machineChannels.value, channel];
+  await saveMachineTranslateSettings(false);
+  closeAddMachineChannel();
+  toast.success('机器翻译渠道已添加');
+}
+
+async function removeMachineChannel(idx: number) {
+  const channel = machineChannels.value[idx];
+  if (!channel) return;
+  if (channel.builtin) {
+    toast.error('内置免费渠道不可删除，可选择禁用');
+    return;
+  }
+  machineChannels.value.splice(idx, 1);
+  await saveMachineTranslateSettings(false);
+  toast.success('机器翻译渠道已删除');
+}
+
+function toMachineChannelPayload(channel: MachineTranslateChannel): MachineTranslateChannel {
+  return {
+    id: String(channel.id || ''),
+    name: String(channel.name || ''),
+    provider: channel.provider,
+    apiUrl: String(channel.apiUrl || ''),
+    apiKey: String(channel.apiKey || ''),
+    secretKey: String(channel.secretKey || ''),
+    region: String(channel.region || ''),
+    enabled: !!channel.enabled,
+    builtin: !!channel.builtin,
+    qps: Number(channel.qps) || undefined,
+    maxConcurrent: Number(channel.maxConcurrent) || undefined,
+    timeoutMs: Number(channel.timeoutMs) || undefined,
+  };
+}
+
+function testMachineChannel(idx: number) {
+  const channel = machineChannels.value[idx];
+  if (!channel) return;
+  mtTesting[idx] = true;
+  try {
+    const payloadChannel = toMachineChannelPayload(channel);
+    chrome.runtime.sendMessage({
+      action: 'testMachineTranslateChannel',
+      channel: payloadChannel,
+      targetLang: config.value.translateTargetLang || 'zh-CN',
+      sourceLang: 'en',
+    }, (resp: any) => {
+      mtTesting[idx] = false;
+      const lastError = chrome.runtime.lastError?.message;
+      if (lastError) {
+        toast.error(`测试失败：${lastError}`);
+        return;
+      }
+      if (!resp) {
+        toast.error('测试失败：无响应，请重新加载扩展后重试');
+        return;
+      }
+      if (resp.ok) toast.success(`测试成功：${String(resp.sample || '').slice(0, 40)}`);
+      else toast.error(`测试失败：${resp.error || '未知错误'}`);
+    });
+  } catch {
+    mtTesting[idx] = false;
+    toast.error('测试调用失败');
+  }
+}
+
 onMounted(loadAll);
 
 onMounted(async () => {
@@ -545,7 +772,7 @@ onMounted(async () => {
 // 统一从 shared/icons 获取图标
 
 // 单页滚动定位
-function scrollToSection(id: 'channels' | 'settings' | 'debug' | 'keys' | 'about') {
+function scrollToSection(id: 'channels' | 'machine' | 'settings' | 'debug' | 'keys' | 'about') {
   try {
     const el = document.getElementById(`opt-${id}`);
     if (el) {
@@ -767,9 +994,10 @@ async function fetchAddFormModels() {
           <Button v-for="item in [
             { id: 'settings', label: '通用设置' },
             { id: 'channels', label: '渠道管理' },
+            { id: 'machine', label: '机器翻译' },
             { id: 'debug', label: '其它设置' },
             { id: 'about', label: '关于插件' }
-          ] as Array<{ id: 'channels' | 'settings' | 'debug' | 'about'; label: string }>" :key="item.id"
+          ] as Array<{ id: 'channels' | 'machine' | 'settings' | 'debug' | 'about'; label: string }>" :key="item.id"
             variant="ghost"
             class="w-full justify-center gap-1 text-olive-500 hover:bg-olive-100 hover:text-amber-800/80"
             :class="nav === (item.id as any) ? 'bg-olive-100 !text-amber-800' : ''" @click="nav = item.id as any">
@@ -936,6 +1164,255 @@ async function fetchAddFormModels() {
                   <Icon :icon="iconOfAction('save')" width="16" /> 保存
                 </Button>
                 <span class="text-xs text-muted-foreground">{{ editStatus }}</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 机器翻译 -->
+        <section v-if="nav === 'machine'" :id="'opt-machine'" class="space-y-4">
+          <header class="flex items-center h-10 text-base font-semibold">
+            <div class="shrink-0">机器翻译</div>
+            <div class="w-full"></div>
+            <Button size="sm" @click="openAddMachineChannel">
+              <Icon icon="proicons:box-add" width="16" />
+              添加渠道
+            </Button>
+          </header>
+
+          <div class="border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-900">
+            内置 Google 与 Microsoft 翻译为非官方实验接口，免密但可能受网络、限流或上游策略影响，生产稳定性要求高时建议添加官方自备密钥渠道。
+          </div>
+
+          <div class="flex items-center justify-between gap-4 border p-4">
+            <div>
+              <label class="text-sm font-medium leading-none block mb-1">默认机器翻译渠道</label>
+              <p class="text-xs text-muted-foreground">后续全文翻译和批量翻译默认使用该渠道</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <Select v-model="mtDefaultChannelId">
+                <SelectTrigger class="w-72">
+                  <SelectValue placeholder="选择机器翻译渠道" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="ch in machineChannels.filter((item) => item.enabled)" :key="ch.id" :value="ch.id">
+                    {{ ch.name }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <Button class="bg-primary text-primary-foreground flex items-center gap-1"
+                @click="saveMachineTranslateSettings()">
+                <Icon :icon="iconOfAction('save')" width="16" /> 保存
+              </Button>
+            </div>
+          </div>
+
+          <div v-if="showAddMachineChannel" class="border p-4 space-y-3">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <label class="text-sm font-medium leading-none block mb-1">新增机器翻译渠道</label>
+                <p class="text-xs text-muted-foreground">官方渠道可先保存空密钥，调用或测试时会提示补齐</p>
+              </div>
+              <div class="flex items-center gap-2">
+                <Button class="bg-primary text-primary-foreground" @click="handleAddMachineChannel">添加</Button>
+                <Button variant="outline" @click="closeAddMachineChannel">取消</Button>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div class="space-y-1">
+                <Label class="block">类型</Label>
+                <Select :model-value="mtAddForm.provider"
+                  @update:modelValue="handleMachineAddProviderChange(String($event))">
+                  <SelectTrigger class="w-full">
+                    <SelectValue placeholder="选择类型" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem v-for="provider in mtProviderOptions" :key="provider.value" :value="provider.value">
+                      {{ provider.label }}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div class="space-y-1">
+                <Label class="block">名称</Label>
+                <Input v-model="mtAddForm.name" :placeholder="machineProviderLabel(mtAddForm.provider)" />
+              </div>
+              <div class="space-y-1 col-span-2">
+                <Label class="block">API URL</Label>
+                <Input v-model="mtAddForm.apiUrl"
+                  :placeholder="getMachineTranslateProviderMeta(mtAddForm.provider).defaultApiUrl" />
+              </div>
+              <div v-if="machineProviderShowsApiKey(mtAddForm.provider)" class="space-y-1">
+                <Label class="block">API Key / Token</Label>
+                <Input v-model="mtAddForm.apiKey"
+                  :placeholder="machineProviderNeedsApiKey(mtAddForm.provider) ? '该渠道调用时必填' : '可留空'" />
+              </div>
+              <div v-if="machineProviderNeedsSecretKey(mtAddForm.provider)" class="space-y-1">
+                <Label class="block">Secret Key</Label>
+                <Input v-model="mtAddForm.secretKey" placeholder="百度等渠道需要" />
+              </div>
+              <div v-if="machineProviderSupportsRegion(mtAddForm.provider)" class="space-y-1">
+                <Label class="block">Region</Label>
+                <Input v-model="mtAddForm.region" placeholder="Microsoft 官方渠道可选" />
+              </div>
+              <div class="grid grid-cols-3 gap-2">
+                <div class="space-y-1">
+                  <Label class="block">QPS</Label>
+                  <Input v-model="mtAddForm.qps" />
+                </div>
+                <div class="space-y-1">
+                  <Label class="block">并发</Label>
+                  <Input v-model="mtAddForm.maxConcurrent" />
+                </div>
+                <div class="space-y-1">
+                  <Label class="block">超时(ms)</Label>
+                  <Input v-model="mtAddForm.timeoutMs" />
+                </div>
+              </div>
+            </div>
+            <p class="text-xs text-muted-foreground">{{ machineProviderDescription(mtAddForm.provider) }}</p>
+          </div>
+
+          <div class="space-y-3">
+            <div v-for="(ch, idx) in machineChannels" :key="ch.id" class="border p-4 space-y-3">
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2 flex-1 min-w-0">
+                  <Button variant="ghost" size="icon" class="h-8 w-8 shrink-0"
+                    @click="mtExpanded[idx] = !mtExpanded[idx]" :title="mtExpanded[idx] ? '收起' : '展开'">
+                    <Icon :icon="mtExpanded[idx] ? 'lucide:chevron-down' : 'lucide:chevron-right'" />
+                  </Button>
+                  <Switch v-model="ch.enabled" />
+                  <div class="flex-1 w-0 truncate">
+                    <div class="font-medium inline-flex items-center gap-2">
+                      <span>{{ ch.name || machineProviderLabel(ch.provider) }}</span>
+                      <span v-if="machineProviderModeLabel(ch.provider)" class="px-1.5 py-0.5 text-[11px] text-emerald-600 bg-emerald-100">
+                        {{ machineProviderModeLabel(ch.provider) }}
+                      </span>
+                      <span v-if="machineProviderExperimental(ch.provider)"
+                        class="px-1.5 py-0.5 text-[11px] text-amber-600 bg-amber-100">实验</span>
+                    </div>
+                    <div class="text-xs text-muted-foreground truncate max-w-[80%]" :title="ch.apiUrl">
+                      {{ machineProviderLabel(ch.provider) }} · {{ ch.apiUrl }}
+                    </div>
+                  </div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <Button variant="outline" size="sm" class="flex items-center gap-1" :disabled="mtTesting[idx]"
+                    @click="testMachineChannel(idx)">
+                    <Icon v-if="!mtTesting[idx]" icon="proicons:bug" width="14" />
+                    <Icon v-else icon="line-md:loading-twotone-loop" width="14" class="animate-spin" />
+                    {{ mtTesting[idx] ? '测试中' : '测试' }}
+                  </Button>
+                </div>
+              </div>
+
+              <div v-if="mtExpanded[idx]" class="space-y-3">
+                <div v-if="!ch.builtin" class="flex items-center justify-between gap-4">
+                  <div>
+                    <label class="text-sm font-medium leading-none block mb-1">类型</label>
+                    <p class="text-xs text-muted-foreground">{{ machineProviderDescription(ch.provider) }}</p>
+                  </div>
+                  <div class="w-72">
+                    <Select :model-value="ch.provider" :disabled="!!ch.builtin"
+                      @update:modelValue="handleMachineChannelProviderChange(ch, String($event))">
+                      <SelectTrigger class="w-full">
+                        <SelectValue placeholder="选择类型" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem v-for="provider in mtProviderOptions" :key="provider.value" :value="provider.value">
+                          {{ provider.label }}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div class="flex items-center justify-between gap-4">
+                  <div>
+                    <label class="text-sm font-medium leading-none block mb-1">名称</label>
+                    <p class="text-xs text-muted-foreground">用于区分不同机器翻译渠道</p>
+                  </div>
+                  <div class="w-100">
+                    <Input v-model="ch.name" />
+                  </div>
+                </div>
+                <div class="flex items-center justify-between gap-4">
+                  <div>
+                    <label class="text-sm font-medium leading-none block mb-1">API URL</label>
+                    <p class="text-xs text-muted-foreground">可使用预设，也可指向自建代理</p>
+                  </div>
+                  <div class="w-100">
+                    <Input v-model="ch.apiUrl"
+                      :placeholder="getMachineTranslateProviderMeta(ch.provider).defaultApiUrl" />
+                  </div>
+                </div>
+                <div v-if="machineProviderShowsApiKey(ch.provider)" class="flex items-center justify-between gap-4">
+                  <div>
+                    <label class="text-sm font-medium leading-none block mb-1">API Key / Token</label>
+                    <p class="text-xs text-muted-foreground">
+                      {{ machineProviderNeedsApiKey(ch.provider) ? '官方渠道调用时必填' : '可选；免费或 DeepLX 渠道通常可留空' }}
+                    </p>
+                  </div>
+                  <div class="w-[32rem] relative">
+                    <Input :type="mtShowApiKey[idx] ? 'text' : 'password'" v-model="ch.apiKey" placeholder="可留空"
+                      class="pr-10" />
+                    <Button variant="ghost" size="icon" class="absolute right-1 top-1 h-7 w-7"
+                      @click="mtShowApiKey[idx] = !mtShowApiKey[idx]">
+                      <Icon
+                        :icon="mtShowApiKey[idx] ? 'material-symbols:visibility-off-outline' : 'material-symbols:visibility-outline'"
+                        width="16" />
+                    </Button>
+                  </div>
+                </div>
+                <div v-if="machineProviderNeedsSecretKey(ch.provider)" class="flex items-center justify-between gap-4">
+                  <div>
+                    <label class="text-sm font-medium leading-none block mb-1">Secret Key</label>
+                    <p class="text-xs text-muted-foreground">百度智能云 OAuth 需要</p>
+                  </div>
+                  <div class="w-[32rem] relative">
+                    <Input :type="mtShowSecretKey[idx] ? 'text' : 'password'" v-model="ch.secretKey"
+                      placeholder="Secret Key" class="pr-10" />
+                    <Button variant="ghost" size="icon" class="absolute right-1 top-1 h-7 w-7"
+                      @click="mtShowSecretKey[idx] = !mtShowSecretKey[idx]">
+                      <Icon
+                        :icon="mtShowSecretKey[idx] ? 'material-symbols:visibility-off-outline' : 'material-symbols:visibility-outline'"
+                        width="16" />
+                    </Button>
+                  </div>
+                </div>
+                <div v-if="machineProviderSupportsRegion(ch.provider)" class="flex items-center justify-between gap-4">
+                  <div>
+                    <label class="text-sm font-medium leading-none block mb-1">Region</label>
+                    <p class="text-xs text-muted-foreground">Azure Translator 区域资源需要填写</p>
+                  </div>
+                  <div class="w-72">
+                    <Input v-model="ch.region" placeholder="如 eastasia" />
+                  </div>
+                </div>
+                <div class="grid grid-cols-3 gap-3">
+                  <div class="space-y-1">
+                    <Label class="block">QPS</Label>
+                    <Input v-model="ch.qps" />
+                  </div>
+                  <div class="space-y-1">
+                    <Label class="block">最大并发</Label>
+                    <Input v-model="ch.maxConcurrent" />
+                  </div>
+                  <div class="space-y-1">
+                    <Label class="block">超时(ms)</Label>
+                    <Input v-model="ch.timeoutMs" />
+                  </div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <Button variant="outline" class="flex items-center gap-1 text-red-600" :disabled="!!ch.builtin"
+                    @click="removeMachineChannel(idx)">
+                    <Icon :icon="iconOfAction('delete')" width="16" /> 删除
+                  </Button>
+                  <div class="w-full"></div>
+                  <Button class="bg-primary text-primary-foreground flex items-center gap-1"
+                    @click="saveMachineTranslateSettings()">
+                    <Icon :icon="iconOfAction('save')" width="16" /> 保存
+                  </Button>
+                </div>
               </div>
             </div>
           </div>

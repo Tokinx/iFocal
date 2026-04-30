@@ -5,6 +5,8 @@ export function iconOfNav(id: string): string {
       return 'proicons:chat';
     case 'channels':
       return 'proicons:sparkle-2';
+    case 'machine':
+      return 'ri:translate-ai';
     case 'settings':
       return 'ri:settings-4-line';
     case 'debug':
