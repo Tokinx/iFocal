@@ -71,7 +71,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, reactive, ref, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { Icon } from '@iconify/vue';
 import {
   DropdownMenu,
@@ -79,6 +79,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import ModelSelect from './ModelSelect.vue';
 import {
   ASSISTANT_PRESET_OPTIONS,
   defaultAssistantNameForPreset,
@@ -87,8 +88,6 @@ import {
   type AssistantConfig,
   type AssistantPreset,
 } from '@/shared/assistants';
-
-const ModelSelect = defineAsyncComponent(() => import('./ModelSelect.vue'));
 
 const props = defineProps<{
   open: boolean

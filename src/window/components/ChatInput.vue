@@ -151,7 +151,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, ref, type Directive } from 'vue'
+import { computed, nextTick, ref, type Directive } from 'vue'
 import { Icon } from '@iconify/vue'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -159,7 +159,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Switch } from '@/components/ui/switch'
 import type { ReasoningEffort } from '@/shared/config'
-const ModelSelect = defineAsyncComponent(() => import('./ModelSelect.vue'))
+import ModelSelect from './ModelSelect.vue'
 import {
   DropdownMenu,
   DropdownMenuContent,

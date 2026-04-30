@@ -66,8 +66,8 @@
                 <template v-if="ctx.getParsed(message, idx).reasoning">
                   <template v-if="message.isStreaming && ctx.enableReasoning && !ctx.getParsed(message, idx).answer">
                     <div class="flex items-center gap-2">
-                      <Button variant="ghost" size="xs" class="h-6 p-0 text-xs gap-1">
-                        <span class="text-xs text-olive-400 shimmer-text">
+                      <Button variant="ghost" size="xs" class="h-6 p-0 text-xs gap-1 hover:bg-transparent">
+                        <span class="text-xs !text-olive-400 shimmer-text">
                           正在思考...
                         </span>
                       </Button>
@@ -78,9 +78,9 @@
                   </template>
                   <template v-else>
                     <div class="flex items-center gap-2">
-                      <Button variant="ghost" size="xs" class="h-6 p-0 text-xs hover:bg-transparent"
+                      <Button variant="ghost" size="xs" class="h-6 p-0 hover:bg-transparent"
                         @click="message.reasoningCollapsed = !message.reasoningCollapsed">
-                        <span class="text-xs text-olive-400">
+                        <span class="text-olive-400">
                           思考过程
                         </span>
                         <div class="relative h-4 w-4 text-olive-400">

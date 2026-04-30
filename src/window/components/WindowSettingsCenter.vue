@@ -18,6 +18,7 @@ import { loadSettingsSnapshot, downloadSettingsSnapshot, parseSettingsImportFile
 import { buildStylePresetsCss, CUSTOM_STYLE_SELECTION, DEFAULT_WRAPPER_STYLE_NAME, mergeTargetStylePresets, parseStyleNameFromCss, resolveSelectedStylePresetCss, upsertCustomStylePreset } from '@/shared/style-presets';
 import { modelIdFromSpec, parseModelSpec } from '@/shared/model-utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import ModelSelect from './ModelSelect.vue';
 
 withDefaults(defineProps<{
   embedded?: boolean
@@ -346,11 +347,59 @@ function handleSaveChannelInline(idx: number) {
 // 助手（非流式输出）
 const assistantDraft = ref('');
 const assistantModelValue = ref('');
-const assistantTask = ref<'translate' | 'chat' | 'summarize'>('translate');
+const assistantTask = ref<string>('');
 const assistantResult = ref('');
 const assistantLoading = ref(false);
 let assistantPort: chrome.runtime.Port | null = null;
-watch(channels, () => { const prefer = joinPair(activeModel.value) || joinPair(defaultModel.value) || modelPairs.value[0]?.value || ''; if (prefer) assistantModelValue.value = prefer; }, { immediate: true, deep: true });
+const debugModelPairs = computed(() => {
+  return channels.value.flatMap((ch) => (ch.models || []).map((m) => {
+    const { modelId, displayName } = parseModelSpec(m);
+    if (!modelId) return null;
+    return {
+      key: `${ch.name}|${modelId}`,
+      model: displayName || modelId,
+      channel: ch.name,
+    };
+  }).filter((p): p is { key: string; model: string; channel: string } => !!p));
+});
+const debugGroupedModels = computed(() => {
+  const groups: Record<string, Array<{ key: string; model: string; channel: string }>> = {};
+  debugModelPairs.value.forEach((pair) => {
+    if (!groups[pair.channel]) groups[pair.channel] = [];
+    groups[pair.channel].push(pair);
+  });
+  return groups;
+});
+const debugCurrentModelName = computed(() => {
+  return debugModelPairs.value.find((pair) => pair.key === assistantModelValue.value)?.model || '';
+});
+watch(channels, () => {
+  const prefer = joinPair(activeModel.value) || joinPair(defaultModel.value) || debugModelPairs.value[0]?.key || '';
+  if (prefer && !assistantModelValue.value) assistantModelValue.value = prefer;
+}, { immediate: true, deep: true });
+watch(debugModelPairs, (pairs) => {
+  if (!pairs.length) {
+    assistantModelValue.value = '';
+    return;
+  }
+  if (!pairs.some((pair) => pair.key === assistantModelValue.value)) {
+    assistantModelValue.value = pairs[0].key;
+  }
+}, { immediate: true });
+watch(assistantConfigs, (list) => {
+  if (!assistantTask.value || !list.some((item) => item.id === assistantTask.value)) {
+    assistantTask.value = list[0]?.id || '';
+  }
+}, { immediate: true, deep: true });
+watch(assistantTask, (assistantId) => {
+  const assistant = assistantConfigs.value.find((item) => item.id === assistantId);
+  if (!assistant) return;
+  if (assistant.modelKey) assistantModelValue.value = assistant.modelKey;
+});
+
+function handleDebugModelSelect(key: string) {
+  assistantModelValue.value = key;
+}
 // 已移除侧边栏相关设置
 function startAssistantStream() {
   const text = assistantDraft.value.trim();
@@ -359,8 +408,19 @@ function startAssistantStream() {
   if (assistantPort) { try { assistantPort.disconnect(); } catch { } assistantPort = null; }
   assistantResult.value = '';
   assistantLoading.value = true;
+  const selectedAssistant = assistantConfigs.value.find((item) => item.id === assistantTask.value) || null;
+  if (!selectedAssistant) {
+    assistantLoading.value = false;
+    assistantResult.value = '【错误】未找到助手配置';
+    return;
+  }
   const pair = parsePair(assistantModelValue.value);
-  const payload: any = { action: 'performAiAction', task: assistantTask.value, text };
+  const payload: any = {
+    action: 'performAiAction',
+    task: selectedAssistant.preset,
+    assistantPrompt: selectedAssistant.prompt,
+    text
+  };
   if (pair) { payload.channel = pair.channel; payload.model = pair.model; }
   // 目标语言统一取当前设置
   try { payload.targetLang = (config.value as any).translateTargetLang || 'zh-CN'; } catch { }
@@ -1139,36 +1199,34 @@ async function fetchAddFormModels() {
         <section v-if="nav === 'debug'" :id="'opt-debug'" class="space-y-4">
           <header class="flex items-center h-10 text-base font-semibold">其它设置</header>
           <div class="space-y-3">
-            <div class="flex flex-wrap gap-2">
-              <div class="w-56">
-                <Label class="mb-1 block">模型</Label>
-                <Select v-model="assistantModelValue">
-                  <SelectTrigger>
-                    <SelectValue placeholder="选择模型" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem v-for="p in modelPairs" :key="p.value" :value="p.value">{{ p.label
-                    }}</SelectItem>
-                  </SelectContent>
-                </Select>
+            <div class="flex flex-wrap gap-3">
+              <div class="w-56 space-y-1">
+                <Label class="block">模型</Label>
+                <ModelSelect
+                  :current-model-name="debugCurrentModelName"
+                  :grouped-models="debugGroupedModels"
+                  :selected-pair-key="assistantModelValue"
+                  buttonClass="w-full h-9 justify-between"
+                  @selectModel="handleDebugModelSelect"
+                />
               </div>
-              <div class="w-40">
-                <Label class="mb-1 block">任务</Label>
+              <div class="w-40 space-y-1">
+                <Label class="block">任务</Label>
                 <Select v-model="assistantTask">
-                  <SelectTrigger>
-                    <SelectValue placeholder="任务" />
+                  <SelectTrigger class="w-full">
+                    <SelectValue placeholder="助手" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="translate">翻译</SelectItem>
-                    <SelectItem value="chat">聊天</SelectItem>
-                    <SelectItem value="summarize">总结</SelectItem>
+                    <SelectItem v-for="assistant in assistantConfigs" :key="assistant.id" :value="assistant.id">
+                      {{ assistant.name }}
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              <div class="w-36">
-                <Label class="mb-1 block">语言</Label>
+              <div class="w-36 space-y-1">
+                <Label class="block">语言</Label>
                 <Select v-model="config.translateTargetLang" @update:modelValue="onLangChange">
-                  <SelectTrigger>
+                  <SelectTrigger class="w-full">
                     <SelectValue placeholder="语言" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1179,7 +1237,7 @@ async function fetchAddFormModels() {
                 </Select>
               </div>
             </div>
-            <div class="flex space-x-4">
+            <div class="flex space-x-3">
               <Textarea v-model="assistantDraft" class="min-h-28 w-[50%]" placeholder="在此粘贴需要处理的文本..." />
               <div class="w-[50%] border bg-secondary/40 p-3 text-sm whitespace-pre-wrap min-h-12 relative">
                 <div v-if="assistantLoading" class="absolute inset-0 flex items-center justify-center bg-white/60">
