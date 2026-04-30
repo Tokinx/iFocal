@@ -1019,6 +1019,8 @@ async function loadSessions() {
   try {
     // 读取配置以决定是否启用自动粘贴
     const globalCfg = await loadConfig();
+    // 先同步会话上限，避免 loadSessions 内部 saveSessions() 误按默认 10 条裁剪
+    maxSessionsCount.value = normalizeMaxSessionsCount(globalCfg.maxSessionsCount);
     const allowAutoPaste = !!globalCfg.autoPasteGlobalAssistant;
     const data = await localGet(['chatSessions', 'currentSessionId']);
     let sessionsLoaded = false;
