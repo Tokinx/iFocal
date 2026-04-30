@@ -135,12 +135,12 @@
         <!-- 右侧：发送/停止按钮 -->
         <div class="flex gap-1 pointer-events-auto">
           <!-- 发送按钮 -->
-          <Button variant="ghost" size="icon" class="h-7 w-7 !bg-amber-800 !text-white" @click="trySend"
+          <Button variant="ghost" size="icon" class="h-7 w-7 bg-amber-800 hover:!bg-amber-800/80 !text-white" @click="trySend"
             v-show="canSend && !sending">
             <Icon icon="ri:send-plane-2-fill" class="h-3 w-3" />
           </Button>
           <!-- 停止按钮 -->
-          <Button variant="ghost" size="icon" class="h-7 w-7 !bg-amber-800 !text-white" @click="$emit('stop')"
+          <Button variant="ghost" size="icon" class="h-7 w-7 bg-amber-800 hover:!bg-amber-800/80 !text-white" @click="$emit('stop')"
             v-show="sending">
             <Icon icon="ri:stop-fill" class="h-3 w-3" />
           </Button>
