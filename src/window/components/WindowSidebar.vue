@@ -24,14 +24,14 @@
                 <Icon icon="ri:more-2-fill" class="h-3 w-3" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" class="w-32" @click.stop>
+            <DropdownMenuContent align="end" class="w-30 min-w-30" @click.stop>
               <DropdownMenuItem class="cursor-pointer" @click="$emit('editAssistant', item.id)">
-                <Icon icon="ri:edit-2-line" class="mr-2 h-3.5 w-3.5" />
+                <Icon icon="ri:edit-2-line" class="h-3.5 w-3.5" />
                 编辑
               </DropdownMenuItem>
               <DropdownMenuItem v-if="item.deletable" class="cursor-pointer text-destructive focus:text-destructive"
                 @click="$emit('deleteAssistant', item.id)">
-                <Icon icon="ri:delete-bin-line" class="mr-2 h-3.5 w-3.5" />
+                <Icon icon="ri:delete-bin-line" class="h-3.5 w-3.5" />
                 删除
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -93,7 +93,7 @@
 </template>
 
 <script setup lang="ts">
-import { Icon } from '@iconify/vue'
+import Icon from '@/components/ui/icon/Icon.vue'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,

@@ -29,7 +29,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Icon } from '@iconify/vue'
+import Icon from '@/components/ui/icon/Icon.vue'
 import { Button } from '@/components/ui/button'
 
 const opening = ref(false)

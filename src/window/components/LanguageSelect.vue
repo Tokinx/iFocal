@@ -17,7 +17,7 @@
 </template>
 
 <script setup lang="ts">
-import { Icon } from '@iconify/vue';
+import Icon from '@/components/ui/icon/Icon.vue';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,

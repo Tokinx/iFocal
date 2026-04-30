@@ -15,7 +15,6 @@
         "ui:add:more": "shadcn-vue add tooltip badge tabs separator avatar breadcrumb card progress skeleton switch toggle"
     },
     "dependencies": {
-        "@iconify/vue": "^5.0.0",
         "@modelcontextprotocol/sdk": "^1.29.0",
         "@phosphor-icons/vue": "^2.2.1",
         "@radix-icons/vue": "^1.0.0",

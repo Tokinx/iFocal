@@ -34,7 +34,7 @@
             </div>
             <span class="text-xs text-muted-foreground">{{ draft.prompt.length }} 字</span>
           </div>
-          <Textarea v-model="draft.prompt" :rows="5" class="resize-y" placeholder="输入助手提示词" />
+          <Textarea v-model="draft.prompt" class="resize-none h-40" placeholder="输入助手提示词" />
           <div class="flex justify-end">
             <DropdownMenu>
               <DropdownMenuTrigger as-child>
@@ -72,7 +72,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
-import { Icon } from '@iconify/vue';
+import Icon from '@/components/ui/icon/Icon.vue';
 import {
   DropdownMenu,
   DropdownMenuContent,

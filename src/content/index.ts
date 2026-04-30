@@ -947,7 +947,7 @@ function attachOverlayHeaderVue(overlay: OverlayHandle, cfg: StorageConfig, pair
   // 右侧：Close Icon
   const right = document.createElement('div');
   const closeBtn = document.createElement('button');
-  // 统一 Iconify 风格的内联 SVG 关闭图标
+  // 统一线性风格的内联 SVG 关闭图标
   closeBtn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg>';
   closeBtn.title = 'Close';
   closeBtn.className = 'ifocal-close';

@@ -328,9 +328,9 @@ npm run ui:add:more
 | **样式框架** | Tailwind CSS | ^3.4.9 | 原子化 CSS |
 | | @tailwindcss/typography | ^0.5.19 | Markdown 排版 |
 | | tailwindcss-animate | ^1.0.7 | 动画支持 |
-| **图标库** | @iconify/vue | ^4.1.1 | 按需加载图标 |
+| **图标库** | @phosphor-icons/vue | ^2.2.1 | 主图标集 |
 | | @radix-icons/vue | ^1.0.0 | Radix 图标集 |
-| | lucide-vue-next | ^0.445.0 | Lucide 图标集 |
+| | lucide-vue-next | ^1.0.0 | Lucide 图标集 |
 | **工具库** | @vueuse/core | ^14.0.0 | Vue 组合式函数 |
 | | marked | ^16.3.0 | Markdown 渲染 |
 | | eventsource-parser | ^3.0.6 | SSE 流式解析 |
@@ -461,7 +461,8 @@ npm run ui:add:more
 - [shadcn-vue](https://www.shadcn-vue.com/) - 高质量 Vue 组件库
 - [Tailwind CSS](https://tailwindcss.com/) - 原子化 CSS 框架
 - [Vite](https://vitejs.dev/) - 下一代前端构建工具
-- [Iconify](https://iconify.design/) - 统一的图标框架
+- [Phosphor Icons](https://phosphoricons.com/) - 灵活的图标系统
+- [Radix Icons](https://www.radix-ui.com/icons) - 轻量一致的 UI 图标
 
 ---
 

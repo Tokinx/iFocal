@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref, watch, computed, reactive } from 'vue';
-import { Icon } from '@iconify/vue';
+import Icon from '@/components/ui/icon/Icon.vue';
 import { iconOfNav, iconOfChannelType, iconOfAction } from '@/shared/icons';
 import { useChannels } from '@/options/composables/useChannels';
 import { useToast } from '@/options/composables/useToast';

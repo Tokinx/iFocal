@@ -1,5 +1,5 @@
 import type { App } from 'vue';
-import { Icon } from '@iconify/vue';
+import Icon from '@/components/ui/icon/Icon.vue';
 
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -52,7 +52,7 @@ import {
 } from '@/components/ui/command';
 
 export function setupUI(app: App) {
-  // Iconify global icon component
+  // Global icon component (phosphor/radix adapter)
   app.component('Icon', Icon);
 
   app.component('Button', Button);
