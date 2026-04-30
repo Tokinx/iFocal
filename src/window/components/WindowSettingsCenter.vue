@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch, computed, reactive } from 'vue';
 import Icon from '@/components/ui/icon/Icon.vue';
-import { iconOfNav, iconOfChannelType, iconOfAction } from '@/shared/icons';
+import { iconOfNav, iconOfAction } from '@/shared/icons';
 import { useChannels } from '@/options/composables/useChannels';
 import { useToast } from '@/options/composables/useToast';
 import { SUPPORTED_LANGUAGES, SUPPORTED_TASKS, DEFAULT_CONFIG, loadConfig, saveConfig, getTaskSettings, updateTaskSettings, type ReasoningEffort } from '@/shared/config';
@@ -362,6 +362,27 @@ const debugModelPairs = computed(() => {
     };
   }).filter((p): p is { key: string; model: string; channel: string } => !!p));
 });
+const settingsModelPairs = computed(() => {
+  return modelPairs.value.map((pair) => {
+    const parsed = parsePair(pair.value);
+    return {
+      key: pair.value,
+      model: pair.label,
+      channel: parsed?.channel || '未分组',
+    };
+  });
+});
+const settingsGroupedModels = computed(() => {
+  const groups: Record<string, Array<{ key: string; model: string; channel: string }>> = {};
+  settingsModelPairs.value.forEach((pair) => {
+    if (!groups[pair.channel]) groups[pair.channel] = [];
+    groups[pair.channel].push(pair);
+  });
+  return groups;
+});
+const defaultModelCurrentName = computed(() => {
+  return settingsModelPairs.value.find((pair) => pair.key === defaultModelValue.value)?.model || '';
+});
 const debugGroupedModels = computed(() => {
   const groups: Record<string, Array<{ key: string; model: string; channel: string }>> = {};
   debugModelPairs.value.forEach((pair) => {
@@ -373,32 +394,27 @@ const debugGroupedModels = computed(() => {
 const debugCurrentModelName = computed(() => {
   return debugModelPairs.value.find((pair) => pair.key === assistantModelValue.value)?.model || '';
 });
-watch(channels, () => {
-  const prefer = joinPair(activeModel.value) || joinPair(defaultModel.value) || debugModelPairs.value[0]?.key || '';
-  if (prefer && !assistantModelValue.value) assistantModelValue.value = prefer;
-}, { immediate: true, deep: true });
-watch(debugModelPairs, (pairs) => {
+watch([defaultModelValue, debugModelPairs], ([defaultValue, pairs]) => {
   if (!pairs.length) {
     assistantModelValue.value = '';
     return;
   }
-  if (!pairs.some((pair) => pair.key === assistantModelValue.value)) {
-    assistantModelValue.value = pairs[0].key;
-  }
+  const prefer = defaultValue && pairs.some((pair) => pair.key === defaultValue)
+    ? defaultValue
+    : pairs[0].key;
+  assistantModelValue.value = prefer;
 }, { immediate: true });
 watch(assistantConfigs, (list) => {
   if (!assistantTask.value || !list.some((item) => item.id === assistantTask.value)) {
     assistantTask.value = list[0]?.id || '';
   }
 }, { immediate: true, deep: true });
-watch(assistantTask, (assistantId) => {
-  const assistant = assistantConfigs.value.find((item) => item.id === assistantId);
-  if (!assistant) return;
-  if (assistant.modelKey) assistantModelValue.value = assistant.modelKey;
-});
 
 function handleDebugModelSelect(key: string) {
   assistantModelValue.value = key;
+}
+function handleDefaultModelSelect(key: string) {
+  defaultModelValue.value = key;
 }
 // 已移除侧边栏相关设置
 function startAssistantStream() {
@@ -934,25 +950,12 @@ async function fetchAddFormModels() {
               <div class="flex items-center justify-between gap-4">
                 <div>
                   <label class="text-sm font-medium leading-none block mb-1">默认模型</label>
-                  <p class="text-xs text-muted-foreground">用于默认调用与助手输出</p>
+                  <p class="text-xs text-muted-foreground">用于划词翻译、默认调用与助手输出</p>
                 </div>
                 <div class="w-50">
-                  <Select v-model="defaultModelValue">
-                    <SelectTrigger class="w-full">
-                      <SelectValue placeholder="未设置" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__unset__">（未设置）</SelectItem>
-                      <SelectItem v-for="p in modelPairs" :key="p.value" :value="p.value">
-                        <span class="inline-flex items-center gap-2">
-                          <Icon
-                            :icon="iconOfChannelType(parsePair(p.value)?.channel ? (channels.find(c => c.name === parsePair(p.value)?.channel)?.type || '') : '')"
-                            width="14" />
-                          {{ p.label }}
-                        </span>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <ModelSelect :current-model-name="defaultModelCurrentName" :grouped-models="settingsGroupedModels"
+                    :selected-pair-key="defaultModelValue" buttonClass="w-full h-9 justify-between"
+                    @selectModel="handleDefaultModelSelect" />
                 </div>
               </div>
               <!-- 默认助手 -->
@@ -978,7 +981,7 @@ async function fetchAddFormModels() {
               <div class="flex items-center justify-between gap-4">
                 <div>
                   <label class="text-sm font-medium leading-none block mb-1">默认目标语言</label>
-                  <p class="text-xs text-muted-foreground">用于翻译结果的语言</p>
+                  <p class="text-xs text-muted-foreground">用于调整输出和翻译结果的语言</p>
                 </div>
                 <div class="w-50">
                   <Select v-model="config.translateTargetLang">
@@ -988,45 +991,9 @@ async function fetchAddFormModels() {
                     <SelectContent>
                       <SelectItem v-for="lang in SUPPORTED_LANGUAGES" :key="lang.value" :value="lang.value">{{
                         lang.label
-                        }}</SelectItem>
+                      }}</SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
-              </div>
-              <!-- 结果显示方式 -->
-              <div class="flex items-center justify-between gap-4">
-                <div>
-                  <label class="text-sm font-medium leading-none block mb-1">结果显示方式</label>
-                  <p class="text-xs text-muted-foreground">插入原文下方或覆盖原文</p>
-                </div>
-                <div class="w-50">
-                  <Select v-model="config.displayMode">
-                    <SelectTrigger class="w-full">
-                      <SelectValue placeholder="显示方式" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="insert">插入原文下方</SelectItem>
-                      <SelectItem value="overlay">覆盖原文</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div class="flex items-center justify-between gap-4">
-                <div>
-                  <label class="text-sm font-medium leading-none block mb-1">划词翻译</label>
-                  <p class="text-xs text-muted-foreground">选中文本后显示小圆点触发翻译</p>
-                </div>
-                <div>
-                  <Switch v-model="config.enableSelectionTranslation" />
-                </div>
-              </div>
-              <div class="flex items-center justify-between gap-4">
-                <div>
-                  <label class="text-sm font-medium leading-none block mb-1">悬浮翻译</label>
-                  <p class="text-xs text-muted-foreground">设置触发键（如 Alt）</p>
-                </div>
-                <div class="w-50">
-                  <Input v-model="config.actionKey" placeholder="如 Alt" />
                 </div>
               </div>
               <div class="flex items-center justify-between gap-4">
@@ -1077,7 +1044,42 @@ async function fetchAddFormModels() {
                 </div>
               </div>
             </div>
-
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <label class="text-sm font-medium leading-none block mb-1">划词翻译</label>
+                <p class="text-xs text-muted-foreground">选中文本后显示小圆点触发翻译</p>
+              </div>
+              <div>
+                <Switch v-model="config.enableSelectionTranslation" />
+              </div>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <label class="text-sm font-medium leading-none block mb-1">悬浮翻译</label>
+                <p class="text-xs text-muted-foreground">设置触发键（如 Alt）</p>
+              </div>
+              <div class="w-50">
+                <Input v-model="config.actionKey" placeholder="如 Alt" />
+              </div>
+            </div>
+            <!-- 结果显示方式 -->
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <label class="text-sm font-medium leading-none block mb-1">悬浮翻译结果显示方式</label>
+                <p class="text-xs text-muted-foreground">插入原文下方或覆盖原文</p>
+              </div>
+              <div class="w-50">
+                <Select v-model="config.displayMode">
+                  <SelectTrigger class="w-full">
+                    <SelectValue placeholder="显示方式" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="insert">插入原文下方</SelectItem>
+                    <SelectItem value="overlay">覆盖原文</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
             <!-- 暂时隐藏任务级设置，后续根据需要再调整展示方式 -->
             <!-- <div class="space-y-4 border p-4">
  <div>
@@ -1223,7 +1225,7 @@ async function fetchAddFormModels() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem v-for="lang in SUPPORTED_LANGUAGES" :key="lang.value" :value="lang.value">{{ lang.label
-                    }}
+                      }}
                     </SelectItem>
                   </SelectContent>
                 </Select>
