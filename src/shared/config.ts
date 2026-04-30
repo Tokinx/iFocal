@@ -110,7 +110,8 @@ export const DEFAULT_CONFIG = {
   defaultTask: 'translate',
 
   // 显示设置
-  displayMode: 'insert' as 'insert' | 'overlay',
+  hoverDisplayMode: 'insert' as 'insert' | 'overlay',
+  fullPageDisplayMode: 'insert' as 'insert' | 'replace',
   // 划词：是否启用划词翻译（显示小圆点）
   enableSelectionTranslation: true,
   selectionTranslationMode: 'ai' as 'ai' | 'machine',
@@ -259,7 +260,8 @@ export const CONFIG_KEYS = [
   'translateTargetLang',
   'prevLanguage',
   'defaultTask',
-  'displayMode',
+  'hoverDisplayMode',
+  'fullPageDisplayMode',
   'enableSelectionTranslation',
   'selectionTranslationMode',
   'hoverTranslationMode',
@@ -279,8 +281,8 @@ export const CONFIG_KEYS = [
 export async function loadConfig(): Promise<typeof DEFAULT_CONFIG> {
   return new Promise((resolve) => {
     try {
-      // 加载所有可能的键（包括旧的全局开关）
-      const allKeys = [...CONFIG_KEYS, 'enableContext', 'enableStreaming', 'enableReasoning', 'enableFileUpload'];
+      // 加载所有可能的键（包括旧的全局开关和旧 displayMode）
+      const allKeys = [...CONFIG_KEYS, 'displayMode', 'enableContext', 'enableStreaming', 'enableReasoning', 'enableFileUpload'];
       chrome.storage.sync.get(allKeys, (items: any) => {
         const config = { ...DEFAULT_CONFIG };
 
@@ -307,6 +309,11 @@ export async function loadConfig(): Promise<typeof DEFAULT_CONFIG> {
         if (items.selectionTranslationMode !== undefined && items.hoverTranslationMode === undefined) {
           config.hoverTranslationMode = items.selectionTranslationMode === 'machine' ? 'machine' : 'ai';
         }
+        if (items.hoverDisplayMode === undefined && (items.displayMode === 'insert' || items.displayMode === 'overlay')) {
+          config.hoverDisplayMode = items.displayMode;
+        }
+        if (config.hoverDisplayMode !== 'overlay') config.hoverDisplayMode = 'insert';
+        if (config.fullPageDisplayMode !== 'replace') config.fullPageDisplayMode = 'insert';
         config.mtChannels = normalizeMachineTranslateChannels((config as any).mtChannels);
         config.mtDefaultChannelId = normalizeMachineTranslateDefaultChannelId((config as any).mtDefaultChannelId, config.mtChannels);
 

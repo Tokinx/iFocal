@@ -333,6 +333,8 @@ async function saveBasics() {
     const lang = (config.value.translateTargetLang || 'zh-CN').trim() || 'zh-CN';
     const selectionTranslationMode = config.value.selectionTranslationMode === 'machine' ? 'machine' : 'ai';
     const hoverTranslationMode = config.value.hoverTranslationMode === 'machine' ? 'machine' : selectionTranslationMode;
+    const hoverDisplayMode = config.value.hoverDisplayMode === 'overlay' ? 'overlay' : 'insert';
+    const fullPageDisplayMode = config.value.fullPageDisplayMode === 'replace' ? 'replace' : 'insert';
     const mtDefaultId = normalizeMachineTranslateDefaultChannelId(mtDefaultChannelId.value, machineChannels.value);
     if (!k) {
       toast.error('快捷键不能为空');
@@ -342,7 +344,8 @@ async function saveBasics() {
     // 更新配置
     config.value.actionKey = k;
     config.value.translateTargetLang = lang;
-    config.value.displayMode = config.value.displayMode || 'insert';
+    config.value.hoverDisplayMode = hoverDisplayMode;
+    config.value.fullPageDisplayMode = fullPageDisplayMode;
     if (typeof config.value.enableSelectionTranslation !== 'boolean') config.value.enableSelectionTranslation = true;
     config.value.selectionTranslationMode = selectionTranslationMode;
     config.value.hoverTranslationMode = hoverTranslationMode;
@@ -366,7 +369,8 @@ async function saveBasics() {
       hoverKey: k,
       selectKey: k,
       translateTargetLang: lang,
-      displayMode: config.value.displayMode,
+      hoverDisplayMode,
+      fullPageDisplayMode,
       wrapperStyleName: wrapperStyleNameToSave,
       targetStylePresets: presetsToSave,
       enableSelectionTranslation: config.value.enableSelectionTranslation,
@@ -1441,6 +1445,25 @@ async function fetchAddFormModels() {
                   </Select>
                 </div>
               </div>
+              <!-- 默认目标语言 -->
+              <div class="flex items-center justify-between gap-4">
+                <div>
+                  <label class="text-sm font-medium leading-none block mb-1">目标语言</label>
+                  <p class="text-xs text-muted-foreground">用于调整输出和翻译结果的语言</p>
+                </div>
+                <div class="w-60">
+                  <Select v-model="config.translateTargetLang">
+                    <SelectTrigger class="w-full">
+                      <SelectValue placeholder="语言" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem v-for="lang in SUPPORTED_LANGUAGES" :key="lang.value" :value="lang.value">{{
+                        lang.label
+                      }}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
               <!-- 默认助手 -->
               <!-- <div class="flex items-center justify-between gap-4">
                 <div>
@@ -1511,25 +1534,6 @@ async function fetchAddFormModels() {
 
             <div class="border-t"></div>
 
-            <!-- 默认目标语言 -->
-            <div class="flex items-center justify-between gap-4">
-              <div>
-                <label class="text-sm font-medium leading-none block mb-1">目标语言</label>
-                <p class="text-xs text-muted-foreground">用于调整输出和翻译结果的语言</p>
-              </div>
-              <div class="w-60">
-                <Select v-model="config.translateTargetLang">
-                  <SelectTrigger class="w-full">
-                    <SelectValue placeholder="语言" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem v-for="lang in SUPPORTED_LANGUAGES" :key="lang.value" :value="lang.value">{{
-                      lang.label
-                    }}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
             <div class="flex items-center justify-between gap-4">
               <div>
                 <label class="text-sm font-medium leading-none block mb-1">划词翻译</label>
@@ -1585,17 +1589,34 @@ async function fetchAddFormModels() {
             <!-- 结果显示方式 -->
             <div class="flex items-center justify-between gap-4">
               <div>
-                <label class="text-sm font-medium leading-none block mb-1">翻译结果显示方式</label>
-                <p class="text-xs text-muted-foreground">插入原文下方或覆盖原文</p>
+                <label class="text-sm font-medium leading-none block mb-1">悬浮翻译结果显示方式</label>
+                <p class="text-xs text-muted-foreground">在原页面内插入结果，或使用悬浮面板展示</p>
               </div>
               <div class="w-60">
-                <Select v-model="config.displayMode">
+                <Select v-model="config.hoverDisplayMode">
+                  <SelectTrigger class="w-full">
+                    <SelectValue placeholder="显示方式" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="insert">插入页面</SelectItem>
+                    <SelectItem value="overlay">悬浮面板</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <label class="text-sm font-medium leading-none block mb-1">全文翻译结果显示方式</label>
+                <p class="text-xs text-muted-foreground">插入原文下方，或覆盖原文进行原地阅读</p>
+              </div>
+              <div class="w-60">
+                <Select v-model="config.fullPageDisplayMode">
                   <SelectTrigger class="w-full">
                     <SelectValue placeholder="显示方式" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="insert">插入原文下方</SelectItem>
-                    <SelectItem value="overlay">覆盖原文</SelectItem>
+                    <SelectItem value="replace">覆盖原文（原地替换）</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1747,8 +1768,8 @@ async function fetchAddFormModels() {
                     <SelectValue placeholder="语言" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem v-for="lang in SUPPORTED_LANGUAGES" :key="lang.value" :value="lang.value">{{ lang.label
-                      }}
+                    <SelectItem v-for="lang in SUPPORTED_LANGUAGES" :key="lang.value" :value="lang.value">
+                      {{ lang.label }}
                     </SelectItem>
                   </SelectContent>
                 </Select>

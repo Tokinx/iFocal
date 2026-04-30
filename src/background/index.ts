@@ -15,6 +15,18 @@ let isOpeningGlobalWindow = false; // 打开全局窗口的重入保护
 const GLOBAL_WIN_KEY = 'globalAssistantWindowId';
 const GLOBAL_WIN_VIEW_KEY = 'globalAssistantWindowRequestedView';
 const CONTEXT_MENU_TRANSLATE_FULL_PAGE = 'ifocal-translate-full-page';
+const CONTEXT_MENU_TITLE_TRANSLATE = '网页全文翻译';
+const CONTEXT_MENU_TITLE_SHOW_ORIGINAL = '显示原文';
+const CONTEXT_MENU_TITLE_SHOW_TRANSLATION = '显示译文';
+
+type FullPageTranslationState = {
+  ok?: boolean;
+  hasSession?: boolean;
+  visibleMode?: 'translation' | 'original' | 'none';
+  translated?: number;
+  failed?: number;
+  processing?: boolean;
+};
 
 // 监听窗口关闭，若为全局助手，则清理存储的 ID
 // 非流式请求中断：为每个 requestId 维护 AbortController
@@ -62,7 +74,7 @@ function ensureContextMenus() {
       try {
         chrome.contextMenus.create({
           id: CONTEXT_MENU_TRANSLATE_FULL_PAGE,
-          title: '网页全文翻译',
+          title: CONTEXT_MENU_TITLE_TRANSLATE,
           contexts: ['page', 'selection'],
         }, () => {
           try { void chrome.runtime.lastError; } catch { }
@@ -72,20 +84,68 @@ function ensureContextMenus() {
   } catch { }
 }
 
-function sendFullPageTranslateMessage(tabId: number, frameId?: number): Promise<void> {
+function sendTabMessage<T = any>(tabId: number, message: any, frameId?: number): Promise<T | null> {
   return new Promise((resolve) => {
     try {
-      const message = { action: 'translateFullPage' };
-      const callback = () => {
-        try { void chrome.runtime.lastError; } catch { }
-        resolve();
+      const callback = (response?: T) => {
+        const runtimeError = chrome.runtime.lastError?.message;
+        if (runtimeError) {
+          resolve(null);
+          return;
+        }
+        resolve(response ?? null);
       };
       if (typeof frameId === 'number') chrome.tabs.sendMessage(tabId, message, { frameId }, callback);
       else chrome.tabs.sendMessage(tabId, message, callback);
     } catch {
+      resolve(null);
+    }
+  });
+}
+
+function sendFullPageTranslateMessage(tabId: number, frameId?: number): Promise<void> {
+  return sendTabMessage(tabId, { action: 'translateFullPage' }, frameId).then(() => undefined);
+}
+
+async function getFullPageTranslationState(tabId: number, frameId?: number): Promise<FullPageTranslationState | null> {
+  return sendTabMessage<FullPageTranslationState>(tabId, { action: 'getFullPageTranslationState' }, frameId);
+}
+
+function updateFullPageContextMenuTitle(title: string): Promise<void> {
+  return new Promise((resolve) => {
+    try {
+      chrome.contextMenus.update(CONTEXT_MENU_TRANSLATE_FULL_PAGE, { title }, () => {
+        try { void chrome.runtime.lastError; } catch { }
+        resolve();
+      });
+    } catch {
       resolve();
     }
   });
+}
+
+async function refreshFullPageContextMenuTitle(tabId: number, frameId?: number) {
+  const state = await getFullPageTranslationState(tabId, frameId);
+  let title = CONTEXT_MENU_TITLE_TRANSLATE;
+  if (state?.hasSession && Number(state.translated || 0) > 0) {
+    title = state.visibleMode === 'original'
+      ? CONTEXT_MENU_TITLE_SHOW_TRANSLATION
+      : CONTEXT_MENU_TITLE_SHOW_ORIGINAL;
+  }
+  await updateFullPageContextMenuTitle(title);
+}
+
+async function toggleFullPageTranslationDisplay(tabId: number, frameId?: number) {
+  const state = await getFullPageTranslationState(tabId, frameId);
+  if (state?.hasSession && Number(state.translated || 0) > 0) {
+    if (state.visibleMode === 'original') {
+      await sendTabMessage(tabId, { action: 'showFullPageTranslation' }, frameId);
+    } else {
+      await sendTabMessage(tabId, { action: 'showFullPageOriginal' }, frameId);
+    }
+    return;
+  }
+  await sendFullPageTranslateMessage(tabId, frameId);
 }
 
 async function triggerFullPageTranslateInActiveTab() {
@@ -123,8 +183,19 @@ chrome.action.onClicked.addListener(async () => {
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId !== CONTEXT_MENU_TRANSLATE_FULL_PAGE) return;
   if (typeof tab?.id !== 'number') return;
-  void sendFullPageTranslateMessage(tab.id, typeof info.frameId === 'number' ? info.frameId : undefined);
+  const frameId = typeof info.frameId === 'number' ? info.frameId : undefined;
+  void toggleFullPageTranslationDisplay(tab.id, frameId).then(() => refreshFullPageContextMenuTitle(tab.id!, frameId));
 });
+
+try {
+  chrome.contextMenus.onShown.addListener((info, tab) => {
+    if (typeof tab?.id !== 'number') return;
+    const frameId = typeof (info as any)?.frameId === 'number' ? (info as any).frameId : undefined;
+    void refreshFullPageContextMenuTitle(tab.id, frameId).finally(() => {
+      try { chrome.contextMenus.refresh(); } catch { }
+    });
+  });
+} catch { }
 
 chrome.commands.onCommand.addListener((command) => {
   if (command === 'open-global-window') {

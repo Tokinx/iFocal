@@ -5,10 +5,12 @@ const DOC_STYLE = `
 .ifocal-target-block-wrapper{display: inline-block;margin: 8px 0;}
 .ifocal-target-inline-wrapper{}
 .ifocal-tx{display:inline;overflow-wrap:anywhere;word-break:break-word;hyphens:auto}
-.ifocal-fullpage-translation{display:block;margin-top:6px}
+.ifocal-fullpage-translation-replace{display:inline;margin-top:0}
 @keyframes ifocal-spin{to{transform:rotate(360deg)}}
 .ifocal-loading{width:12px;height:12px;border:2px solid rgba(15,23,42,0.18);border-top-color:#0f172a;border-radius:50%;animation:ifocal-spin .8s linear infinite;display:inline-block;vertical-align:middle;line-height:1;flex:0 0 auto}
 .ifocal-loading-wrap{display:flex;align-items:center;justify-content:center;min-height:56px}
+.ifocal-target-error{color:#b91c1c}
+.ifocal-target-retry{margin-left:8px;border:none;background:transparent;color:#2563eb;cursor:pointer;padding:0;font:inherit;text-decoration:underline}
 `;
 
 // 复制共享 DOM 工具到内容脚本（避免 import 引发 ESM 报错）
@@ -64,6 +66,7 @@ function sharedCreateWrapper(id: string, targetLang: string): HTMLElement {
 }
 function sharedApplyWrapperLoading(wrapper: HTMLElement, sourceText?: string) {
   try {
+    try { wrapper.setAttribute('data-tx-done', '0'); } catch {}
     wrapper.innerHTML = '';
     const block = wrapper.closest('p,div,section,article,li,td,a,h1,h2,h3,h4,h5,h6') as HTMLElement | null;
     let needBr = false;
@@ -88,6 +91,9 @@ function sharedApplyWrapperLoading(wrapper: HTMLElement, sourceText?: string) {
     spin.setAttribute('aria-label', 'Loading translation');
     loadingWrapper.appendChild(spin);
     wrapper.appendChild(loadingWrapper);
+    if (block) {
+      try { block.setAttribute('aria-busy', 'true'); } catch {}
+    }
   } catch {}
 }
 function sharedApplyWrapperResult(wrapper: HTMLElement, text: string, targetLang?: string, _wrapperStyle?: string, sourceText?: string) {
@@ -128,6 +134,76 @@ function sharedApplyWrapperResult(wrapper: HTMLElement, text: string, targetLang
     }
   } catch {}
 }
+function sharedApplyWrapperHtmlResult(wrapper: HTMLElement, html: string, targetLang?: string, sourceText?: string) {
+  try {
+    if (targetLang) wrapper.setAttribute('lang', targetLang);
+    const rtl = targetLang && /^(ar|he|fa|ur|yi)(-|$)/i.test(targetLang);
+    if (rtl) wrapper.setAttribute('dir', 'rtl'); else wrapper.removeAttribute('dir');
+    wrapper.innerHTML = '';
+    const block = wrapper.closest('p,div,section,article,li,td,a,h1,h2,h3,h4,h5,h6') as HTMLElement | null;
+    let needBr = false;
+    if (block && sourceText) {
+      const tag = (block.tagName || 'div').toLowerCase();
+      needBr = needsLineBreak(tag) && shouldInsertBreakFromSource(sourceText);
+    }
+    if (needBr) {
+      updateBreakForTranslated(block!, sourceText!);
+    } else {
+      const spacer = document.createElement('font');
+      spacer.className = 'notranslate';
+      spacer.innerHTML = '&nbsp;&nbsp;';
+      wrapper.appendChild(spacer);
+    }
+    const styleName = (wrapper.getAttribute('data-tx-style') || '').trim() || 'ifocal-target-style-dotted';
+    const typeClass = needBr ? 'ifocal-target-block-wrapper' : 'ifocal-target-inline-wrapper';
+    const resultWrapper = document.createElement('font');
+    resultWrapper.className = `notranslate ${typeClass} ${styleName}`.trim();
+    const inner = document.createElement('font');
+    inner.className = 'notranslate ifocal-target-inner';
+    inner.innerHTML = html;
+    resultWrapper.appendChild(inner);
+    wrapper.appendChild(resultWrapper);
+    try { wrapper.setAttribute('data-tx-done', '1'); } catch {}
+    if (block && sourceText) {
+      try {
+        const pending = block.querySelector('font.ifocal-target-wrapper[data-tx-done="0"]');
+        block.setAttribute('aria-busy', pending ? 'true' : 'false');
+      } catch {}
+    }
+  } catch {}
+}
+function escapeHtml(text: string) {
+  return String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+function sharedApplyWrapperErrorResult(
+  wrapper: HTMLElement,
+  errorText: string,
+  onRetry: () => void,
+  targetLang?: string,
+  sourceText?: string,
+) {
+  sharedApplyWrapperHtmlResult(
+    wrapper,
+    `<span class="ifocal-target-error">翻译失败：${escapeHtml(errorText || '未知错误')}</span><button type="button" class="ifocal-target-retry">重试</button>`,
+    targetLang,
+    sourceText,
+  );
+  try {
+    const button = wrapper.querySelector<HTMLButtonElement>('.ifocal-target-retry');
+    if (button) {
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onRetry();
+      });
+    }
+  } catch {}
+}
 
 // 样式通过 Shadow DOM 注入；语言列表通过后台消息读取。
 let uiHost: HTMLElement | null = null;
@@ -135,6 +211,8 @@ let uiShadow: ShadowRoot | null = null;
 const SHADOW_STYLE = `
 .ifocal-overlay{position:absolute;z-index:2147483647;max-width:420px;width:100%;background:rgba(255,255,255,0.88);border-radius:12px;box-shadow:0 12px 32px rgba(15,23,42,0.18);color:#0f172a;line-height:1.55;backdrop-filter:saturate(180%) blur(12px);-webkit-backdrop-filter:saturate(180%) blur(12px);pointer-events:auto}
 .ifocal-overlay-body{white-space:pre-wrap;max-height:50vh;overflow-y:auto;position:relative;padding:0 12px 12px;}
+.ifocal-overlay-body a{color:#2563eb;text-decoration:underline}
+.ifocal-overlay-body code,.ifocal-overlay-body pre,.ifocal-overlay-body kbd,.ifocal-overlay-body samp,.ifocal-overlay-body var{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
 .ifocal-status-overlay{position:fixed;right:16px;bottom:16px;top:auto;left:auto;width:280px;max-width:calc(100vw - 32px);min-width:0;border-radius:10px;background:rgba(255,255,255,0.96);box-shadow:0 10px 24px rgba(15,23,42,0.14);pointer-events:none}
 .ifocal-status-overlay .ifocal-overlay-body{max-height:30vh;padding:10px 12px;font-size:12px;line-height:1.45}
 .ifocal-overlay-header{cursor:move;display:flex;align-items:center;justify-content:space-between;padding:12px;}
@@ -251,6 +329,7 @@ console.log('content script ready');
 type OverlayHandle = {
   root: HTMLElement;
   setText: (text: string) => void;
+  setHtml: (html: string) => void;
   append: (text: string) => void;
   setLoading: (flag: boolean) => void;
   _body?: HTMLElement;
@@ -259,16 +338,59 @@ type OverlayHandle = {
 
 type ChannelPair = { channel: string; model: string } | null;
 type TranslationMode = 'ai' | 'machine';
+type HoverDisplayMode = 'insert' | 'overlay';
+type FullPageDisplayMode = 'insert' | 'replace';
+type FullPageVisibleMode = 'translation' | 'original';
 type OverlayTranslateRunner = (overlay: OverlayHandle, task: string, text: string, pair: ChannelPair, lang: string, prevLang?: string) => void;
-type FullPageTarget = { element: HTMLElement; text: string };
+type FullPageTargetStatus = 'idle' | 'queued' | 'translating' | 'done' | 'failed';
+type MachineTranslateChannelConfig = { id?: string; provider?: string; enabled?: boolean };
+type FullPageTranslationTarget = {
+  id: string;
+  element: HTMLElement;
+  text: string;
+  html: string;
+  protectedMap: Record<string, string>;
+  status: FullPageTargetStatus;
+  mode: FullPageDisplayMode;
+  translationHost: HTMLElement | null;
+  sourceHost: HTMLElement | null;
+  translatedHtml: string;
+  error: string;
+  priority: number;
+  observed: boolean;
+};
+type FullPageTranslationSession = {
+  id: string;
+  targetLang: string;
+  channelId?: string;
+  styleName: string;
+  displayMode: FullPageDisplayMode;
+  visibleMode: FullPageVisibleMode;
+  channelSupportsHtml: boolean;
+  targets: Map<string, FullPageTranslationTarget>;
+  queue: string[];
+  observer: IntersectionObserver | null;
+  mutationObserver: MutationObserver | null;
+  scanTimer?: number;
+  processing: boolean;
+  translatedCount: number;
+  failedCount: number;
+};
+type StructuredTranslationInput = {
+  html: string;
+  protectedMap: Record<string, string>;
+};
 
 type StorageConfig = {
   channels?: Array<{ name: string; models?: string[] }>;
   defaultModel?: ChannelPair;
   translateTargetLang?: string;
   prevLanguage?: string;
+  hoverDisplayMode?: HoverDisplayMode;
+  fullPageDisplayMode?: FullPageDisplayMode;
   selectionTranslationMode?: TranslationMode;
   hoverTranslationMode?: TranslationMode;
+  mtChannels?: MachineTranslateChannelConfig[];
   mtDefaultChannelId?: string;
   wrapperStyleName?: string;
   targetStylePresets?: Array<{ name: string; css: string }>;
@@ -318,13 +440,13 @@ function resolveModelDisplayName(cfg: StorageConfig, pair: ChannelPair): string 
 let hoveredElement: HTMLElement | null = null;
 let hoverInInputArea = false;
 let actionKey = 'Alt';
-let displayMode: 'insert' | 'overlay' = 'insert';
+let hoverDisplayMode: HoverDisplayMode = 'insert';
 let enableSelectionTranslation = true;
 let selectionTranslationMode: TranslationMode = 'ai';
 let hoverTranslationMode: TranslationMode = 'ai';
 let lastOverlay: OverlayHandle | null = null;
 let keydownCooldown = false;
-let fullPageTranslateRunning = false;
+let fullPageSession: FullPageTranslationSession | null = null;
 
 let lastSelectionText = '';
 let lastSelectionRect: DOMRect | null = null;
@@ -359,6 +481,9 @@ function createOverlayAt(left: number, top: number, loadingStyle: OverlayLoading
     _body: body,
     setText(text) {
       body.textContent = text;
+    },
+    setHtml(html) {
+      body.innerHTML = html;
     },
     append(text) {
       body.textContent = `${body.textContent || ''}${text}`;
@@ -416,12 +541,14 @@ let SUPPORTED_LANGUAGES: Lang[] = [
 // 重载 
 function readHotkeys() {
   try {
-    chrome.storage.sync.get(['actionKey', 'hoverKey', 'selectKey', 'displayMode', 'enableSelectionTranslation', 'selectionTranslationMode', 'hoverTranslationMode'], (items) => {
+    chrome.storage.sync.get(['actionKey', 'hoverKey', 'selectKey', 'hoverDisplayMode', 'displayMode', 'enableSelectionTranslation', 'selectionTranslationMode', 'hoverTranslationMode'], (items) => {
       if (items?.actionKey) actionKey = items.actionKey;
       else if (items?.hoverKey) actionKey = items.hoverKey;
       else if (items?.selectKey) actionKey = items.selectKey;
-      if (items?.displayMode === 'overlay' || items?.displayMode === 'insert') {
-        displayMode = items.displayMode;
+      if (items?.hoverDisplayMode === 'overlay' || items?.hoverDisplayMode === 'insert') {
+        hoverDisplayMode = items.hoverDisplayMode;
+      } else if (items?.displayMode === 'overlay' || items?.displayMode === 'insert') {
+        hoverDisplayMode = items.displayMode;
       }
       enableSelectionTranslation = typeof items?.enableSelectionTranslation === 'boolean' ? items.enableSelectionTranslation : true;
       selectionTranslationMode = normalizeTranslationMode(items?.selectionTranslationMode);
@@ -430,9 +557,12 @@ function readHotkeys() {
     chrome.storage.onChanged.addListener((changes, areaName) => {
       if (areaName !== 'sync') return;
       if (changes.actionKey) actionKey = changes.actionKey.newValue || 'Alt';
-      if (changes.displayMode) {
-        const mode = changes.displayMode.newValue as 'insert' | 'overlay';
-        displayMode = mode || 'insert';
+      if (changes.hoverDisplayMode) {
+        const mode = changes.hoverDisplayMode.newValue as HoverDisplayMode;
+        hoverDisplayMode = mode === 'overlay' ? 'overlay' : 'insert';
+      } else if (changes.displayMode) {
+        const mode = changes.displayMode.newValue as HoverDisplayMode;
+        hoverDisplayMode = mode === 'overlay' ? 'overlay' : 'insert';
       }
       if (changes.enableSelectionTranslation) enableSelectionTranslation = !!changes.enableSelectionTranslation.newValue;
       if (changes.selectionTranslationMode) selectionTranslationMode = normalizeTranslationMode(changes.selectionTranslationMode.newValue);
@@ -722,6 +852,18 @@ function normalizePageText(text: string): string {
 }
 
 const TRANSLATE_EXCLUDED_SELECTOR = 'script,style,noscript,code,pre,kbd,samp,var,textarea,input,select,option,svg,canvas';
+const FULL_PAGE_REMOVE_SELECTOR = 'script,style,noscript,textarea,input,select,option,svg,canvas,iframe,button';
+const FULL_PAGE_REPLACE_BLOCKING_SELECTOR = 'img,picture,video,audio,svg,canvas,iframe,table,form,input,textarea,select,button';
+const FULL_PAGE_ALLOWED_INLINE_TAGS = new Set(['a', 'span', 'code', 'pre', 'kbd', 'samp', 'var', 'em', 'strong', 'small', 'sub', 'sup', 'mark', 'br', 'b', 'i', 'u']);
+const FULL_PAGE_PROTECTED_TAGS = new Set(['code', 'pre', 'kbd', 'samp', 'var']);
+const FULL_PAGE_HTML_CAPABLE_PROVIDERS = new Set(['microsoft-free', 'microsoft-official', 'google-official', 'deepl']);
+const FULL_PAGE_CORE_SELECTOR = 'p,li,td,th,blockquote,h1,h2,h3,h4,h5,h6,figcaption,caption,summary,dt,dd';
+const FULL_PAGE_FALLBACK_SELECTOR = 'div,section,article';
+const FULL_PAGE_MAX_TEXT_LENGTH = 1200;
+const FULL_PAGE_BATCH_SIZE = 10;
+const FULL_PAGE_BATCH_CHAR_LIMIT = 4000;
+const FULL_PAGE_RESCAN_DELAY = 180;
+let fullPageTargetSeed = 0;
 
 function isExcludedTranslateElement(target: EventTarget | Node | null): boolean {
   try {
@@ -739,7 +881,7 @@ function isExcludedTranslateElement(target: EventTarget | Node | null): boolean 
 function extractTranslatableText(element: HTMLElement): string {
   try {
     const clone = element.cloneNode(true) as HTMLElement;
-    clone.querySelectorAll(`${TRANSLATE_EXCLUDED_SELECTOR}, .ifocal-fullpage-translation, .ifocal-overlay, .ifocal-dot, #ifocal-host, [aria-hidden="true"], [hidden]`)
+    clone.querySelectorAll(`${TRANSLATE_EXCLUDED_SELECTOR}, [data-ifocal-full-page="1"], [data-ifocal-full-page-source="1"], .ifocal-overlay, .ifocal-dot, #ifocal-host, [aria-hidden="true"], [hidden]`)
       .forEach((node) => node.remove());
     return normalizePageText(clone.textContent || '');
   } catch {
@@ -747,14 +889,19 @@ function extractTranslatableText(element: HTMLElement): string {
   }
 }
 
-function machineTranslateTexts(texts: string[], targetLang: string, channelId?: string): Promise<{ ok?: boolean; translations?: string[]; errors?: string[]; error?: string }> {
+function machineTranslateTexts(
+  texts: string[],
+  targetLang: string,
+  channelId?: string,
+  format: 'plain' | 'html' = 'plain',
+): Promise<{ ok?: boolean; translations?: string[]; errors?: string[]; error?: string }> {
   return new Promise((resolve) => {
     const payload: any = {
       action: 'machineTranslateBatch',
       texts,
       sourceLang: 'auto',
       targetLang: targetLang || 'zh-CN',
-      format: 'plain',
+      format,
     };
     if (channelId) payload.channelId = channelId;
     try {
@@ -776,16 +923,792 @@ function machineTranslateTexts(texts: string[], targetLang: string, channelId?: 
   });
 }
 
-function createFixedOverlay(loadingStyle: OverlayLoadingStyle = 'spinner') {
-  const overlay = createOverlayAt(0, 0, loadingStyle);
-  overlay.root.classList.add('ifocal-status-overlay');
-  overlay.root.style.left = 'auto';
-  overlay.root.style.top = 'auto';
-  overlay.root.style.right = '16px';
-  overlay.root.style.bottom = '16px';
-  overlay.root.style.width = '280px';
-  overlay.root.style.maxWidth = 'calc(100vw - 32px)';
-  return overlay;
+function nextFullPageTargetId() {
+  fullPageTargetSeed += 1;
+  return `fp_${Date.now().toString(36)}_${fullPageTargetSeed.toString(36)}`;
+}
+
+function getSafeFullPageHref(value: string): string | null {
+  const href = String(value || '').trim();
+  if (!href) return null;
+  const lowered = href.toLowerCase();
+  if (
+    lowered.startsWith('http://')
+    || lowered.startsWith('https://')
+    || lowered.startsWith('mailto:')
+    || lowered.startsWith('tel:')
+    || lowered.startsWith('#')
+    || lowered.startsWith('/')
+    || lowered.startsWith('./')
+    || lowered.startsWith('../')
+  ) {
+    return href;
+  }
+  return null;
+}
+
+function copyAllowedFullPageAttributes(source: HTMLElement, target: HTMLElement) {
+  for (const attr of Array.from(source.attributes)) {
+    const name = attr.name.toLowerCase();
+    if (!name || name.startsWith('on')) continue;
+    if (name === 'class' || name === 'style' || name === 'title' || name === 'lang' || name === 'dir' || name === 'aria-label') {
+      target.setAttribute(name, attr.value);
+      continue;
+    }
+    if (target.tagName.toLowerCase() === 'a' && (name === 'href' || name === 'target' || name === 'rel')) {
+      if (name === 'href') {
+        const href = getSafeFullPageHref(attr.value);
+        if (href) target.setAttribute('href', href);
+      } else {
+        target.setAttribute(name, attr.value);
+      }
+    }
+  }
+  if (target.tagName.toLowerCase() === 'a' && target.getAttribute('target') === '_blank' && !target.getAttribute('rel')) {
+    target.setAttribute('rel', 'noopener noreferrer');
+  }
+}
+
+function appendSanitizedFullPageNode(
+  parent: Node,
+  node: Node,
+  protectedMap: Record<string, string>,
+  counter: { value: number },
+  protectContents = true,
+) {
+  if (node.nodeType === Node.TEXT_NODE) {
+    parent.appendChild(document.createTextNode(node.nodeValue || ''));
+    return;
+  }
+  if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+  const element = node as HTMLElement;
+  const tag = (element.tagName || '').toLowerCase();
+  if (!tag) return;
+  if (element.matches(FULL_PAGE_REMOVE_SELECTOR)) return;
+  if (element.closest('#ifocal-host')) return;
+  if (element.getAttribute('data-ifocal-full-page') === '1') return;
+  if (element.getAttribute('data-ifocal-full-page-source') === '1') return;
+  if ((element.getAttribute('aria-hidden') || '').toLowerCase() === 'true' || element.hasAttribute('hidden')) return;
+
+  if (!FULL_PAGE_ALLOWED_INLINE_TAGS.has(tag)) {
+    Array.from(element.childNodes).forEach((child) => appendSanitizedFullPageNode(parent, child, protectedMap, counter, protectContents));
+    return;
+  }
+
+  const clone = document.createElement(tag);
+  copyAllowedFullPageAttributes(element, clone);
+  parent.appendChild(clone);
+
+  if (protectContents && FULL_PAGE_PROTECTED_TAGS.has(tag)) {
+    const token = `IFOCALPROTECTED_${counter.value.toString(36)}_X`;
+    counter.value += 1;
+    protectedMap[token] = element.innerHTML;
+    clone.textContent = token;
+    return;
+  }
+
+  Array.from(element.childNodes).forEach((child) => appendSanitizedFullPageNode(clone, child, protectedMap, counter, protectContents));
+}
+
+function extractTranslatableHtml(element: HTMLElement): { html: string; text: string; protectedMap: Record<string, string> } {
+  const container = document.createElement('div');
+  const protectedMap: Record<string, string> = {};
+  const counter = { value: 0 };
+  Array.from(element.childNodes).forEach((child) => appendSanitizedFullPageNode(container, child, protectedMap, counter));
+  return {
+    html: String(container.innerHTML || '').trim(),
+    text: normalizePageText(container.textContent || ''),
+    protectedMap,
+  };
+}
+
+function htmlSnippetToText(html: string): string {
+  const container = document.createElement('div');
+  container.innerHTML = html;
+  return container.textContent || '';
+}
+
+function restoreProtectedPlaceholders(root: ParentNode, protectedMap: Record<string, string>) {
+  const tokens = Object.keys(protectedMap);
+  if (!tokens.length) return;
+  const protectedSelector = Array.from(FULL_PAGE_PROTECTED_TAGS).join(',');
+  try {
+    root.querySelectorAll(protectedSelector).forEach((node) => {
+      const text = node.textContent || '';
+      const token = tokens.find((item) => text.includes(item));
+      if (token) {
+        (node as HTMLElement).innerHTML = protectedMap[token] || '';
+      }
+    });
+  } catch {}
+
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const textNodes: Text[] = [];
+  while (walker.nextNode()) {
+    textNodes.push(walker.currentNode as Text);
+  }
+  textNodes.forEach((node) => {
+    let next = node.nodeValue || '';
+    let changed = false;
+    for (const token of tokens) {
+      if (!next.includes(token)) continue;
+      next = next.split(token).join(htmlSnippetToText(protectedMap[token] || ''));
+      changed = true;
+    }
+    if (changed) node.nodeValue = next;
+  });
+}
+
+function sanitizeTranslatedHtml(html: string, protectedMap: Record<string, string>): string {
+  const input = document.createElement('div');
+  try {
+    input.innerHTML = String(html || '');
+  } catch {
+    input.textContent = String(html || '');
+  }
+  const output = document.createElement('div');
+  const counter = { value: 0 };
+  Array.from(input.childNodes).forEach((child) => appendSanitizedFullPageNode(output, child, protectedMap, counter, false));
+  restoreProtectedPlaceholders(output, protectedMap);
+  return String(output.innerHTML || '').trim();
+}
+
+type PlainFallbackTask = {
+  node: Text;
+  source: string;
+  leading: string;
+  trailing: string;
+};
+
+function collectPlainFallbackTasks(container: HTMLElement): PlainFallbackTask[] {
+  const tasks: PlainFallbackTask[] = [];
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const parent = node.parentElement;
+      if (!parent) return NodeFilter.FILTER_REJECT;
+      if (FULL_PAGE_PROTECTED_TAGS.has(parent.tagName.toLowerCase())) return NodeFilter.FILTER_REJECT;
+      const value = node.nodeValue || '';
+      if (!value.trim()) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  } as any);
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Text;
+    const raw = node.nodeValue || '';
+    const match = raw.match(/^(\s*)([\s\S]*?)(\s*)$/);
+    const core = String(match?.[2] || '').trim();
+    if (!core) continue;
+    tasks.push({
+      node,
+      source: core,
+      leading: match?.[1] || '',
+      trailing: match?.[3] || '',
+    });
+  }
+  return tasks;
+}
+
+async function translateStructuredTargetsWithPlainFallback<T extends StructuredTranslationInput>(
+  targets: T[],
+  targetLang: string,
+  channelId?: string,
+): Promise<Array<{ target: T; html?: string; error?: string }>> {
+  const prepared = targets.map((target) => {
+    const container = document.createElement('div');
+    container.innerHTML = target.html;
+    return {
+      target,
+      container,
+      tasks: collectPlainFallbackTasks(container),
+      errors: [] as string[],
+    };
+  });
+
+  const allTasks: Array<{ owner: typeof prepared[number]; task: PlainFallbackTask }> = [];
+  prepared.forEach((item) => {
+    item.tasks.forEach((task) => allTasks.push({ owner: item, task }));
+  });
+
+  let resp: { ok?: boolean; translations?: string[]; errors?: string[]; error?: string } = { ok: true, translations: [], errors: [] };
+  if (allTasks.length) {
+    resp = await machineTranslateTexts(allTasks.map((item) => item.task.source), targetLang, channelId, 'plain');
+  }
+
+  allTasks.forEach((item, index) => {
+    const translated = String(resp.translations?.[index] || '').trim();
+    const error = String(resp.errors?.[index] || resp.error || '').trim();
+    if (translated) {
+      item.task.node.nodeValue = `${item.task.leading}${translated}${item.task.trailing}`;
+      return;
+    }
+    item.task.node.nodeValue = `${item.task.leading}${item.task.source}${item.task.trailing}`;
+    if (error) item.owner.errors.push(error);
+  });
+
+  return prepared.map((item) => {
+    restoreProtectedPlaceholders(item.container, item.target.protectedMap);
+    const html = sanitizeTranslatedHtml(item.container.innerHTML, item.target.protectedMap);
+    const error = item.errors.find(Boolean) || '';
+    return { target: item.target, html, error };
+  });
+}
+
+function resolveMachineChannel(channelId: string | undefined, channels: MachineTranslateChannelConfig[] | undefined): MachineTranslateChannelConfig | null {
+  const list = Array.isArray(channels) ? channels : [];
+  const enabled = list.filter((item) => item && item.enabled !== false);
+  if (channelId) {
+    const matched = enabled.find((item) => String(item?.id || '') === channelId);
+    if (matched) return matched;
+  }
+  return enabled[0] || null;
+}
+
+function machineChannelSupportsHtml(channel: MachineTranslateChannelConfig | null): boolean {
+  const provider = String(channel?.provider || '').trim();
+  return !!provider && FULL_PAGE_HTML_CAPABLE_PROVIDERS.has(provider);
+}
+
+async function translateStructuredInputWithMachine(
+  input: StructuredTranslationInput,
+  targetLang: string,
+  channelId: string | undefined,
+  channels: MachineTranslateChannelConfig[] | undefined,
+): Promise<{ html: string; error: string }> {
+  const channel = resolveMachineChannel(channelId, channels);
+  if (machineChannelSupportsHtml(channel)) {
+    const resp = await machineTranslateTexts([input.html], targetLang, channelId, 'html');
+    const translated = String(resp.translations?.[0] || '').trim();
+    const error = String(resp.errors?.[0] || resp.error || '').trim();
+    return {
+      html: translated ? sanitizeTranslatedHtml(translated, input.protectedMap) : '',
+      error,
+    };
+  }
+
+  const [result] = await translateStructuredTargetsWithPlainFallback([input], targetLang, channelId);
+  return {
+    html: String(result?.html || '').trim(),
+    error: String(result?.error || '').trim(),
+  };
+}
+
+async function translateStructuredElementWithMachine(
+  element: HTMLElement,
+  targetLang: string,
+  channelId: string | undefined,
+  channels: MachineTranslateChannelConfig[] | undefined,
+): Promise<{ html: string; text: string; error: string }> {
+  const extracted = extractTranslatableHtml(element);
+  if (!extracted.html || !extracted.text) {
+    return { html: '', text: '', error: '未找到可翻译内容' };
+  }
+  const result = await translateStructuredInputWithMachine(extracted, targetLang, channelId, channels);
+  return {
+    html: result.html,
+    text: extracted.text,
+    error: result.error,
+  };
+}
+
+function isVisibleForFullPageTranslate(element: HTMLElement): boolean {
+  try {
+    if (!element.isConnected) return false;
+    if (isIfocalElement(element)) return false;
+    if (isInputArea(element)) return false;
+    if (isExcludedTranslateElement(element)) return false;
+    if ((element.getAttribute('aria-hidden') || '').toLowerCase() === 'true') return false;
+    const style = window.getComputedStyle(element);
+    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+    return element.getClientRects().length > 0;
+  } catch {
+    return false;
+  }
+}
+
+function shouldUseReplaceMode(element: HTMLElement, displayMode: FullPageDisplayMode): boolean {
+  if (displayMode !== 'replace') return false;
+  if (!/^(p|div|section|article|li|blockquote|h1|h2|h3|h4|h5|h6|figcaption)$/i.test(element.tagName || '')) return false;
+  if (element.querySelector(FULL_PAGE_REPLACE_BLOCKING_SELECTOR)) return false;
+  return true;
+}
+
+function getFullPageTargetPriority(element: HTMLElement): number {
+  const rect = element.getBoundingClientRect();
+  const viewportHeight = Math.max(window.innerHeight || 0, 1);
+  if (rect.bottom >= 0 && rect.top <= viewportHeight) return 0;
+  const margin = Math.max(viewportHeight, 600);
+  if (rect.bottom >= -margin && rect.top <= viewportHeight + margin) return 1;
+  return 2;
+}
+
+function sortFullPageQueue(session: FullPageTranslationSession) {
+  session.queue.sort((leftId, rightId) => {
+    const left = session.targets.get(leftId);
+    const right = session.targets.get(rightId);
+    if (!left && !right) return 0;
+    if (!left) return 1;
+    if (!right) return -1;
+    if (left.priority !== right.priority) return left.priority - right.priority;
+    try {
+      return left.element.getBoundingClientRect().top - right.element.getBoundingClientRect().top;
+    } catch {
+      return 0;
+    }
+  });
+}
+
+function syncFullPageSessionCounts(session: FullPageTranslationSession) {
+  let translated = 0;
+  let failed = 0;
+  session.targets.forEach((target) => {
+    if (target.status === 'done') translated += 1;
+    else if (target.status === 'failed') failed += 1;
+  });
+  session.translatedCount = translated;
+  session.failedCount = failed;
+}
+
+function applyFullPageTargetVisibility(session: FullPageTranslationSession, target: FullPageTranslationTarget) {
+  const showTranslation = session.visibleMode === 'translation';
+  if (target.mode === 'replace') {
+    if (target.sourceHost) target.sourceHost.style.display = showTranslation ? 'none' : '';
+    if (target.translationHost) target.translationHost.style.display = showTranslation ? '' : 'none';
+    return;
+  }
+  if (target.translationHost) target.translationHost.style.display = showTranslation ? '' : 'none';
+}
+
+function applyFullPageVisibility(session: FullPageTranslationSession) {
+  session.targets.forEach((target) => applyFullPageTargetVisibility(session, target));
+}
+
+function buildFullPageTranslationHost(target: FullPageTranslationTarget, session: FullPageTranslationSession): HTMLElement {
+  const wrapper = sharedCreateWrapper(`fullpage_${target.id}`, session.targetLang);
+  wrapper.setAttribute('data-ifocal-full-page', '1');
+  wrapper.setAttribute('data-ifocal-full-page-target', target.id);
+  if (target.mode === 'replace') wrapper.classList.add('ifocal-fullpage-translation-replace');
+  try { wrapper.setAttribute('data-tx-style', session.styleName); } catch {}
+  if (session.targetLang) wrapper.setAttribute('lang', session.targetLang);
+  if (/^(ar|he|fa|ur|yi)(-|$)/i.test(session.targetLang || '')) wrapper.setAttribute('dir', 'rtl');
+  else wrapper.removeAttribute('dir');
+  return wrapper;
+}
+
+function ensureFullPageTargetHosts(target: FullPageTranslationTarget, session: FullPageTranslationSession) {
+  if (target.mode === 'replace') {
+    if (!target.sourceHost || !target.sourceHost.isConnected || !target.translationHost || !target.translationHost.isConnected) {
+      const sourceHost = document.createElement('span');
+      sourceHost.className = 'ifocal-fullpage-source notranslate';
+      sourceHost.setAttribute('data-ifocal-full-page-source', '1');
+      while (target.element.firstChild) {
+        sourceHost.appendChild(target.element.firstChild);
+      }
+      const translationHost = buildFullPageTranslationHost(target, session);
+      target.element.appendChild(sourceHost);
+      target.element.appendChild(translationHost);
+      target.sourceHost = sourceHost;
+      target.translationHost = translationHost;
+    }
+  } else if (!target.translationHost || !target.translationHost.isConnected) {
+    const translationHost = buildFullPageTranslationHost(target, session);
+    target.element.appendChild(translationHost);
+    target.translationHost = translationHost;
+  }
+  applyFullPageTargetVisibility(session, target);
+}
+
+function getFullPageTargetWrapper(target: FullPageTranslationTarget): HTMLElement | null {
+  return target.translationHost;
+}
+
+function renderFullPageTargetLoading(target: FullPageTranslationTarget, session: FullPageTranslationSession) {
+  ensureFullPageTargetHosts(target, session);
+  const wrapper = getFullPageTargetWrapper(target);
+  if (!wrapper) return;
+  try { wrapper.setAttribute('data-tx-style', session.styleName); } catch {}
+  sharedApplyWrapperLoading(wrapper, target.text);
+  applyFullPageTargetVisibility(session, target);
+}
+
+function renderFullPageTargetTranslation(target: FullPageTranslationTarget, session: FullPageTranslationSession, html: string) {
+  ensureFullPageTargetHosts(target, session);
+  const wrapper = getFullPageTargetWrapper(target);
+  if (!wrapper) return;
+  try { wrapper.setAttribute('data-tx-style', session.styleName); } catch {}
+  sharedApplyWrapperHtmlResult(wrapper, html, session.targetLang, target.text);
+  target.translatedHtml = html;
+  applyFullPageTargetVisibility(session, target);
+}
+
+function retryFullPageTarget(targetId: string) {
+  const session = fullPageSession;
+  if (!session) return;
+  const target = session.targets.get(targetId);
+  if (!target || target.status === 'queued' || target.status === 'translating') return;
+  target.status = 'idle';
+  target.error = '';
+  target.translatedHtml = '';
+  syncFullPageSessionCounts(session);
+  if (session.visibleMode === 'translation') {
+    enqueueFullPageTarget(session, target, getFullPageTargetPriority(target.element));
+  }
+}
+
+function renderFullPageTargetFailure(target: FullPageTranslationTarget, session: FullPageTranslationSession, errorText: string) {
+  ensureFullPageTargetHosts(target, session);
+  const wrapper = getFullPageTargetWrapper(target);
+  if (!wrapper) return;
+  try { wrapper.setAttribute('data-tx-style', session.styleName); } catch {}
+  sharedApplyWrapperErrorResult(
+    wrapper,
+    errorText || '未知错误',
+    () => retryFullPageTarget(target.id),
+    session.targetLang,
+    target.text,
+  );
+  applyFullPageTargetVisibility(session, target);
+}
+
+function enqueueFullPageTarget(session: FullPageTranslationSession, target: FullPageTranslationTarget, priority?: number) {
+  if (session.visibleMode !== 'translation') return;
+  const nextPriority = typeof priority === 'number' ? priority : getFullPageTargetPriority(target.element);
+  if (target.status === 'queued') {
+    if (nextPriority < target.priority) {
+      target.priority = nextPriority;
+      sortFullPageQueue(session);
+    }
+    return;
+  }
+  if (target.status !== 'idle') return;
+  target.status = 'queued';
+  target.priority = nextPriority;
+  if (!session.queue.includes(target.id)) session.queue.push(target.id);
+  sortFullPageQueue(session);
+  renderFullPageTargetLoading(target, session);
+  void processFullPageQueue(session);
+}
+
+function observeFullPageTarget(session: FullPageTranslationSession, target: FullPageTranslationTarget) {
+  if (target.observed || !session.observer) return;
+  try {
+    session.observer.observe(target.element);
+    target.observed = true;
+  } catch {}
+}
+
+function createFullPageTarget(element: HTMLElement, session: FullPageTranslationSession): FullPageTranslationTarget | null {
+  if (!isVisibleForFullPageTranslate(element)) return null;
+  if (element.dataset.ifocalFullPageTargetId) {
+    const existing = session.targets.get(element.dataset.ifocalFullPageTargetId);
+    if (existing) return existing;
+  }
+
+  const extracted = extractTranslatableHtml(element);
+  if (!extracted.text || extracted.text.length < 2 || extracted.text.length > FULL_PAGE_MAX_TEXT_LENGTH) return null;
+  if (!extracted.html) return null;
+
+  const id = nextFullPageTargetId();
+  const target: FullPageTranslationTarget = {
+    id,
+    element,
+    text: extracted.text,
+    html: extracted.html,
+    protectedMap: extracted.protectedMap,
+    status: 'idle',
+    mode: shouldUseReplaceMode(element, session.displayMode) ? 'replace' : 'insert',
+    translationHost: null,
+    sourceHost: null,
+    translatedHtml: '',
+    error: '',
+    priority: 2,
+    observed: false,
+  };
+  element.dataset.ifocalFullPageTargetId = id;
+  session.targets.set(id, target);
+  observeFullPageTarget(session, target);
+  return target;
+}
+
+function collectFullPageTargetsFromRoot(root: ParentNode, session: FullPageTranslationSession) {
+  const visit = (selector: string, isFallback = false) => {
+    const candidates: HTMLElement[] = [];
+    const rootElement = root instanceof HTMLElement ? root : null;
+    if (rootElement && rootElement.matches(selector)) candidates.push(rootElement);
+    if ('querySelectorAll' in root) {
+      root.querySelectorAll(selector).forEach((node) => candidates.push(node as HTMLElement));
+    }
+    candidates.forEach((element) => {
+      if (isFallback) {
+        if (element.querySelector(FULL_PAGE_CORE_SELECTOR)) return;
+        if (element.querySelector(FULL_PAGE_FALLBACK_SELECTOR)) return;
+      } else if (element.querySelector(FULL_PAGE_CORE_SELECTOR)) {
+        return;
+      }
+      const target = createFullPageTarget(element, session);
+      if (!target) return;
+      const priority = getFullPageTargetPriority(target.element);
+      target.priority = priority;
+      if (session.visibleMode === 'translation' && target.status === 'idle' && priority <= 1) {
+        enqueueFullPageTarget(session, target, priority);
+      }
+    });
+  };
+  visit(FULL_PAGE_CORE_SELECTOR);
+  visit(FULL_PAGE_FALLBACK_SELECTOR, true);
+}
+
+function scheduleFullPageScan(session: FullPageTranslationSession, immediate = false) {
+  if (fullPageSession !== session) return;
+  if (typeof session.scanTimer === 'number') window.clearTimeout(session.scanTimer);
+  session.scanTimer = window.setTimeout(() => {
+    session.scanTimer = undefined;
+    collectFullPageTargetsFromRoot(document, session);
+  }, immediate ? 0 : FULL_PAGE_RESCAN_DELAY);
+}
+
+function takeNextFullPageBatch(session: FullPageTranslationSession): FullPageTranslationTarget[] {
+  sortFullPageQueue(session);
+  const batch: FullPageTranslationTarget[] = [];
+  let totalChars = 0;
+  while (session.queue.length && batch.length < FULL_PAGE_BATCH_SIZE) {
+    const id = session.queue.shift();
+    if (!id) continue;
+    const target = session.targets.get(id);
+    if (!target || target.status !== 'queued') continue;
+    if (!target.element.isConnected) {
+      target.status = 'failed';
+      target.error = '元素已失效';
+      syncFullPageSessionCounts(session);
+      continue;
+    }
+    const weight = Math.max(target.text.length, Math.ceil(target.html.length / 2));
+    if (batch.length > 0 && totalChars + weight > FULL_PAGE_BATCH_CHAR_LIMIT) {
+      session.queue.unshift(id);
+      break;
+    }
+    target.status = 'translating';
+    renderFullPageTargetLoading(target, session);
+    batch.push(target);
+    totalChars += weight;
+  }
+  return batch;
+}
+
+function resolveTargetTranslationError(error: unknown): string {
+  const msg = String((error as any)?.message || error || '').trim();
+  return msg || '未知错误';
+}
+
+function applyFullPageBatchResult(session: FullPageTranslationSession, target: FullPageTranslationTarget, html: string, error = '') {
+  if (html) {
+    renderFullPageTargetTranslation(target, session, html);
+    target.status = 'done';
+    target.error = '';
+  } else {
+    target.status = 'failed';
+    target.error = error || '翻译返回空结果';
+    target.translatedHtml = '';
+    renderFullPageTargetFailure(target, session, target.error);
+  }
+  syncFullPageSessionCounts(session);
+}
+
+async function processFullPageQueue(session: FullPageTranslationSession) {
+  if (fullPageSession !== session || session.processing || session.visibleMode !== 'translation') return;
+  session.processing = true;
+  try {
+    while (fullPageSession === session && session.visibleMode === 'translation') {
+      const batch = takeNextFullPageBatch(session);
+      if (!batch.length) break;
+      try {
+        if (session.channelSupportsHtml) {
+          const resp = await machineTranslateTexts(batch.map((item) => item.html), session.targetLang, session.channelId, 'html');
+          batch.forEach((target, index) => {
+            const translated = String(resp.translations?.[index] || '').trim();
+            const error = String(resp.errors?.[index] || resp.error || '').trim();
+            const html = translated ? sanitizeTranslatedHtml(translated, target.protectedMap) : '';
+            applyFullPageBatchResult(session, target, html, error);
+          });
+        } else {
+          const results = await translateStructuredTargetsWithPlainFallback(batch, session.targetLang, session.channelId);
+          results.forEach((item) => {
+            applyFullPageBatchResult(session, item.target, String(item.html || '').trim(), item.error || '');
+          });
+        }
+      } catch (error) {
+        const errorText = resolveTargetTranslationError(error);
+        batch.forEach((target) => {
+          applyFullPageBatchResult(session, target, '', errorText);
+        });
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+    }
+  } catch (error) {
+    console.warn('processFullPageQueue failed', error);
+  } finally {
+    session.processing = false;
+  }
+}
+
+function hasPendingNearViewportTargets(session: FullPageTranslationSession): boolean {
+  for (const target of session.targets.values()) {
+    const priority = getFullPageTargetPriority(target.element);
+    if (priority <= 1 && (target.status === 'idle' || target.status === 'queued' || target.status === 'translating')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function waitForInitialViewportTranslation(session: FullPageTranslationSession, timeoutMs = 4000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (fullPageSession !== session) return;
+    if (session.translatedCount > 0) return;
+    if (!hasPendingNearViewportTargets(session)) return;
+    await new Promise((resolve) => window.setTimeout(resolve, 80));
+  }
+}
+
+function ensureFullPageObservers(session: FullPageTranslationSession) {
+  if (!session.observer) {
+    session.observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        const id = (entry.target as HTMLElement).dataset.ifocalFullPageTargetId || '';
+        const target = session.targets.get(id);
+        if (!target) return;
+        if (target.status === 'idle' || target.status === 'queued') enqueueFullPageTarget(session, target, getFullPageTargetPriority(target.element));
+        else applyFullPageTargetVisibility(session, target);
+      });
+    }, { root: null, rootMargin: '120% 0px 120% 0px', threshold: 0.01 });
+  }
+  if (!session.mutationObserver) {
+    session.mutationObserver = new MutationObserver(() => {
+      scheduleFullPageScan(session, false);
+    });
+    try {
+      session.mutationObserver.observe(document.body || document.documentElement, {
+        childList: true,
+        subtree: true,
+      });
+    } catch {}
+  }
+}
+
+function getFullPageTranslationState() {
+  if (!fullPageSession) {
+    return {
+      ok: true,
+      hasSession: false,
+      visibleMode: 'none',
+      translated: 0,
+      failed: 0,
+      processing: false,
+    };
+  }
+  syncFullPageSessionCounts(fullPageSession);
+  return {
+    ok: true,
+    hasSession: true,
+    visibleMode: fullPageSession.visibleMode,
+    translated: fullPageSession.translatedCount,
+    failed: fullPageSession.failedCount,
+    processing: fullPageSession.processing,
+  };
+}
+
+function showFullPageOriginal() {
+  if (!fullPageSession) return { ok: false, error: 'no-session' };
+  fullPageSession.visibleMode = 'original';
+  applyFullPageVisibility(fullPageSession);
+  return { ok: true, ...getFullPageTranslationState() };
+}
+
+async function showFullPageTranslation() {
+  if (!fullPageSession) return translateFullPage();
+  fullPageSession.visibleMode = 'translation';
+  applyFullPageVisibility(fullPageSession);
+  scheduleFullPageScan(fullPageSession, true);
+  await processFullPageQueue(fullPageSession);
+  return { ok: true, ...getFullPageTranslationState() };
+}
+
+function disposeFullPageSession(session: FullPageTranslationSession) {
+  if (typeof session.scanTimer === 'number') {
+    window.clearTimeout(session.scanTimer);
+    session.scanTimer = undefined;
+  }
+  try { session.observer?.disconnect(); } catch {}
+  try { session.mutationObserver?.disconnect(); } catch {}
+  session.observer = null;
+  session.mutationObserver = null;
+}
+
+async function translateFullPage() {
+  if (fullPageSession) {
+    if (fullPageSession.visibleMode === 'original') {
+      return showFullPageTranslation();
+    }
+    return { ok: true, ...getFullPageTranslationState() };
+  }
+
+  try {
+    const cfg = await new Promise<StorageConfig>((resolve) => {
+      try {
+        chrome.storage.sync.get(['translateTargetLang', 'mtChannels', 'mtDefaultChannelId', 'wrapperStyleName', 'targetStylePresets', 'fullPageDisplayMode'], (items: any) => {
+          resolve(items || {});
+        });
+      } catch {
+        resolve({});
+      }
+    });
+    const targetLang = String(cfg.translateTargetLang || 'zh-CN').trim() || 'zh-CN';
+    const channelId = String(cfg.mtDefaultChannelId || '').trim() || undefined;
+    const styleName = String(cfg.wrapperStyleName || 'ifocal-target-style-dotted').trim() || 'ifocal-target-style-dotted';
+    const displayMode: FullPageDisplayMode = cfg.fullPageDisplayMode === 'replace' ? 'replace' : 'insert';
+    const channel = resolveMachineChannel(channelId, cfg.mtChannels);
+
+    ensureDocLoadingStyle();
+    ensureTargetStylePresets(cfg.targetStylePresets || null);
+
+    const session: FullPageTranslationSession = {
+      id: `session_${Date.now().toString(36)}`,
+      targetLang,
+      channelId,
+      styleName,
+      displayMode,
+      visibleMode: 'translation',
+      channelSupportsHtml: machineChannelSupportsHtml(channel),
+      targets: new Map(),
+      queue: [],
+      observer: null,
+      mutationObserver: null,
+      processing: false,
+      translatedCount: 0,
+      failedCount: 0,
+    };
+    fullPageSession = session;
+    ensureFullPageObservers(session);
+    collectFullPageTargetsFromRoot(document, session);
+
+    if (!session.targets.size) {
+      disposeFullPageSession(session);
+      fullPageSession = null;
+      return { ok: true, ...getFullPageTranslationState() };
+    }
+
+    void processFullPageQueue(session);
+    await waitForInitialViewportTranslation(session);
+    return { ok: true, ...getFullPageTranslationState() };
+  } catch (error: any) {
+    if (fullPageSession) {
+      disposeFullPageSession(fullPageSession);
+      fullPageSession = null;
+    }
+    return { ok: false, error: String(error?.message || error || '未知错误') };
+  }
 }
 
 function setOverlayMessage(overlay: OverlayHandle, text: string) {
@@ -793,26 +1716,9 @@ function setOverlayMessage(overlay: OverlayHandle, text: string) {
   overlay.setText(text);
 }
 
-function setOverlayLoadingMessage(overlay: OverlayHandle, text: string) {
-  const body = overlay._body;
-  if (!body) {
-    overlay.setLoading(true);
-    return;
-  }
-  body.innerHTML = '';
-  const wrap = document.createElement('div');
-  wrap.className = 'ifocal-loading-wrap';
-  wrap.style.justifyContent = 'flex-start';
-  wrap.style.gap = '8px';
-  wrap.style.minHeight = '0';
-  const spin = document.createElement('span');
-  spin.className = 'ifocal-loading';
-  spin.setAttribute('aria-label', 'Loading translation');
-  const label = document.createElement('span');
-  label.textContent = text;
-  wrap.appendChild(spin);
-  wrap.appendChild(label);
-  body.appendChild(wrap);
+function setOverlayHtml(overlay: OverlayHandle, html: string) {
+  overlay.setLoading(false);
+  overlay.setHtml(html);
 }
 
 function resolveSelectionTranslationMode(cfg?: StorageConfig | null): TranslationMode {
@@ -841,6 +1747,25 @@ function startMachineTranslateForOverlay(overlay: OverlayHandle, text: string, l
   });
 }
 
+function startMachineStructuredTranslateForOverlay(
+  overlay: OverlayHandle,
+  element: HTMLElement,
+  lang: string,
+  channelId?: string,
+  channels?: MachineTranslateChannelConfig[],
+) {
+  overlay.setLoading(true);
+  void translateStructuredElementWithMachine(element, lang, channelId, channels).then((result) => {
+    if (result.html) {
+      setOverlayHtml(overlay, result.html);
+      return;
+    }
+    setOverlayMessage(overlay, `【错误】${result.error || '未知错误'}`);
+  }).catch((error: any) => {
+    setOverlayMessage(overlay, `【错误】${String(error?.message || error || '调用失败')}`);
+  });
+}
+
 function createMachineOverlayRunner(channelId?: string): OverlayTranslateRunner {
   return (overlay, _task, text, _pair, lang) => {
     startMachineTranslateForOverlay(overlay, text, lang, channelId);
@@ -859,161 +1784,6 @@ function createHoverRunner(cfg: StorageConfig): { runner: OverlayTranslateRunner
     return { runner: createMachineOverlayRunner(cfg.mtDefaultChannelId), showModelSelector: false };
   }
   return { runner: startStreamForOverlay, showModelSelector: true };
-}
-
-function appendFullPageTranslation(element: HTMLElement, translatedText: string, targetLang: string, styleName: string) {
-  const host = document.createElement('span');
-  host.className = 'ifocal-fullpage-translation notranslate';
-  host.setAttribute('data-ifocal-full-page', '1');
-
-  const wrapper = sharedCreateWrapper(`fullpage_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`, targetLang);
-  try { wrapper.setAttribute('data-tx-style', styleName); } catch {}
-  if (targetLang) wrapper.setAttribute('lang', targetLang);
-  if (/^(ar|he|fa|ur|yi)(-|$)/i.test(targetLang || '')) wrapper.setAttribute('dir', 'rtl');
-  else wrapper.removeAttribute('dir');
-
-  const resultWrapper = document.createElement('font');
-  resultWrapper.className = `notranslate ifocal-target-block-wrapper ${styleName}`.trim();
-  const inner = document.createElement('font');
-  inner.className = 'notranslate ifocal-target-inner';
-  inner.textContent = translatedText;
-  resultWrapper.appendChild(inner);
-  wrapper.appendChild(resultWrapper);
-  host.appendChild(wrapper);
-  element.appendChild(host);
-}
-
-function clearFullPageTranslations() {
-  try {
-    document.querySelectorAll('.ifocal-fullpage-translation[data-ifocal-full-page="1"]').forEach((node) => node.remove());
-  } catch {}
-}
-
-function isVisibleForFullPageTranslate(element: HTMLElement): boolean {
-  try {
-    if (!element.isConnected) return false;
-    if (isIfocalElement(element)) return false;
-    if (isInputArea(element)) return false;
-    if (isExcludedTranslateElement(element)) return false;
-    if ((element.getAttribute('aria-hidden') || '').toLowerCase() === 'true') return false;
-    const style = window.getComputedStyle(element);
-    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
-    return element.getClientRects().length > 0;
-  } catch {
-    return false;
-  }
-}
-
-const FULL_PAGE_CORE_SELECTOR = 'p,li,td,th,blockquote,h1,h2,h3,h4,h5,h6,figcaption,caption,summary,dt,dd';
-const FULL_PAGE_FALLBACK_SELECTOR = 'div,section,article';
-const FULL_PAGE_MAX_TEXT_LENGTH = 1200;
-
-function collectFullPageTargets(): FullPageTarget[] {
-  const targets: FullPageTarget[] = [];
-  const seen = new Set<HTMLElement>();
-  const pushTarget = (element: HTMLElement) => {
-    if (seen.has(element)) return;
-    if (!isVisibleForFullPageTranslate(element)) return;
-    const text = extractTranslatableText(element);
-    if (!text || text.length < 2 || text.length > FULL_PAGE_MAX_TEXT_LENGTH) return;
-    if (element.querySelector('.ifocal-fullpage-translation[data-ifocal-full-page="1"]')) return;
-    seen.add(element);
-    targets.push({ element, text });
-  };
-
-  document.querySelectorAll(FULL_PAGE_CORE_SELECTOR).forEach((node) => {
-    const element = node as HTMLElement;
-    if (element.querySelector(FULL_PAGE_CORE_SELECTOR)) return;
-    pushTarget(element);
-  });
-
-  document.querySelectorAll(FULL_PAGE_FALLBACK_SELECTOR).forEach((node) => {
-    const element = node as HTMLElement;
-    if (element.querySelector(FULL_PAGE_CORE_SELECTOR)) return;
-    if (element.querySelector(FULL_PAGE_FALLBACK_SELECTOR)) return;
-    pushTarget(element);
-  });
-
-  return targets;
-}
-
-async function translateFullPage() {
-  if (fullPageTranslateRunning) {
-    const overlay = createFixedOverlay();
-    setOverlayMessage(overlay, '网页全文翻译正在执行，请稍候。');
-    window.setTimeout(() => {
-      try { overlay.root.remove(); } catch {}
-    }, 1800);
-    return { ok: false, error: 'running' };
-  }
-
-  fullPageTranslateRunning = true;
-  const overlay = createFixedOverlay('spinner');
-  overlay.setLoading(true);
-
-  try {
-    clearFullPageTranslations();
-    const cfg = await new Promise<StorageConfig>((resolve) => {
-      try {
-        chrome.storage.sync.get(['translateTargetLang', 'mtDefaultChannelId', 'wrapperStyleName', 'targetStylePresets'], (items: any) => {
-          resolve(items || {});
-        });
-      } catch {
-        resolve({});
-      }
-    });
-    const targetLang = String(cfg.translateTargetLang || 'zh-CN').trim() || 'zh-CN';
-    const channelId = String(cfg.mtDefaultChannelId || '').trim() || undefined;
-    const styleName = String(cfg.wrapperStyleName || 'ifocal-target-style-dotted').trim() || 'ifocal-target-style-dotted';
-
-    ensureDocLoadingStyle();
-    ensureTargetStylePresets(cfg.targetStylePresets || null);
-
-    const targets = collectFullPageTargets();
-    if (!targets.length) {
-      setOverlayMessage(overlay, '未找到可翻译的网页正文。');
-      window.setTimeout(() => {
-        try { overlay.root.remove(); } catch {}
-      }, 2200);
-      return { ok: true, translated: 0, failed: 0 };
-    }
-
-    const batchSize = 20;
-    let translatedCount = 0;
-    let failedCount = 0;
-
-    for (let start = 0; start < targets.length; start += batchSize) {
-      const chunk = targets.slice(start, start + batchSize);
-      setOverlayLoadingMessage(overlay, '网页全文翻译中...');
-      const resp = await machineTranslateTexts(chunk.map((item) => item.text), targetLang, channelId);
-      const translations = Array.isArray(resp?.translations) ? resp.translations : [];
-      const errors = Array.isArray(resp?.errors) ? resp.errors : [];
-
-      chunk.forEach((item, index) => {
-        const translatedText = String(translations[index] || '').trim();
-        const error = String(errors[index] || '').trim();
-        if (translatedText) {
-          appendFullPageTranslation(item.element, translatedText, targetLang, styleName);
-          translatedCount += 1;
-        } else if (error || resp?.error) {
-          failedCount += 1;
-        }
-      });
-
-      await new Promise((resolve) => window.setTimeout(resolve, 0));
-    }
-
-    setOverlayMessage(overlay, '网页全文翻译完成');
-    window.setTimeout(() => {
-      try { overlay.root.remove(); } catch {}
-    }, 2600);
-    return { ok: true, translated: translatedCount, failed: failedCount };
-  } catch (error: any) {
-    setOverlayMessage(overlay, `网页全文翻译失败\n${String(error?.message || error || '未知错误')}`);
-    return { ok: false, error: String(error?.message || error || '未知错误') };
-  } finally {
-    fullPageTranslateRunning = false;
-  }
 }
 
 function showSelectionDot(rect: DOMRect) {
@@ -1081,16 +1851,21 @@ function hideSelectionDot() {
 function toggleHoverTranslate(blockEl: HTMLElement) {
   if (!chrome?.runtime) return;
   try {
-    if (displayMode === 'overlay') {
+    if (hoverDisplayMode === 'overlay') {
       const rect = blockEl.getBoundingClientRect();
       const overlay = createOverlayAt(rect.left + window.scrollX, rect.bottom + window.scrollY + 8);
       overlay.setLoading(true);
       const source = (blockEl.innerText || '').trim();
-      chrome.storage.sync.get(['channels', 'defaultModel', 'translateTargetLang', 'prevLanguage', 'selectionTranslationMode', 'hoverTranslationMode', 'mtDefaultChannelId'], (cfg: StorageConfig) => {
+      chrome.storage.sync.get(['channels', 'defaultModel', 'translateTargetLang', 'prevLanguage', 'selectionTranslationMode', 'hoverTranslationMode', 'mtChannels', 'mtDefaultChannelId'], (cfg: StorageConfig) => {
         const pair = pickPair(cfg);
         const lang = cfg.translateTargetLang || 'zh-CN';
         const prevLang = cfg.prevLanguage || 'en';
-        const { runner, showModelSelector } = createHoverRunner(cfg);
+        const machineRunner: OverlayTranslateRunner = (currentOverlay, _task, _text, _pair, nextLang) => {
+          startMachineStructuredTranslateForOverlay(currentOverlay, blockEl, nextLang, cfg.mtDefaultChannelId, cfg.mtChannels);
+        };
+        const { runner, showModelSelector } = shouldUseMachineTranslation(resolveHoverTranslationMode(cfg))
+          ? { runner: machineRunner, showModelSelector: false }
+          : createHoverRunner(cfg);
         attachOverlayHeaderVue(overlay, cfg, pair, lang, prevLang, source, runner, showModelSelector);
         runner(overlay, 'translate', source, pair, lang, prevLang);
       });
@@ -1106,8 +1881,10 @@ function toggleHoverTranslate(blockEl: HTMLElement) {
       return;
     }
 
-    chrome.storage.sync.get(['translateTargetLang', 'wrapperStyleName', 'targetStylePresets', 'selectionTranslationMode', 'hoverTranslationMode', 'mtDefaultChannelId'], (cfg: StorageConfig & any) => {
-      const sourceText = (blockEl.innerText || '').trim();
+    chrome.storage.sync.get(['translateTargetLang', 'wrapperStyleName', 'targetStylePresets', 'selectionTranslationMode', 'hoverTranslationMode', 'mtChannels', 'mtDefaultChannelId'], (cfg: StorageConfig & any) => {
+      const useMachineMode = shouldUseMachineTranslation(resolveHoverTranslationMode(cfg));
+      const structuredSource = useMachineMode ? extractTranslatableHtml(blockEl) : null;
+      const sourceText = String(structuredSource?.text || blockEl.innerText || '').trim();
       const langCode = (cfg.translateTargetLang || 'zh-CN').trim();
       const styleName = (cfg.wrapperStyleName || 'ifocal-target-style-dotted').trim();
       ensureDocLoadingStyle();
@@ -1119,12 +1896,17 @@ function toggleHoverTranslate(blockEl: HTMLElement) {
       sharedApplyWrapperLoading(wrapper, sourceText);
       try { blockEl.setAttribute('aria-busy', 'true'); } catch {}
 
-      if (shouldUseMachineTranslation(resolveHoverTranslationMode(cfg))) {
-        void machineTranslateTexts([sourceText], langCode, cfg.mtDefaultChannelId).then((response) => {
+      if (useMachineMode) {
+        const pending = structuredSource?.html
+          ? translateStructuredInputWithMachine(structuredSource, langCode, cfg.mtDefaultChannelId, cfg.mtChannels)
+          : Promise.resolve({ html: '', error: '未找到可翻译内容' });
+        void pending.then((response) => {
           blockEl.dataset.fcTranslated = '1';
-          const msg = Array.isArray(response?.translations) ? String(response.translations[0] || '') : '';
-          const error = Array.isArray(response?.errors) ? String(response.errors.find(Boolean) || '') : '';
-          const resultText = msg || (error || response?.error ? `【错误】${error || response?.error || '未知错误'}` : '');
+          if (response.html) {
+            sharedApplyWrapperHtmlResult(wrapper, response.html, langCode, sourceText);
+            return;
+          }
+          const resultText = response.error ? `【错误】${response.error}` : '';
           sharedApplyWrapperResult(wrapper, resultText, langCode, undefined, sourceText);
         });
         return;
@@ -1386,6 +2168,18 @@ document.addEventListener('keydown', (event) => {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.action === 'translateFullPage') {
     void translateFullPage().then(sendResponse).catch((error) => sendResponse({ ok: false, error: String(error?.message || error || '未知错误') }));
+    return true;
+  }
+  if (message?.action === 'getFullPageTranslationState') {
+    sendResponse(getFullPageTranslationState());
+    return true;
+  }
+  if (message?.action === 'showFullPageOriginal') {
+    sendResponse(showFullPageOriginal());
+    return true;
+  }
+  if (message?.action === 'showFullPageTranslation') {
+    void showFullPageTranslation().then(sendResponse).catch((error) => sendResponse({ ok: false, error: String(error?.message || error || '未知错误') }));
     return true;
   }
   if (message?.type === 'get-page-content') {

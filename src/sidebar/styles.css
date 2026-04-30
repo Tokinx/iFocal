@@ -125,6 +125,8 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    scrollbar-color: var(--color-sidebar-border) transparent;
+    scrollbar-width: thin;
   }
   body {
     font-family: "JetBrains Mono" !important;
