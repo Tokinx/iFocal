@@ -1,5 +1,10 @@
 <template>
-  <div ref="rootEl" class="relative flex h-full w-full text-foreground gap-2">
+  <div
+    ref="rootEl"
+    class="relative flex h-full w-full text-foreground gap-2"
+    @click.capture="handleExternalLinkClick"
+    @auxclick.capture="handleExternalLinkClick"
+  >
     <WindowSidebar
       :tasks="sidebarTasks"
       :sessions="sidebarSessions"
@@ -704,20 +709,81 @@ watch(sending, () => {
   scrollToBottom();
 });
 
+function normalizeExternalLinkUrl(href: string): string | null {
+  const raw = String(href || '').trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(raw.startsWith('//') ? `https:${raw}` : raw, window.location.href);
+    if (url.protocol === 'http:' || url.protocol === 'https:' || url.protocol === 'mailto:' || url.protocol === 'tel:') {
+      return url.href;
+    }
+  } catch { }
+  return null;
+}
+
+function applyExternalLinkAttributes(html: unknown): string {
+  const source = String(html ?? '');
+  if (!source || typeof document === 'undefined') return source;
+  const template = document.createElement('template');
+  template.innerHTML = source;
+  template.content.querySelectorAll('a[href]').forEach((anchor) => {
+    const url = normalizeExternalLinkUrl(anchor.getAttribute('href') || '');
+    if (!url) return;
+    anchor.setAttribute('href', url);
+    anchor.setAttribute('target', '_blank');
+    anchor.setAttribute('rel', 'noopener noreferrer');
+  });
+  return template.innerHTML;
+}
+
+function openExternalLinkInNewTab(url: string) {
+  const externalUrl = normalizeExternalLinkUrl(url);
+  if (!externalUrl) return;
+
+  if (/^https?:\/\//i.test(externalUrl) && isExtensionAlive()) {
+    try {
+      chrome.runtime.sendMessage({ action: 'openExternalLinkInNewTab', url: externalUrl }, (response) => {
+        const runtimeError = chrome.runtime.lastError;
+        if (!runtimeError && response?.ok) return;
+        window.open(externalUrl, '_blank', 'noopener,noreferrer');
+      });
+      return;
+    } catch { }
+  }
+
+  window.open(externalUrl, '_blank', 'noopener,noreferrer');
+}
+
+function handleExternalLinkClick(event: MouseEvent) {
+  if (event.defaultPrevented) return;
+  if (event.type === 'auxclick' && event.button !== 1) return;
+
+  const target = event.target instanceof Element ? event.target : null;
+  const anchor = target?.closest('a[href]') as HTMLAnchorElement | null;
+  if (!anchor || anchor.hasAttribute('download')) return;
+
+  const url = normalizeExternalLinkUrl(anchor.getAttribute('href') || '');
+  if (!url) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+  openExternalLinkInNewTab(url);
+}
+
 function renderMarkdown(content: string) {
   // 使用标准 Markdown 渲染（不启用 breaks）
   // 标准 Markdown 换行规则：行尾两个空格+\n 或 两个 \n（空行）才会换行
-  return marked(content, {
+  return applyExternalLinkAttributes(marked(content, {
     breaks: false, // 关闭 GFM 单换行支持，使用标准 Markdown 换行
     gfm: true // 启用 GitHub Flavored Markdown 其他特性（表格、删除线等）
-  });
+  }));
 }
 
 function renderMarkdownSafe(content: string) {
-  return marked(escapeUserHtml(content), {
+  return applyExternalLinkAttributes(marked(escapeUserHtml(content), {
     breaks: true,
     gfm: true
-  });
+  }));
 }
 
 // 新增：更严谨的用户输入转义（包含双引号/单引号）

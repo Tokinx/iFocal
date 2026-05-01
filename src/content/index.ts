@@ -947,6 +947,11 @@ function getSafeFullPageHref(value: string): string | null {
   return null;
 }
 
+function isExternalFullPageHref(value: string | null): boolean {
+  const href = String(value || '').trim().toLowerCase();
+  return href.startsWith('http://') || href.startsWith('https://') || href.startsWith('//') || href.startsWith('mailto:') || href.startsWith('tel:');
+}
+
 function copyAllowedFullPageAttributes(source: HTMLElement, target: HTMLElement) {
   for (const attr of Array.from(source.attributes)) {
     const name = attr.name.toLowerCase();
@@ -964,8 +969,13 @@ function copyAllowedFullPageAttributes(source: HTMLElement, target: HTMLElement)
       }
     }
   }
-  if (target.tagName.toLowerCase() === 'a' && target.getAttribute('target') === '_blank' && !target.getAttribute('rel')) {
-    target.setAttribute('rel', 'noopener noreferrer');
+  if (target.tagName.toLowerCase() === 'a') {
+    if (isExternalFullPageHref(target.getAttribute('href'))) {
+      target.setAttribute('target', '_blank');
+      target.setAttribute('rel', 'noopener noreferrer');
+    } else if (target.getAttribute('target') === '_blank' && !target.getAttribute('rel')) {
+      target.setAttribute('rel', 'noopener noreferrer');
+    }
   }
 }
 

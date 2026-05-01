@@ -331,6 +331,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.action === 'openExternalLinkInNewTab' || message.action === 'openExternalLinkInNewWindow') {
+    openExternalLinkInNewTab(message.url).then(() => sendResponse({ ok: true })).catch((error) => sendResponse({ ok: false, error: getErrorMessage(error) }));
+    return true;
+  }
+
   // translateBatch/getRateStatus 已移除（删除全文翻译与侧边栏指标）
 });
 
@@ -479,6 +484,60 @@ function getErrorMessage(error: unknown): string {
     if (msg) return msg;
   }
   return String(error ?? '未知错误');
+}
+
+function normalizeExternalTabUrl(input: unknown): string | null {
+  const raw = String(input || '').trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    if (url.protocol === 'http:' || url.protocol === 'https:') return url.href;
+  } catch { }
+  return null;
+}
+
+async function getLastFocusedNormalWindowId(): Promise<number | undefined> {
+  return await new Promise<number | undefined>((resolve) => {
+    try {
+      chrome.windows.getLastFocused({ windowTypes: ['normal'] } as any, (win) => {
+        const err = chrome.runtime.lastError;
+        if (err || typeof win?.id !== 'number') {
+          resolve(undefined);
+          return;
+        }
+        resolve(win.id);
+      });
+    } catch {
+      resolve(undefined);
+    }
+  });
+}
+
+async function openExternalLinkInNewTab(url: unknown): Promise<void> {
+  const targetUrl = normalizeExternalTabUrl(url);
+  if (!targetUrl) throw new Error('不支持的外部链接');
+
+  const windowId = await getLastFocusedNormalWindowId();
+
+  await new Promise<void>((resolve, reject) => {
+    try {
+      const createProps: chrome.tabs.CreateProperties = { url: targetUrl, active: true };
+      if (typeof windowId === 'number') createProps.windowId = windowId;
+      chrome.tabs.create(createProps, (tab) => {
+        const err = chrome.runtime.lastError;
+        if (err) {
+          reject(err);
+          return;
+        }
+        if (typeof tab?.windowId === 'number') {
+          try { chrome.windows.update(tab.windowId, { focused: true }); } catch { }
+        }
+        resolve();
+      });
+    } catch (error) {
+      reject(error);
+    }
+  });
 }
 
 function normalizeEnabledMcpServerNames(value: unknown): string[] {
