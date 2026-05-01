@@ -1,10 +1,13 @@
 import { DEFAULT_PROMPT_TEMPLATES, type PromptTemplates } from '@/shared/ai';
 import { DEFAULT_REASONING_EFFORT, DEFAULT_TASK_SETTINGS, type ReasoningEffort, type TaskSettings } from '@/shared/config';
+import { DEFAULT_MCP_SERVER_NAMES } from '@/shared/mcp';
 
 export type AssistantPreset = 'chat' | 'translate' | 'summarize';
 
 export interface AssistantSettings extends TaskSettings {
   enableClipboardListening: boolean;
+  mcpServerToggles: Record<string, boolean>;
+  enableMcpTools?: boolean;
   targetLang: string;
   prevLang: string;
 }
@@ -70,6 +73,7 @@ export interface NormalizeAssistantOptions {
   modelKeyByPreset?: Partial<Record<AssistantPreset, string>>;
   defaultModelKey?: string;
   defaultClipboardListening?: boolean;
+  defaultMcpServerToggles?: Record<string, boolean>;
   defaultTargetLang?: string;
   defaultPrevLang?: string;
   now?: number;
@@ -112,7 +116,7 @@ export function defaultPromptForPreset(preset: AssistantPreset, templates?: Part
 
 export function defaultSettingsForPreset(
   preset: AssistantPreset,
-  defaults: Partial<Pick<AssistantSettings, 'enableClipboardListening' | 'targetLang' | 'prevLang'>> = {},
+  defaults: Partial<Pick<AssistantSettings, 'enableClipboardListening' | 'mcpServerToggles' | 'targetLang' | 'prevLang'>> = {},
 ): AssistantSettings {
   return normalizeAssistantSettings(DEFAULT_TASK_SETTINGS[preset], preset, defaults);
 }
@@ -132,6 +136,7 @@ export function createDefaultAssistantConfigs(options: NormalizeAssistantOptions
     modelKey: options.modelKeyByPreset?.[def.preset] || options.defaultModelKey || '',
     settings: defaultSettingsForPreset(def.preset, {
       enableClipboardListening: options.defaultClipboardListening,
+      mcpServerToggles: options.defaultMcpServerToggles,
       targetLang: options.defaultTargetLang,
       prevLang: options.defaultPrevLang,
     }),
@@ -157,6 +162,7 @@ export function createAssistantConfig(input: Partial<AssistantConfig> = {}, opti
     modelKey: String(input.modelKey || options.modelKeyByPreset?.[preset] || options.defaultModelKey || '').trim(),
     settings: normalizeAssistantSettings(input.settings, preset, {
       enableClipboardListening: options.defaultClipboardListening,
+      mcpServerToggles: options.defaultMcpServerToggles,
       targetLang: options.defaultTargetLang,
       prevLang: options.defaultPrevLang,
     }),
@@ -198,7 +204,7 @@ export function resolveAssistantId(candidate: unknown, assistants: AssistantConf
 function normalizeAssistantSettings(
   raw: unknown,
   preset: AssistantPreset,
-  defaults: Partial<Pick<AssistantSettings, 'enableClipboardListening' | 'targetLang' | 'prevLang'>> = {},
+  defaults: Partial<Pick<AssistantSettings, 'enableClipboardListening' | 'mcpServerToggles' | 'targetLang' | 'prevLang'>> = {},
 ): AssistantSettings {
   const source = raw && typeof raw === 'object' ? raw as Partial<AssistantSettings> & Record<string, unknown> : {};
   const fallback = DEFAULT_TASK_SETTINGS[preset] || DEFAULT_TASK_SETTINGS.chat;
@@ -216,10 +222,38 @@ function normalizeAssistantSettings(
         : typeof legacyClipboard === 'boolean'
           ? legacyClipboard
           : !!defaults.enableClipboardListening,
+    mcpServerToggles: normalizeMcpServerToggles(source.mcpServerToggles, source.enableMcpTools, defaults.mcpServerToggles),
+    enableMcpTools: undefined,
     targetLang: normalizeLanguageCode(source.targetLang, normalizedDefaultTargetLang),
     prevLang: normalizeLanguageCode(source.prevLang, normalizedDefaultPrevLang),
     reasoningEffort: normalizeReasoningEffort(source.reasoningEffort ?? fallback.reasoningEffort),
   };
+}
+
+function normalizeMcpServerToggles(
+  value: unknown,
+  legacyEnableMcpTools?: unknown,
+  fallback?: Record<string, boolean>,
+): Record<string, boolean> {
+  const input = value && typeof value === 'object' ? value as Record<string, unknown> : null;
+  const normalized: Record<string, boolean> = {};
+  if (fallback && typeof fallback === 'object') {
+    for (const [name, enabled] of Object.entries(fallback)) {
+      const key = String(name || '').trim();
+      if (key) normalized[key] = !!enabled;
+    }
+  }
+  if (input) {
+    for (const [name, enabled] of Object.entries(input)) {
+      const key = String(name || '').trim();
+      if (key) normalized[key] = !!enabled;
+    }
+    return normalized;
+  }
+  if (legacyEnableMcpTools === true) {
+    for (const name of DEFAULT_MCP_SERVER_NAMES) normalized[name] = true;
+  }
+  return normalized;
 }
 
 function normalizeLanguageCode(value: unknown, fallback: string): string {

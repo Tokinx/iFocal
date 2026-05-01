@@ -7,6 +7,8 @@ export function iconOfNav(id: string): string {
       return 'proicons:sparkle-2';
     case 'machine':
       return 'ri:translate-ai';
+    case 'mcp':
+      return 'ri:apps-2-ai-line';
     case 'settings':
       return 'ri:settings-4-line';
     case 'debug':

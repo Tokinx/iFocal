@@ -5,6 +5,10 @@ import {
   normalizeMachineTranslateChannels,
   normalizeMachineTranslateDefaultChannelId,
 } from '@/shared/machine-translation';
+import {
+  DEFAULT_MCP_SERVERS,
+  normalizeMcpServers,
+} from '@/shared/mcp';
 
 // 支持的语言列表
 export const SUPPORTED_LANGUAGES = [
@@ -137,6 +141,9 @@ export const DEFAULT_CONFIG = {
   // 机器翻译渠道：用于后续网页全文翻译与批量翻译
   mtChannels: DEFAULT_MACHINE_TRANSLATE_CHANNELS,
   mtDefaultChannelId: DEFAULT_MACHINE_TRANSLATE_CHANNEL_ID,
+
+  // MCP 服务：默认内置 DuckDuckGo 搜索与时间工具，具体调用由助手功能开关控制
+  mcpServers: DEFAULT_MCP_SERVERS,
 
   // 新增：译文样式名称（应用到译文包裹元素），默认点状下划线
   wrapperStyleName: 'ifocal-target-style-dotted',
@@ -273,6 +280,7 @@ export const CONFIG_KEYS = [
   'reduceVisualEffects',
   'mtChannels',
   'mtDefaultChannelId',
+  'mcpServers',
   'wrapperStyleName',
   'targetStylePresets'
 ];
@@ -301,6 +309,10 @@ export async function loadConfig(): Promise<typeof DEFAULT_CONFIG> {
             else if (key === 'mtChannels') {
               (config as any)[key] = normalizeMachineTranslateChannels(items[key]);
             }
+            // 特殊处理：MCP 服务始终补齐内置 duckduckgo/time
+            else if (key === 'mcpServers') {
+              (config as any)[key] = normalizeMcpServers(items[key]);
+            }
             else {
               (config as any)[key] = items[key];
             }
@@ -316,6 +328,7 @@ export async function loadConfig(): Promise<typeof DEFAULT_CONFIG> {
         if (config.fullPageDisplayMode !== 'replace') config.fullPageDisplayMode = 'insert';
         config.mtChannels = normalizeMachineTranslateChannels((config as any).mtChannels);
         config.mtDefaultChannelId = normalizeMachineTranslateDefaultChannelId((config as any).mtDefaultChannelId, config.mtChannels);
+        config.mcpServers = normalizeMcpServers((config as any).mcpServers);
 
         // 兼容性迁移：如果存在旧的全局开关，迁移到新结构
         const hasOldSettings = items.enableContext !== undefined ||

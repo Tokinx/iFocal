@@ -61,6 +61,7 @@ import {
 } from '@/shared/assistants';
 import { modelIdFromSpec, parseModelSpec } from '@/shared/model-utils';
 import { loadPromptTemplates } from '@/shared/prompt-templates';
+import { mcpServersToEntries, type McpServerEntry } from '@/shared/mcp';
 import WindowSidebar from './components/WindowSidebar.vue';
 import AssistantEditorDialog from './components/AssistantEditorDialog.vue';
 import ChatPage from './pages/ChatPage.vue';
@@ -110,6 +111,8 @@ const enableReasoning = ref(false); // 思考模式
 const reasoningEffort = ref<ReasoningEffort>(DEFAULT_REASONING_EFFORT); // 思考等级
 const enableContext = ref(false); // 上下文
 const enableFileUpload = ref(false); // 文件上传
+const mcpServers = ref<McpServerEntry[]>([]); // 可用 MCP Server
+const mcpServerToggles = ref<Record<string, boolean>>({}); // 当前助手的 MCP 开关
 const reduceVisualEffects = ref(false); // 减弱视觉效果配置
 const autoPasteGlobalAssistant = ref(false); // 当前助手：是否监听剪贴板
 const maxSessionsCount = ref(10);
@@ -319,6 +322,12 @@ const groupedModels = computed(() => {
   return groups;
 });
 
+const enabledMcpServerNames = computed(() => {
+  return mcpServers.value
+    .filter((server) => !!mcpServerToggles.value[server.name])
+    .map((server) => server.name);
+});
+
 // 切换会话时清空解析缓存
 watch(currentSessionId, () => {
   for (const k in parsedCache) delete (parsedCache as any)[k];
@@ -338,6 +347,8 @@ const assistantCtx = computed<AssistantWorkspaceContext>(() => ({
   reasoningEffort: reasoningEffort.value,
   enableContext: enableContext.value,
   enableFileUpload: enableFileUpload.value,
+  mcpServers: mcpServers.value,
+  mcpServerToggles: mcpServerToggles.value,
   autoPasteGlobalAssistant: autoPasteGlobalAssistant.value,
   currentModelName: currentModelName.value,
   groupedModels: groupedModels.value,
@@ -359,6 +370,7 @@ const assistantCtx = computed<AssistantWorkspaceContext>(() => ({
   toggleContext,
   toggleClipboardListening,
   toggleFileUpload,
+  toggleMcpServer,
   openSettings: openSettingsCenter,
   handleScrollToBottomClick,
   retryMessage,
@@ -835,6 +847,7 @@ function applyAssistantRuntime(assistant: AssistantConfig | null) {
   reasoningEffort.value = assistant.settings.reasoningEffort;
   enableContext.value = assistant.settings.enableContext;
   enableFileUpload.value = assistant.settings.enableFileUpload;
+  mcpServerToggles.value = { ...(assistant.settings.mcpServerToggles || {}) };
   autoPasteGlobalAssistant.value = !!assistant.settings.enableClipboardListening;
   if (autoPasteGlobalAssistant.value && document.hasFocus()) {
     startClipboardMonitoring(false);
@@ -1327,6 +1340,7 @@ async function sendPreparedMessage(
   const contextCount = globalConfig.contextMessagesCount || 2;
   const enableContextFlag = enableContext.value;
   const enableReasoningFlag = enableReasoning.value;
+  const enabledMcpServerNamesSnapshot = enabledMcpServerNames.value;
   const reasoningEffortFlag = reasoningEffort.value;
 
   // 添加用户消息到当前会话
@@ -1379,10 +1393,10 @@ async function sendPreparedMessage(
 
   // 如果启用流式，使用流式调用
   if (enableStreaming.value) {
-    await handleStreamingSend(text, pair, session, currentModelNameSnapshot, assistantPromptSnapshot, enableContextFlag, contextCount, enableReasoningFlag, reasoningEffortFlag, requestStartAt, requestId, attachments);
+    await handleStreamingSend(text, pair, session, currentModelNameSnapshot, assistantPromptSnapshot, enableContextFlag, contextCount, enableReasoningFlag, enabledMcpServerNamesSnapshot, reasoningEffortFlag, requestStartAt, requestId, attachments);
   } else {
     inflightRequestId = requestId;
-    await handleNonStreamingSend(text, pair, session, currentModelNameSnapshot, assistantPromptSnapshot, enableContextFlag, contextCount, enableReasoningFlag, reasoningEffortFlag, requestStartAt, requestId, attachments);
+    await handleNonStreamingSend(text, pair, session, currentModelNameSnapshot, assistantPromptSnapshot, enableContextFlag, contextCount, enableReasoningFlag, enabledMcpServerNamesSnapshot, reasoningEffortFlag, requestStartAt, requestId, attachments);
   }
 }
 
@@ -1396,6 +1410,7 @@ async function handleNonStreamingSend(
   enableContext: boolean,
   contextCount: number,
   enableReasoning: boolean,
+  enabledMcpServers: string[],
   reasoningEffort: ReasoningEffort,
   requestStartAt: number,
   requestId: string,
@@ -1408,6 +1423,7 @@ async function handleNonStreamingSend(
     targetLang: state.targetLang,
     prevLang: state.prevLang,
     enableReasoning,
+    enabledMcpServers,
     reasoningEffort,
     assistantPrompt,
     requestId
@@ -1516,6 +1532,7 @@ async function handleStreamingSend(
   enableContext: boolean,
   contextCount: number,
   enableReasoning: boolean,
+  enabledMcpServers: string[],
   reasoningEffort: ReasoningEffort,
   requestStartAt: number,
   requestId: string,
@@ -1528,6 +1545,7 @@ async function handleStreamingSend(
     targetLang: state.targetLang,
     prevLang: state.prevLang,
     enableReasoning,
+    enabledMcpServers,
     reasoningEffort,
     assistantPrompt
   };
@@ -2066,6 +2084,21 @@ async function toggleFileUpload(checked: boolean) {
   }
 }
 
+async function toggleMcpServer(name: string, checked: boolean) {
+  const key = String(name || '').trim();
+  if (!key) return;
+  const next = {
+    ...mcpServerToggles.value,
+    [key]: checked,
+  };
+  mcpServerToggles.value = next;
+  try {
+    await updateActiveAssistantSettings({ mcpServerToggles: next });
+  } catch (e) {
+    console.error('保存 MCP 功能设置失败:', e);
+  }
+}
+
 async function toggleClipboardListening(checked: boolean) {
   autoPasteGlobalAssistant.value = checked;
   try {
@@ -2110,6 +2143,7 @@ onMounted(async () => {
   maxSessionsCount.value = normalizeMaxSessionsCount(globalConfig.maxSessionsCount);
   contextMessagesCount.value = normalizeContextMessagesCount(globalConfig.contextMessagesCount);
   reduceVisualEffects.value = globalConfig.reduceVisualEffects || false;
+  mcpServers.value = mcpServersToEntries((globalConfig as any).mcpServers);
   applyAssistantRuntime(activeAssistant.value);
   const activeRouteTask = routeNameToTask(currentRoute.value.name);
   if (!hasInitialRoute) {
@@ -2143,6 +2177,9 @@ onMounted(async () => {
       }
       if (area === 'sync' && changes.reduceVisualEffects) {
         reduceVisualEffects.value = !!changes.reduceVisualEffects.newValue;
+      }
+      if (area === 'sync' && changes.mcpServers) {
+        mcpServers.value = mcpServersToEntries(changes.mcpServers.newValue);
       }
       if (area === 'local' && changes[GLOBAL_WIN_VIEW_KEY]) {
         void consumeRequestedWindowView(changes[GLOBAL_WIN_VIEW_KEY].newValue);

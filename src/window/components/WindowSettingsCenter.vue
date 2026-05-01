@@ -26,6 +26,13 @@ import {
   type MachineTranslateChannel,
   type MachineTranslateProvider,
 } from '@/shared/machine-translation';
+import {
+  mcpEntriesToServers,
+  mcpServersToEntries,
+  normalizeMcpServerName,
+  type McpServerEntry,
+  type McpServerType,
+} from '@/shared/mcp';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import ModelSelect from './ModelSelect.vue';
 
@@ -38,7 +45,7 @@ withDefaults(defineProps<{
 type ModelPair = { channel: string; model: string } | null;
 
 // 左侧导航：默认显示"通用设置"
-const nav = ref<'channels' | 'machine' | 'settings' | 'debug' | 'about'>('settings');
+const nav = ref<'channels' | 'machine' | 'mcp' | 'settings' | 'debug' | 'about'>('settings');
 
 const { channels, modelPairs, addForm, addChannel, testModel, initTestModels, editForm, saveEdit, removeChannel, restoreChannelsSnapshot } = useChannels();
 const toast = useToast();
@@ -51,6 +58,15 @@ const defaultAssistantId = ref(DEFAULT_ASSISTANT_ID);
 const config = ref({ ...DEFAULT_CONFIG });
 const machineChannels = ref<MachineTranslateChannel[]>(normalizeMachineTranslateChannels(DEFAULT_CONFIG.mtChannels));
 const mtDefaultChannelId = ref(DEFAULT_CONFIG.mtDefaultChannelId);
+const mcpServers = ref<McpServerEntry[]>(mcpServersToEntries(DEFAULT_CONFIG.mcpServers));
+const mcpExpanded = reactive<boolean[]>([]);
+const mcpTesting = reactive<boolean[]>([]);
+const showAddMcpServer = ref(false);
+const mcpAddForm = reactive({
+  name: '',
+  type: 'streamable_http' as McpServerType,
+  url: '',
+});
 const mtExpanded = reactive<boolean[]>([]);
 const mtTesting = reactive<boolean[]>([]);
 const mtShowApiKey = reactive<boolean[]>([]);
@@ -100,6 +116,30 @@ function syncMachineChannelUiState() {
   mtTesting.length = machineChannels.value.length;
   mtShowApiKey.length = machineChannels.value.length;
   mtShowSecretKey.length = machineChannels.value.length;
+}
+
+function syncMcpServerUiState() {
+  mcpServers.value.forEach((_, index) => {
+    mcpExpanded[index] = !!mcpExpanded[index];
+    mcpTesting[index] = !!mcpTesting[index];
+  });
+  mcpExpanded.length = mcpServers.value.length;
+  mcpTesting.length = mcpServers.value.length;
+}
+
+function resetMcpAddForm() {
+  mcpAddForm.name = '';
+  mcpAddForm.type = 'streamable_http';
+  mcpAddForm.url = '';
+}
+
+function openAddMcpServer() {
+  resetMcpAddForm();
+  showAddMcpServer.value = true;
+}
+
+function closeAddMcpServer() {
+  showAddMcpServer.value = false;
 }
 
 function machineProviderLabel(provider: MachineTranslateProvider) {
@@ -277,6 +317,8 @@ async function loadAll() {
     machineChannels.value = normalizeMachineTranslateChannels((globalConfig as any).mtChannels);
     mtDefaultChannelId.value = normalizeMachineTranslateDefaultChannelId((globalConfig as any).mtDefaultChannelId, machineChannels.value);
     syncMachineChannelUiState();
+    mcpServers.value = mcpServersToEntries((globalConfig as any).mcpServers);
+    syncMcpServerUiState();
     (config.value as any).targetStylePresets = mergeTargetStylePresets((config.value as any).targetStylePresets);
     styleSelection.value = String((config.value as any).wrapperStyleName || DEFAULT_WRAPPER_STYLE_NAME).trim() || DEFAULT_WRAPPER_STYLE_NAME;
     ensureOptionPresetStyles((config.value as any).targetStylePresets);
@@ -631,6 +673,60 @@ function handleTestChannel(idx: number) {
   } catch { toast.error('测试调用失败'); }
 }
 
+async function handleTestMcpServer(idx: number) {
+  const server = mcpServers.value[idx];
+  if (!server) return;
+  const name = normalizeMcpServerName(server.name);
+  const url = String(server.url || '').trim();
+  if (!name) {
+    toast.error('MCP 名称不能为空');
+    return;
+  }
+  if (!url) {
+    toast.error('MCP URL 不能为空');
+    return;
+  }
+
+  mcpTesting[idx] = true;
+  try {
+    const resp = await new Promise<any>((resolve, reject) => {
+      chrome.runtime.sendMessage({
+        action: 'testMcpServer',
+        server: {
+          name,
+          type: server.type,
+          url,
+          builtin: !!server.builtin,
+        },
+      }, (result: any) => {
+        const error = chrome.runtime.lastError;
+        if (error) {
+          reject(new Error(error.message));
+          return;
+        }
+        resolve(result);
+      });
+    });
+
+    if (!resp) {
+      toast.error('MCP 测试失败：无响应');
+      return;
+    }
+    if (!resp.ok) {
+      toast.error(`MCP 测试失败：${resp.error || '未知错误'}`);
+      return;
+    }
+    const tools = Array.isArray(resp.tools) ? resp.tools : [];
+    const names = tools.map((tool: any) => String(tool?.name || '').trim()).filter(Boolean);
+    const suffix = names.length ? `：${names.slice(0, 6).join('、')}${names.length > 6 ? '…' : ''}` : '';
+    toast.success(`MCP 测试成功，发现 ${tools.length} 个工具${suffix}`);
+  } catch (e: any) {
+    toast.error(`MCP 测试失败：${String(e?.message || e || '调用失败')}`);
+  } finally {
+    mcpTesting[idx] = false;
+  }
+}
+
 async function saveMachineTranslateSettings(showToast = true) {
   try {
     const channels = normalizeMachineTranslateChannels(machineChannels.value);
@@ -645,6 +741,85 @@ async function saveMachineTranslateSettings(showToast = true) {
   } catch (e: any) {
     toast.error(String(e?.message || e || '保存失败'));
   }
+}
+
+async function saveMcpSettings(showToast = true) {
+  try {
+    if (!validateMcpNames()) return;
+    const servers = mcpEntriesToServers(mcpServers.value);
+    mcpServers.value = mcpServersToEntries(servers);
+    (config.value as any).mcpServers = servers;
+    await saveConfig({ mcpServers: servers } as any);
+    syncMcpServerUiState();
+    if (showToast) toast.success('MCP 设置已保存');
+  } catch (e: any) {
+    toast.error(String(e?.message || e || '保存失败'));
+  }
+}
+
+async function handleAddMcpServer() {
+  const name = normalizeMcpServerName(mcpAddForm.name);
+  const url = String(mcpAddForm.url || '').trim();
+  if (!name) {
+    toast.error('MCP 名称不能为空');
+    return;
+  }
+  if (mcpServers.value.some((item) => item.name === name)) {
+    toast.error('MCP 名称已存在');
+    return;
+  }
+  if (!url) {
+    toast.error('MCP URL 不能为空');
+    return;
+  }
+  mcpServers.value = [
+    ...mcpServers.value,
+    {
+      name,
+      type: mcpAddForm.type,
+      url,
+      enabled: true,
+      builtin: false,
+    },
+  ];
+  await saveMcpSettings(false);
+  closeAddMcpServer();
+  toast.success('MCP 服务已添加');
+}
+
+async function removeMcpServer(idx: number) {
+  const server = mcpServers.value[idx];
+  if (!server) return;
+  if (server.builtin) {
+    toast.error('内置 MCP 服务不可删除，可选择禁用');
+    return;
+  }
+  mcpServers.value.splice(idx, 1);
+  await saveMcpSettings(false);
+  toast.success('MCP 服务已删除');
+}
+
+function validateMcpNames(): boolean {
+  const seen = new Set<string>();
+  for (const server of mcpServers.value) {
+    const name = normalizeMcpServerName(server.name);
+    if (!name) {
+      toast.error('MCP 名称不能为空');
+      return false;
+    }
+    if (seen.has(name)) {
+      toast.error(`MCP 名称重复：${name}`);
+      return false;
+    }
+    seen.add(name);
+    server.name = name;
+    server.url = String(server.url || '').trim();
+    if (!server.url) {
+      toast.error(`MCP URL 不能为空：${name}`);
+      return false;
+    }
+  }
+  return true;
 }
 
 function openAddMachineChannel() {
@@ -1007,13 +1182,14 @@ async function fetchAddFormModels() {
         <nav class="space-y-1" :class="embedded ? 'pt-0' : 'pt-12'">
           <Button v-for="item in [
             { id: 'settings', label: '通用设置' },
-            { id: 'channels', label: '渠道管理' },
             { id: 'machine', label: '机器翻译' },
+            { id: 'channels', label: '渠道管理' },
+            { id: 'mcp', label: 'MCP功能' },
             { id: 'debug', label: '其它设置' },
             { id: 'about', label: '关于插件' }
-          ] as Array<{ id: 'channels' | 'machine' | 'settings' | 'debug' | 'about'; label: string }>" :key="item.id"
+          ] as Array<{ id: 'channels' | 'machine' | 'mcp' | 'settings' | 'debug' | 'about'; label: string }>" :key="item.id"
             variant="ghost"
-            class="w-full justify-center gap-1 text-olive-500 hover:bg-olive-100 hover:text-amber-800/80"
+            class="w-full justify-start gap-1 text-olive-500 hover:bg-olive-100 hover:text-amber-800/80"
             :class="nav === (item.id as any) ? 'bg-olive-100 !text-amber-800' : ''" @click="nav = item.id as any">
             <Icon :icon="iconOfNav(item.id)" width="16" class="opacity-80" />
             <span>{{ item.label }}</span>
@@ -1401,6 +1577,137 @@ async function fetchAddFormModels() {
                   <div class="w-full"></div>
                   <Button class="bg-primary text-primary-foreground flex items-center gap-1"
                     @click="saveMachineTranslateSettings()">
+                    <Icon :icon="iconOfAction('save')" width="16" /> 保存
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- MCP 功能 -->
+        <section v-if="nav === 'mcp'" :id="'opt-mcp'" class="space-y-4">
+          <header class="flex items-center h-10 text-base font-semibold">
+            <div class="shrink-0">MCP 功能</div>
+            <div class="w-full"></div>
+            <Button size="sm" @click="openAddMcpServer">
+              <Icon icon="proicons:box-add" width="16" />
+              添加 MCP
+            </Button>
+          </header>
+
+          <div class="border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-900">
+            默认内置 DuckDuckGo 搜索和 Time 服务。这里管理 MCP Server 名称、类型和 URL；每个助手是否启用某个 MCP 由输入框功能菜单分别控制。
+          </div>
+
+          <div v-if="showAddMcpServer" class="border p-4 space-y-3">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <label class="text-sm font-medium leading-none block mb-1">新增 MCP Server</label>
+                <p class="text-xs text-muted-foreground">名称会作为 mcpServers 的 key，需保持唯一</p>
+              </div>
+              <div class="flex items-center gap-2">
+                <Button class="bg-primary text-primary-foreground" @click="handleAddMcpServer">添加</Button>
+                <Button variant="outline" @click="closeAddMcpServer">取消</Button>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div class="space-y-1">
+                <Label class="block">MCP 名称</Label>
+                <Input v-model="mcpAddForm.name" placeholder="如 my-search" />
+              </div>
+              <div class="space-y-1">
+                <Label class="block">类型</Label>
+                <Select v-model="mcpAddForm.type">
+                  <SelectTrigger class="w-full">
+                    <SelectValue placeholder="选择类型" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="sse">SSE</SelectItem>
+                    <SelectItem value="streamable_http">Streamable HTTP</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div class="space-y-1 col-span-2">
+                <Label class="block">URL</Label>
+                <Input v-model="mcpAddForm.url" placeholder="https://example.com/mcp" />
+              </div>
+            </div>
+          </div>
+
+          <div class="space-y-3">
+            <div v-for="(server, idx) in mcpServers" :key="server.name" class="border p-4 space-y-3">
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2 flex-1 min-w-0">
+                  <Button variant="ghost" size="icon" class="h-8 w-8 shrink-0"
+                    @click="mcpExpanded[idx] = !mcpExpanded[idx]" :title="mcpExpanded[idx] ? '收起' : '展开'">
+                    <Icon :icon="mcpExpanded[idx] ? 'lucide:chevron-down' : 'lucide:chevron-right'" />
+                  </Button>
+                  <div class="flex-1 w-0 truncate">
+                    <div class="font-medium inline-flex items-center gap-2">
+                      <span>{{ server.name }}</span>
+                      <span v-if="server.builtin" class="px-1.5 py-0.5 text-[11px] text-emerald-600 bg-emerald-100">
+                        内置
+                      </span>
+                    </div>
+                    <div class="text-xs text-muted-foreground truncate max-w-[80%]" :title="server.url">
+                      {{ server.type }} · {{ server.url }}
+                    </div>
+                  </div>
+                </div>
+                <div class="flex items-center gap-2 shrink-0">
+                  <Button variant="outline" size="sm" class="flex items-center gap-1" :disabled="!!mcpTesting[idx]"
+                    @click.stop="handleTestMcpServer(idx)">
+                    <Icon :icon="mcpTesting[idx] ? 'ri:loader-4-line' : iconOfAction('test')" width="16"
+                      :class="mcpTesting[idx] ? 'animate-spin' : ''" />
+                    {{ mcpTesting[idx] ? '测试中' : '测试' }}
+                  </Button>
+                </div>
+              </div>
+
+              <div v-if="mcpExpanded[idx]" class="space-y-3">
+                <div class="flex items-center justify-between gap-4">
+                  <div>
+                    <label class="text-sm font-medium leading-none block mb-1">MCP 名称</label>
+                    <p class="text-xs text-muted-foreground">自定义项可修改；内置项名称用于默认配置识别</p>
+                  </div>
+                  <div class="w-72">
+                    <Input v-model="server.name" :disabled="!!server.builtin" />
+                  </div>
+                </div>
+                <div class="flex items-center justify-between gap-4">
+                  <div>
+                    <label class="text-sm font-medium leading-none block mb-1">类型</label>
+                    <p class="text-xs text-muted-foreground">支持 SSE 与 Streamable HTTP</p>
+                  </div>
+                  <div class="w-72">
+                    <Select v-model="server.type">
+                      <SelectTrigger class="w-full">
+                        <SelectValue placeholder="选择类型" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="sse">SSE</SelectItem>
+                        <SelectItem value="streamable_http">Streamable HTTP</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div class="flex items-center justify-between gap-4">
+                  <div>
+                    <label class="text-sm font-medium leading-none block mb-1">URL</label>
+                    <p class="text-xs text-muted-foreground">远程 MCP Server 地址</p>
+                  </div>
+                  <div class="w-[32rem]">
+                    <Input v-model="server.url" placeholder="https://example.com/mcp" />
+                  </div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <Button variant="outline" class="flex items-center gap-1 text-red-600" :disabled="!!server.builtin"
+                    @click="removeMcpServer(idx)">
+                    <Icon :icon="iconOfAction('delete')" width="16" /> 删除
+                  </Button>
+                  <div class="w-full"></div>
+                  <Button class="bg-primary text-primary-foreground flex items-center gap-1" @click="saveMcpSettings()">
                     <Icon :icon="iconOfAction('save')" width="16" /> 保存
                   </Button>
                 </div>

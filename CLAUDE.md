@@ -18,6 +18,7 @@ iFocal 是一个 Chrome/Edge Manifest V3 浏览器扩展，核心是“网页内
 共享逻辑集中在 `src/shared/`，尤其是：
 - `config.ts`：默认配置、任务设置、Chrome storage 读写与兼容迁移
 - `ai.ts`：Prompt 片段与消息构造
+- `mcp.ts`：MCP Server 默认配置、名称与传输类型归一化
 - `model-utils.ts`：模型 ID / 展示名解析约定
 - `app-config.ts`：限流默认值、system role 兼容规则
 
@@ -38,7 +39,7 @@ npm run ui:add:more
 补充说明：
 - 项目当前没有 lint 脚本。
 - 项目当前没有测试脚本，也没有单测框架配置；因此不存在“运行单个测试”的命令。
-- 构建产物输出到 `dist/`，扩展调试时需要在 `chrome://extensions` 加载或重新加载 `dist/`。
+- 构建产物输出到 `dist/`，扩展调试时需要在 `chrome://extensions` 加载项目根目录，并在改动后重新加载扩展。
 
 ## 构建与入口结构
 
@@ -60,6 +61,7 @@ Vite 当前使用三个构建入口，定义在 `vite.config.ts`：
 background 负责：
 - 根据任务和配置挑选模型
 - 按渠道类型分发到 OpenAI / Gemini / OpenAI-compatible 适配层
+- 按助手级 MCP 开关注入 OpenAI-compatible `tools`，并执行单轮 MCP `tool_calls`
 - 应用限流、并发控制和退避重试
 - 统一处理流式与非流式响应
 
@@ -175,4 +177,5 @@ background 负责：
 - 当前没有测试体系；做改动后最可靠的验证方式是 `npm run build` 加浏览器内手动验证。
 - 设置页与全局助手窗口是 Vue 应用；内容脚本和 background 不是。
 - 仓库里已经有一套较完整的任务级配置体系（context / streaming / reasoning / file upload / reasoning effort），不要在局部页面重复发明同类配置。
+- MCP 目前已有设置入口和按 Server 名称保存的助手级开关，默认 duckduckgo/time 服务在 `src/shared/mcp.ts`；OpenAI-compatible 链路已在 background 注入 `tools` 并执行单轮工具调用，Gemini 链路暂未接入。
 - 代码中仍保留少量兼容旧配置/旧格式的逻辑；改配置结构时应优先做兼容迁移，而不是只改单点读写。

@@ -1,6 +1,7 @@
 import type { ComponentPublicInstance } from 'vue'
 import type { AssistantPreset } from '@/shared/assistants'
 import type { ReasoningEffort } from '@/shared/config'
+import type { McpServerEntry } from '@/shared/mcp'
 
 export type AssistantTask = 'translate' | 'summarize' | 'rewrite' | 'polish' | 'chat'
 
@@ -67,6 +68,8 @@ export interface AssistantWorkspaceContext {
   reasoningEffort: ReasoningEffort
   enableContext: boolean
   enableFileUpload: boolean
+  mcpServers: McpServerEntry[]
+  mcpServerToggles: Record<string, boolean>
   autoPasteGlobalAssistant: boolean
   currentModelName: string
   groupedModels: Record<string, ModelOption[]>
@@ -88,6 +91,7 @@ export interface AssistantWorkspaceContext {
   toggleContext: (checked: boolean) => void
   toggleClipboardListening: (checked: boolean) => void
   toggleFileUpload: (checked: boolean) => void
+  toggleMcpServer: (name: string, checked: boolean) => void
   openSettings: () => void
   handleScrollToBottomClick: () => void
   retryMessage: (messageIndex: number) => void

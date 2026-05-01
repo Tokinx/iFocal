@@ -71,13 +71,22 @@
                 </div>
                 <Switch :model-value="enableFileUpload" @update:modelValue="$emit('toggleFileUpload', $event)" />
               </div>
-              <!-- 网络搜索（占位） -->
-              <div class="flex items-center justify-between">
+              <!-- MCP 功能 -->
+              <div class="space-y-2">
                 <div class="flex items-center gap-2">
-                  <Icon icon="ri:search-ai-line" class="h-4 w-4" />
-                  <span class="text-sm font-medium">网络搜索</span>
+                  <Icon icon="ri:apps-2-ai-line" class="h-4 w-4" />
+                  <span class="text-sm font-medium">MCP 功能</span>
                 </div>
-                <Switch disabled />
+                <div v-if="mcpServers.length" class="space-y-2 pl-6">
+                  <div v-for="server in mcpServers" :key="server.name" class="flex items-center justify-between gap-3">
+                    <span class="min-w-0 truncate text-xs text-muted-foreground" :title="server.name">
+                      {{ server.name }}
+                    </span>
+                    <Switch :model-value="!!mcpServerToggles[server.name]"
+                      @update:modelValue="$emit('toggleMcpServer', server.name, !!$event)" />
+                  </div>
+                </div>
+                <p v-else class="pl-6 text-xs text-muted-foreground">暂无可用 MCP Server</p>
               </div>
             </div>
           </ScrollArea>
@@ -159,6 +168,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Switch } from '@/components/ui/switch'
 import type { ReasoningEffort } from '@/shared/config'
+import type { McpServerEntry } from '@/shared/mcp'
 import ModelSelect from './ModelSelect.vue'
 import {
   DropdownMenu,
@@ -184,6 +194,8 @@ const props = defineProps<{
   enableContext: boolean
   autoPasteGlobalAssistant: boolean
   enableFileUpload: boolean
+  mcpServers: McpServerEntry[]
+  mcpServerToggles: Record<string, boolean>
   currentModelName: string
   groupedModels: Record<string, Array<{ key: string; model: string; channel: string }>>
   selectedPairKey: string
@@ -202,6 +214,7 @@ const emit = defineEmits<{
   (e: 'toggleContext', checked: boolean): void
   (e: 'toggleClipboardListening', checked: boolean): void
   (e: 'toggleFileUpload', checked: boolean): void
+  (e: 'toggleMcpServer', name: string, checked: boolean): void
   (e: 'selectModel', key: string): void
   (e: 'attachmentsChange', files: FileAttachment[]): void
 }>()

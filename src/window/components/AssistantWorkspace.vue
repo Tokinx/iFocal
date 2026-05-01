@@ -147,13 +147,16 @@
         <ChatInput ref="chatInputRef" :model-value="ctx.text" :sending="ctx.isBusy"
           :enable-streaming="ctx.enableStreaming" :enable-reasoning="ctx.enableReasoning"
           :reasoning-effort="ctx.reasoningEffort" :enable-context="ctx.enableContext"
-          :enable-file-upload="ctx.enableFileUpload" :auto-paste-global-assistant="ctx.autoPasteGlobalAssistant"
+          :enable-file-upload="ctx.enableFileUpload" :mcp-servers="ctx.mcpServers"
+          :mcp-server-toggles="ctx.mcpServerToggles"
+          :auto-paste-global-assistant="ctx.autoPasteGlobalAssistant"
           :bg-class="ctx.bgClass" :blur-class="ctx.blurClass" :current-model-name="ctx.currentModelName"
           :grouped-models="ctx.groupedModels" :selected-pair-key="ctx.selectedPairKey"
           @update:modelValue="ctx.updateText" @selectModel="ctx.selectModel" @send="ctx.handleSend"
           @stop="ctx.stopGenerating" @toggleStreaming="ctx.toggleStreaming" @toggleReasoning="ctx.toggleReasoning"
           @changeReasoningEffort="ctx.changeReasoningEffort" @toggleContext="ctx.toggleContext"
           @toggleClipboardListening="ctx.toggleClipboardListening" @toggleFileUpload="ctx.toggleFileUpload"
+          @toggleMcpServer="ctx.toggleMcpServer"
           @openSettings="ctx.openSettings" />
       </footer>
     </ScrollArea>
