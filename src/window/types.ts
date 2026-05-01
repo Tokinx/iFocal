@@ -5,12 +5,24 @@ import type { McpServerEntry } from '@/shared/mcp'
 
 export type AssistantTask = 'translate' | 'summarize' | 'rewrite' | 'polish' | 'chat'
 
+export type WindowToolStatusPhase = 'preparing' | 'running' | 'finished' | 'error'
+
+export interface WindowToolStatus {
+  id: string
+  phase: WindowToolStatusPhase
+  message: string
+  toolName?: string
+  displayName?: string
+  url?: string
+}
+
 export interface WindowMessage {
   role: 'user' | 'assistant'
   content: string
   isError?: boolean
   modelName?: string
   isStreaming?: boolean
+  toolStatuses?: WindowToolStatus[]
   reasoningStartedAt?: number
   reasoningEndedAt?: number
   reasoningCollapsed?: boolean

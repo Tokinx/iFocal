@@ -69,6 +69,17 @@ type AiSdkMcpToolContext = {
   toolRefs: Record<string, McpToolReference>;
 };
 
+type McpToolStatusPhase = 'preparing' | 'running' | 'finished' | 'error' | 'clear';
+
+type McpToolStatusEvent = {
+  phase: McpToolStatusPhase;
+  id?: string;
+  toolName?: string;
+  displayName?: string;
+  message: string;
+  url?: string;
+};
+
 type ModelInvokeOptions = {
   enableReasoning?: boolean;
   reasoningEffort?: ReasoningEffort;
@@ -78,13 +89,12 @@ type ModelInvokeOptions = {
   systemPrompt?: string;
   enabledMcpServers?: string[];
   mcpServers?: McpServersConfig;
+  onToolStatus?: (status: McpToolStatusEvent) => void;
 };
 
 const MCP_TOOL_CACHE_TTL_MS = 5 * 60 * 1000;
 const MCP_CONNECT_TIMEOUT_MS = 15000;
 const MCP_REQUEST_TIMEOUT_MS = 20000;
-const MCP_MAX_TOOL_CALLS_PER_TURN = 8;
-const MCP_MAX_TOOL_RESULT_CHARS = 20000;
 const mcpToolCache = new Map<string, McpToolCacheEntry>();
 const MCP_CSP_SAFE_JSON_SCHEMA_VALIDATOR = {
   getValidator() {
@@ -385,6 +395,9 @@ chrome.runtime.onConnect.addListener((port) => {
           systemPrompt,
           enabledMcpServers,
           mcpServers: cfg.mcpServers,
+          onToolStatus: (status) => {
+            if (!portDisconnected) safePost({ type: 'toolStatus', ...status });
+          },
         }
       );
 
@@ -807,314 +820,40 @@ async function withMcpTimeout<T>(promise: Promise<T>, timeoutMs: number, message
   }
 }
 
-function getOpenAIToolCalls(message: any): any[] {
-  const toolCalls = Array.isArray(message?.tool_calls) ? message.tool_calls : [];
-  return toolCalls.filter((call) => call?.type === 'function' && call?.function?.name);
-}
-
-function isDsmlToolCall(call: any): boolean {
-  return call?.ifocalProtocol === 'dsml';
-}
-
-function stripInternalToolCallFields(call: any): any {
-  return {
-    id: String(call?.id || ''),
-    type: 'function',
-    function: {
-      name: String(call?.function?.name || ''),
-      arguments: String(call?.function?.arguments || ''),
-    },
-  };
-}
-
-const DSML_TOOL_CALLS_OPEN = '<｜DSML｜tool_calls>';
-const DSML_TOOL_CALLS_CLOSE = '</｜DSML｜tool_calls>';
-
-type DsmlStreamState = {
-  pending: string;
-  insideBlock: boolean;
-  blockBuffer: string;
-  completedBlocks: string[];
-};
-
-function resolveDsmlFunctionName(name: string, mcpContext: McpToolContext): string {
-  const trimmed = String(name || '').trim();
-  if (!trimmed) return '';
-  if (mcpContext.toolRefs[trimmed]) return trimmed;
-
-  const normalized = sanitizeMcpFunctionName(trimmed);
-  for (const [functionName, ref] of Object.entries(mcpContext.toolRefs)) {
-    if (ref.toolName === trimmed) return functionName;
-    if (sanitizeMcpFunctionName(ref.toolName) === normalized) return functionName;
-    if (sanitizeMcpFunctionName(functionName) === normalized) return functionName;
-  }
-
-  return trimmed;
-}
-
-function parseDsmlParameterValue(rawValue: string, forceString: boolean, parameterName = ''): unknown {
-  const value = String(rawValue ?? '').trim();
-  const normalizedValue = normalizeDsmlParameterText(parameterName, value);
-  if (forceString) return normalizedValue;
-  if (normalizedValue !== value) return normalizedValue;
-  if (!value) return '';
-
-  const lower = value.toLowerCase();
-  if (lower === 'true') return true;
-  if (lower === 'false') return false;
-  if (lower === 'null') return null;
-  if (/^-?\d+(?:\.\d+)?$/.test(value)) return Number(value);
-
-  if ((value.startsWith('{') && value.endsWith('}')) || (value.startsWith('[') && value.endsWith(']'))) {
-    try {
-      return JSON.parse(value);
-    } catch {
-      return value;
-    }
-  }
-
-  return value;
-}
-
-function normalizeDsmlParameterText(parameterName: string, value: string): string {
-  const text = String(value || '').trim();
-  if (!text) return text;
-  const key = String(parameterName || '').toLowerCase();
-  if (!key.includes('url')) return text;
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(text)) return text;
-  return looksLikeDomainPath(text) ? `https://${text.replace(/^\/+/, '')}` : text;
-}
-
-function looksLikeDomainPath(value: string): boolean {
-  return /^[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:[/:?#].*)?$/i.test(String(value || '').trim());
-}
-
-function parseLooseDsmlParameterNameAndValue(nameValue: string, bodyValue: string): { name: string; value: string } {
-  const rawName = String(nameValue || '').trim();
-  const body = String(bodyValue || '').trim();
-  if (!rawName) return { name: '', value: body };
-  if (body || !/[.:/]/.test(rawName)) return { name: rawName, value: body };
-
-  const split = rawName.match(/^([a-zA-Z_$][\w$-]*)([.:/][\s\S]*)$/);
-  if (!split) return { name: rawName, value: body };
-
-  const key = split[1];
-  let inferredValue = split[2].trim();
-  if (inferredValue.startsWith('.')) inferredValue = inferredValue.slice(1);
-  if (inferredValue.startsWith(':') || inferredValue.startsWith('/')) inferredValue = inferredValue.replace(/^[:/]+/, '');
-  return { name: key, value: inferredValue };
-}
-
-function parseDsmlParameters(value: string): Record<string, unknown> {
-  const args: Record<string, unknown> = {};
-  const parameterRegex = /<｜DSML｜parameter\b([\s\S]*?)<\/｜DSML｜parameter>/g;
-  let match: RegExpExecArray | null = null;
-
-  while ((match = parameterRegex.exec(String(value || '')))) {
-    const parameterSource = String(match[1] || '');
-    const closeOfOpeningTag = parameterSource.indexOf('>');
-    const rawAttributes = closeOfOpeningTag >= 0 ? parameterSource.slice(0, closeOfOpeningTag) : parameterSource;
-    const rawValue = closeOfOpeningTag >= 0 ? parameterSource.slice(closeOfOpeningTag + 1) : '';
-    const strictName = rawAttributes.match(/\bname\s*=\s*"([^"]*)"/);
-    const looseName = strictName ? null : rawAttributes.match(/\bname\s*=\s*"([^"\s>]*)/);
-    const nameValue = strictName?.[1] || looseName?.[1] || '';
-    const { name, value: parsedValue } = parseLooseDsmlParameterNameAndValue(nameValue, rawValue);
-    const key = String(name || '').trim();
-    if (!key) continue;
-
-    const stringAttr = rawAttributes.match(/\bstring\s*=\s*"([^"]*)"/);
-    const forceString = String(stringAttr?.[1] || '').trim().toLowerCase() === 'true';
-    args[key] = parseDsmlParameterValue(parsedValue, forceString, key);
-  }
-
-  return args;
-}
-
-function normalizeDsmlMarkup(content: string): string {
-  return String(content || '')
-    .replace(/<\|DSML\|/g, '<｜DSML｜')
-    .replace(/<\/\|DSML\|/g, '</｜DSML｜');
-}
-
-function extractDsmlToolCallsFromContent(content: string, mcpContext: McpToolContext): { content: string; toolCalls: any[] } {
-  const raw = normalizeDsmlMarkup(content);
-  if (!raw.includes(DSML_TOOL_CALLS_OPEN)) {
-    return { content: raw, toolCalls: [] };
-  }
-
-  const toolCalls: any[] = [];
-  let parsedCount = 0;
-  const cleaned = raw.replace(/<｜DSML｜tool_calls>([\s\S]*?)<\/｜DSML｜tool_calls>/g, (_block, inner) => {
-    const invokeRegex = /<｜DSML｜invoke\s+name="([^"]+)"[^>]*>([\s\S]*?)<\/｜DSML｜invoke>/g;
-    let invokeMatch: RegExpExecArray | null = null;
-
-    while ((invokeMatch = invokeRegex.exec(String(inner || '')))) {
-      const originalName = String(invokeMatch[1] || '').trim();
-      const functionName = resolveDsmlFunctionName(originalName, mcpContext);
-      if (!functionName) continue;
-
-      const args = parseDsmlParameters(invokeMatch[2] || '');
-
-      toolCalls.push({
-        id: `dsml_tool_call_${toolCalls.length + 1}`,
-        type: 'function',
-        ifocalProtocol: 'dsml',
-        function: {
-          name: functionName,
-          arguments: JSON.stringify(args),
-        },
-      });
-      parsedCount += 1;
-    }
-
-    return '';
-  });
-
-  if (!parsedCount) {
-    return { content: raw, toolCalls: [] };
-  }
-
-  return {
-    content: cleaned.replace(/\n{3,}/g, '\n\n').trim(),
-    toolCalls,
-  };
-}
-
-function consumeDsmlStreamChunk(
-  chunk: string,
-  state: DsmlStreamState,
-): string {
-  if (!chunk) return '';
-  state.pending += normalizeDsmlMarkup(chunk);
-  let visible = '';
-
-  while (state.pending) {
-    if (!state.insideBlock) {
-      const openIndex = state.pending.indexOf(DSML_TOOL_CALLS_OPEN);
-      if (openIndex >= 0) {
-        visible += state.pending.slice(0, openIndex);
-        state.pending = state.pending.slice(openIndex + DSML_TOOL_CALLS_OPEN.length);
-        state.insideBlock = true;
-        state.blockBuffer = DSML_TOOL_CALLS_OPEN;
-        continue;
-      }
-
-      const safeLength = Math.max(0, state.pending.length - (DSML_TOOL_CALLS_OPEN.length - 1));
-      if (!safeLength) break;
-      visible += state.pending.slice(0, safeLength);
-      state.pending = state.pending.slice(safeLength);
-      break;
-    }
-
-    const closeIndex = state.pending.indexOf(DSML_TOOL_CALLS_CLOSE);
-    if (closeIndex >= 0) {
-      state.blockBuffer += state.pending.slice(0, closeIndex + DSML_TOOL_CALLS_CLOSE.length);
-      state.completedBlocks.push(state.blockBuffer);
-      state.blockBuffer = '';
-      state.pending = state.pending.slice(closeIndex + DSML_TOOL_CALLS_CLOSE.length);
-      state.insideBlock = false;
-      continue;
-    }
-
-    const safeLength = Math.max(0, state.pending.length - (DSML_TOOL_CALLS_CLOSE.length - 1));
-    if (!safeLength) break;
-    state.blockBuffer += state.pending.slice(0, safeLength);
-    state.pending = state.pending.slice(safeLength);
-    break;
-  }
-
-  return visible;
-}
-
-function flushDsmlStreamState(
-  state: DsmlStreamState,
-): { visible: string; dsmlContent: string } {
-  const dsmlContent = state.completedBlocks.join('\n');
-  if (state.insideBlock) {
-    return {
-      visible: '\n\n> 工具调用内容不完整，已隐藏原始调用内容。\n\n',
-      dsmlContent: [dsmlContent, `${state.blockBuffer}${state.pending}`].filter(Boolean).join('\n'),
-    };
-  }
-  return {
-    visible: state.pending,
-    dsmlContent,
-  };
-}
-
 function getMcpToolDisplayName(functionName: string, mcpContext: McpToolContext): string {
   const ref = mcpContext.toolRefs[functionName];
   if (!ref) return functionName;
   return `${ref.serverName}/${ref.toolName}`;
 }
 
-function formatMcpToolCallStatus(toolCalls: any[], mcpContext: McpToolContext): string {
-  const lines = toolCalls
-    .map((call) => {
-      const functionName = String(call?.function?.name || '').trim();
-      if (!functionName) return '';
-      const args = parseOpenAIToolArguments(call?.function?.arguments);
-      const url = typeof args.url === 'string' && args.url.trim() ? ` ${args.url.trim()}` : '';
-      return `> 正在调用 MCP 工具：${getMcpToolDisplayName(functionName, mcpContext)}${url}`;
-    })
-    .filter(Boolean);
-  return lines.length ? `\n\n${lines.join('\n')}\n\n` : '';
+function buildMcpToolStatus(
+  phase: McpToolStatusPhase,
+  functionName: string,
+  mcpContext: McpToolContext,
+  input?: unknown,
+  error?: unknown,
+  id?: string,
+): McpToolStatusEvent {
+  const displayName = getMcpToolDisplayName(functionName, mcpContext);
+  const args = parseOpenAIToolArguments(input);
+  const url = typeof args.url === 'string' && args.url.trim() ? args.url.trim() : undefined;
+  const suffix = url ? ` ${url}` : '';
+  const message = phase === 'error'
+    ? `调用工具失败：${displayName}${error ? `（${getErrorMessage(error)}）` : ''}`
+    : `调用工具：${displayName}${suffix}`;
+  return {
+    phase,
+    ...(id ? { id } : {}),
+    toolName: functionName,
+    displayName,
+    message,
+    ...(url ? { url } : {}),
+  };
 }
 
-function buildMcpToolsUnavailableMessage(toolCalls: any[]): string {
-  const names = toolCalls
-    .map((call) => String(call?.function?.name || '').trim())
-    .filter(Boolean);
-  const suffix = names.length ? `：${names.join(', ')}` : '';
-  return `模型请求调用 MCP 工具${suffix}，但当前没有启用可用的 MCP 服务。请在输入框功能菜单启用对应 MCP 后重试。`;
-}
-
-function formatMcpToolResultsAsText(toolCalls: any[], toolMessages: any[], mcpContext: McpToolContext): string {
-  const blocks = toolMessages.map((message, index) => {
-    const call = toolCalls[index];
-    const functionName = String(call?.function?.name || message?.name || '').trim();
-    const displayName = getMcpToolDisplayName(functionName, mcpContext);
-    const args = parseOpenAIToolArguments(call?.function?.arguments);
-    const argsText = Object.keys(args).length ? `\n参数：${JSON.stringify(args)}` : '';
-    return `工具：${displayName}${argsText}\n结果：\n${String(message?.content || '')}`;
-  });
-
-  return `以下是 MCP 工具调用结果。请基于这些结果回答用户，不要再次输出 DSML 或工具调用标签。\n\n${blocks.join('\n\n---\n\n')}`;
-}
-
-async function buildMcpToolMessages(toolCalls: any[], mcpContext: McpToolContext): Promise<any[]> {
-  const messages: any[] = [];
-
-  for (let index = 0; index < toolCalls.length; index++) {
-    const call = toolCalls[index];
-    const toolCallId = String(call?.id || `mcp_tool_call_${index + 1}`);
-    const functionName = String(call?.function?.name || '').trim();
-    const ref = mcpContext.toolRefs[functionName];
-    let content = '';
-
-    if (index >= MCP_MAX_TOOL_CALLS_PER_TURN) {
-      content = `本轮最多执行 ${MCP_MAX_TOOL_CALLS_PER_TURN} 个 MCP 工具调用，此调用已跳过。`;
-    } else if (!ref) {
-      console.warn(`[MCP] 工具未找到：${functionName}，可用工具：`, Object.keys(mcpContext.toolRefs));
-      content = `MCP 工具未找到：${functionName}`;
-    } else {
-      try {
-        console.log(`[MCP] 调用工具：${ref.serverName}/${ref.toolName}`);
-        content = await executeMcpTool(ref, parseOpenAIToolArguments(call?.function?.arguments));
-      } catch (error) {
-        content = `MCP 工具执行失败：${getErrorMessage(error)}`;
-      }
-    }
-
-    messages.push({
-      role: 'tool',
-      tool_call_id: toolCallId,
-      name: functionName,
-      content,
-    });
-  }
-
-  return messages;
+function emitMcpToolStatus(opts: ModelInvokeOptions | undefined, status: McpToolStatusEvent) {
+  if (!opts?.onToolStatus) return;
+  try { opts.onToolStatus(status); } catch { }
 }
 
 function parseOpenAIToolArguments(value: unknown): Record<string, unknown> {
@@ -1128,64 +867,6 @@ function parseOpenAIToolArguments(value: unknown): Record<string, unknown> {
   } catch {
     return {};
   }
-}
-
-async function executeMcpTool(ref: McpToolReference, args: Record<string, unknown>): Promise<string> {
-  const client = createMcpClient();
-  try {
-    await withMcpTimeout(client.connect(createMcpTransport(ref.server)), MCP_CONNECT_TIMEOUT_MS, `连接 MCP 超时：${ref.serverName}`);
-    const result = await client.callTool({
-      name: ref.toolName,
-      arguments: args,
-    }, undefined, {
-      timeout: MCP_REQUEST_TIMEOUT_MS,
-      maxTotalTimeout: MCP_REQUEST_TIMEOUT_MS,
-    });
-    return truncateMcpToolContent(formatMcpToolResult(result));
-  } finally {
-    try { await client.close(); } catch { }
-  }
-}
-
-function formatMcpToolResult(result: any): string {
-  const parts: string[] = [];
-  if (result?.isError) parts.push('[MCP tool error]');
-
-  if (Array.isArray(result?.content)) {
-    for (const item of result.content) {
-      const formatted = formatMcpContentItem(item);
-      if (formatted) parts.push(formatted);
-    }
-  }
-
-  if (result?.structuredContent !== undefined) {
-    parts.push(JSON.stringify(result.structuredContent));
-  }
-
-  if (!parts.length) {
-    try { return JSON.stringify(result); } catch { return String(result ?? ''); }
-  }
-  return parts.join('\n');
-}
-
-function formatMcpContentItem(item: any): string {
-  const type = String(item?.type || '');
-  if (type === 'text') return String(item?.text || '');
-  if (type === 'image') return `[image:${String(item?.mimeType || 'unknown')}]`;
-  if (type === 'audio') return `[audio:${String(item?.mimeType || 'unknown')}]`;
-  if (type === 'resource') {
-    const resource = item?.resource || {};
-    if (typeof resource.text === 'string') return resource.text;
-    return `[resource:${String(resource.uri || 'unknown')}]`;
-  }
-  if (type === 'resource_link') return `[resource_link:${String(item?.uri || item?.name || 'unknown')}]`;
-  try { return JSON.stringify(item); } catch { return String(item ?? ''); }
-}
-
-function truncateMcpToolContent(value: string): string {
-  const text = String(value || '');
-  if (text.length <= MCP_MAX_TOOL_RESULT_CHARS) return text;
-  return `${text.slice(0, MCP_MAX_TOOL_RESULT_CHARS)}\n[内容过长，已截断]`;
 }
 
 async function handleTestMcpServer(request: any) {
@@ -2222,7 +1903,7 @@ async function callOpenAI(
 
   try {
     return await rateLimited(async () => {
-      const firstResult = await streamAiSdkOpenAICompletion({
+      const result = await streamAiSdkOpenAICompletion({
         provider,
         model,
         messages,
@@ -2234,39 +1915,8 @@ async function callOpenAI(
         mcpContext: mcpDisplayContext,
       });
 
-      if (firstResult.dsmlToolCalls.length > 0) {
-        if (!toolNames.length) {
-          const message = `\n\n${buildMcpToolsUnavailableMessage(firstResult.dsmlToolCalls)}`;
-          if (stream && onChunk) onChunk(message);
-          return `${firstResult.content}${message}`;
-        }
-
-        console.log(`[MCP] DSML 兜底执行 ${firstResult.dsmlToolCalls.length} 个工具调用。`);
-        const toolMessages = await buildAiSdkDsmlToolMessages(firstResult.dsmlToolCalls, aiMcpContext, messages, opts);
-        const finalMessages: ModelMessage[] = [
-          ...messages,
-          { role: 'assistant', content: firstResult.content || '' },
-          { role: 'user', content: formatMcpToolResultsAsText(firstResult.dsmlToolCalls, toolMessages, mcpDisplayContext) },
-        ];
-
-        console.log('[MCP] DSML 工具结果已回填，准备通过 AI SDK 发起最终回答请求。');
-        const finalResult = await streamAiSdkOpenAICompletion({
-          provider,
-          model,
-          messages: finalMessages,
-          tools: {},
-          providerOptions,
-          stream,
-          onChunk,
-          opts,
-          mcpContext: mcpDisplayContext,
-        });
-        if (!finalResult.content) throw new Error('OpenAI returned empty response');
-        return stream ? `${firstResult.content}${finalResult.content}` : finalResult.content;
-      }
-
-      if (!firstResult.content) throw new Error('OpenAI returned empty response');
-      return firstResult.content;
+      if (!result.content) throw new Error('OpenAI returned empty response');
+      return result.content;
     });
   } finally {
     await closeAiSdkMcpClients(aiMcpContext.clients);
@@ -2283,7 +1933,7 @@ async function streamAiSdkOpenAICompletion(args: {
   onChunk?: (chunk: string) => void;
   opts?: ModelInvokeOptions;
   mcpContext: McpToolContext;
-}): Promise<{ content: string; dsmlToolCalls: any[] }> {
+}): Promise<{ content: string }> {
   const abortController = new AbortController();
   const onAbort = () => abortController.abort();
   if (args.opts?.signal) {
@@ -2298,19 +1948,13 @@ async function streamAiSdkOpenAICompletion(args: {
 
   let fullContent = '';
   let thinkingStarted = false;
-  const dsmlState: DsmlStreamState = { pending: '', insideBlock: false, blockBuffer: '', completedBlocks: [] };
-  const dsmlToolCalls: any[] = [];
   const emittedToolCallIds = new Set<string>();
-  let processedDsmlBlocks = 0;
+  const emittedToolPauseIds = new Set<string>();
+  let hasActiveToolStatus = false;
 
   const append = (chunk: string) => {
     if (!chunk) return;
     fullContent += chunk;
-    emit(chunk);
-  };
-
-  const emitStatus = (chunk: string) => {
-    if (!chunk) return;
     emit(chunk);
   };
 
@@ -2320,20 +1964,26 @@ async function streamAiSdkOpenAICompletion(args: {
     thinkingStarted = false;
   };
 
-  const processCompletedDsmlBlocks = () => {
-    while (processedDsmlBlocks < dsmlState.completedBlocks.length) {
-      const block = dsmlState.completedBlocks[processedDsmlBlocks];
-      processedDsmlBlocks += 1;
-      const parsed = extractDsmlToolCallsFromContent(block, args.mcpContext);
-      if (!parsed.toolCalls.length) {
-        append('\n\n> 已隐藏一段未识别的工具调用内容。\n\n');
-        continue;
-      }
+  const emitToolStatus = (status: McpToolStatusEvent) => {
+    hasActiveToolStatus = status.phase !== 'clear';
+    emitMcpToolStatus(args.opts, status);
+  };
 
-      dsmlToolCalls.push(...parsed.toolCalls);
-      console.log(`[MCP] 识别到 DSML 工具调用 ${parsed.toolCalls.length} 个：`, parsed.toolCalls.map((call) => call.function?.name));
-      emitStatus(formatMcpToolCallStatus(parsed.toolCalls, args.mcpContext));
-    }
+  const clearToolStatus = () => {
+    if (!hasActiveToolStatus) return;
+    hasActiveToolStatus = false;
+    emitMcpToolStatus(args.opts, { phase: 'clear', message: '' });
+  };
+
+  const appendToolPause = (toolCallId: string) => {
+    if (emittedToolPauseIds.has(toolCallId)) return;
+    emittedToolPauseIds.add(toolCallId);
+
+    const trimmed = fullContent.replace(/\s+$/u, '');
+    if (!trimmed) return;
+    if (/<\/(?:thought|think|analysis|reasoning)>$/iu.test(trimmed)) return;
+    if (/[。！？.!?；;：:\n]$/u.test(trimmed)) return;
+    append('...\n\n');
   };
 
   try {
@@ -2367,26 +2017,51 @@ async function streamAiSdkOpenAICompletion(args: {
 
       if (part.type === 'text-delta') {
         closeThinking();
+        clearToolStatus();
         const text = String(part.text ?? part.delta ?? '');
-        const visibleContent = consumeDsmlStreamChunk(text, dsmlState);
-        append(visibleContent);
-        processCompletedDsmlBlocks();
+        append(text);
+        continue;
+      }
+
+      if (part.type === 'tool-input-start') {
+        closeThinking();
+        const functionName = String(part.toolName || '').trim();
+        if (functionName) {
+          emitToolStatus(buildMcpToolStatus('preparing', functionName, args.mcpContext, undefined, undefined, String(part.id || '')));
+        }
         continue;
       }
 
       if (part.type === 'tool-call') {
         closeThinking();
         const toolCallId = String(part.toolCallId || part.id || `${part.toolName || 'tool'}-${emittedToolCallIds.size + 1}`);
+        appendToolPause(toolCallId);
         if (!emittedToolCallIds.has(toolCallId)) {
           emittedToolCallIds.add(toolCallId);
-          emitStatus(formatAiSdkToolCallStatus(part, args.mcpContext));
+          console.log('[MCP] AI SDK 工具调用：', formatAiSdkToolCallLog(part, args.mcpContext));
+          const functionName = String(part.toolName || '').trim();
+          if (functionName) {
+            emitToolStatus(buildMcpToolStatus('running', functionName, args.mcpContext, part.input, undefined, toolCallId));
+          }
+        }
+        continue;
+      }
+
+      if (part.type === 'tool-result') {
+        const functionName = String(part.toolName || '').trim();
+        if (functionName) {
+          emitToolStatus(buildMcpToolStatus('finished', functionName, args.mcpContext, part.input, undefined, String(part.toolCallId || part.id || '')));
         }
         continue;
       }
 
       if (part.type === 'tool-error') {
         closeThinking();
-        emitStatus(`\n\n> MCP 工具执行失败：${getErrorMessage(part.error)}\n\n`);
+        console.warn('[MCP] AI SDK 工具执行失败：', getErrorMessage(part.error));
+        const functionName = String(part.toolName || '').trim();
+        if (functionName) {
+          emitToolStatus(buildMcpToolStatus('error', functionName, args.mcpContext, undefined, part.error, String(part.toolCallId || part.id || '')));
+        }
         continue;
       }
 
@@ -2396,11 +2071,9 @@ async function streamAiSdkOpenAICompletion(args: {
     }
 
     closeThinking();
-    const { visible } = flushDsmlStreamState(dsmlState);
-    processCompletedDsmlBlocks();
-    append(visible);
+    clearToolStatus();
 
-    return { content: fullContent, dsmlToolCalls };
+    return { content: fullContent };
   } finally {
     if (args.opts?.signal) {
       try { args.opts.signal.removeEventListener('abort', onAbort); } catch { }
@@ -2408,72 +2081,12 @@ async function streamAiSdkOpenAICompletion(args: {
   }
 }
 
-function formatAiSdkToolCallStatus(part: any, mcpContext: McpToolContext): string {
+function formatAiSdkToolCallLog(part: any, mcpContext: McpToolContext): string {
   const functionName = String(part?.toolName || '').trim();
   if (!functionName) return '';
   const args = parseOpenAIToolArguments(part?.input);
   const url = typeof args.url === 'string' && args.url.trim() ? ` ${args.url.trim()}` : '';
-  return `\n\n> 正在调用 MCP 工具：${getMcpToolDisplayName(functionName, mcpContext)}${url}\n\n`;
-}
-
-async function buildAiSdkDsmlToolMessages(
-  toolCalls: any[],
-  aiMcpContext: AiSdkMcpToolContext,
-  messages: ModelMessage[],
-  opts?: ModelInvokeOptions,
-): Promise<any[]> {
-  const toolMessages: any[] = [];
-
-  for (let index = 0; index < toolCalls.length; index++) {
-    const call = toolCalls[index];
-    const toolCallId = String(call?.id || `dsml_tool_call_${index + 1}`);
-    const functionName = String(call?.function?.name || '').trim();
-    const toolDef = aiMcpContext.tools[functionName] as any;
-    let content = '';
-
-    if (index >= MCP_MAX_TOOL_CALLS_PER_TURN) {
-      content = `本轮最多执行 ${MCP_MAX_TOOL_CALLS_PER_TURN} 个 MCP 工具调用，此调用已跳过。`;
-    } else if (!toolDef?.execute) {
-      console.warn(`[MCP] AI SDK 工具未找到：${functionName}，可用工具：`, Object.keys(aiMcpContext.tools));
-      content = `MCP 工具未找到：${functionName}`;
-    } else {
-      try {
-        const ref = aiMcpContext.toolRefs[functionName];
-        if (ref) console.log(`[MCP] AI SDK 调用工具：${ref.serverName}/${ref.toolName}`);
-        const result = await toolDef.execute(parseOpenAIToolArguments(call?.function?.arguments), {
-          toolCallId,
-          messages,
-          abortSignal: opts?.signal,
-        });
-        content = truncateMcpToolContent(formatAiSdkToolResult(result));
-      } catch (error) {
-        content = `MCP 工具执行失败：${getErrorMessage(error)}`;
-      }
-    }
-
-    toolMessages.push({
-      role: 'tool',
-      tool_call_id: toolCallId,
-      name: functionName,
-      content,
-    });
-  }
-
-  return toolMessages;
-}
-
-function formatAiSdkToolResult(result: unknown): string {
-  if (typeof result === 'string') return result;
-  if (result && typeof result === 'object') {
-    const value = result as any;
-    if (Array.isArray(value.content) || typeof value.structuredContent !== 'undefined' || value.isError) {
-      return formatMcpToolResult(value);
-    }
-    if (typeof value.toolResult !== 'undefined') {
-      return formatAiSdkToolResult(value.toolResult);
-    }
-  }
-  try { return JSON.stringify(result); } catch { return String(result ?? ''); }
+  return `${getMcpToolDisplayName(functionName, mcpContext)}${url}`;
 }
 
 async function callGemini(

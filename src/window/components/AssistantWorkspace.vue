@@ -50,7 +50,23 @@
 
           <div v-else :ref="el => ctx.setAiMessageRef(el, idx)" class="w-full group">
             <div class="flex items-center justify-between">
-              <span class="text-xs font-medium !text-olive-600">{{ message.modelName || 'Assistant' }}</span>
+              <div class="min-w-0">
+                <span class="text-xs font-medium !text-olive-600">{{ message.modelName || 'Assistant' }}</span>
+                <div v-if="message.toolStatuses?.length" class="my-1 space-y-1 text-xs text-olive-500">
+                  <div v-for="status in message.toolStatuses" :key="status.id"
+                    class="flex min-w-0 items-center gap-1.5">
+                    <Icon v-if="status.phase === 'preparing' || status.phase === 'running'" icon="ri:loader-4-line"
+                      class="h-3 w-3 shrink-0 animate-spin text-olive-400" />
+                    <Icon v-else-if="status.phase === 'error'" icon="ri:close-circle-line"
+                      class="h-3 w-3 shrink-0 text-red-400" />
+                    <Icon v-else icon="ri:check-line" class="h-3 w-3 shrink-0 text-olive-500" />
+                    <span class="min-w-0 truncate"
+                      :class="status.phase === 'preparing' || status.phase === 'running' ? 'shimmer-text' : ''">
+                      {{ status.message }}
+                    </span>
+                  </div>
+                </div>
+              </div>
               <div class="flex items-center gap-1">
                 <Button variant="ghost" size="icon"
                   class="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-olive-400" title="复制"
@@ -103,6 +119,7 @@
                 <div v-else class="prose prose-sm max-w-none !text-olive-800"
                   v-html="ctx.renderMarkdown(message.content)" />
               </div>
+              <div v-else-if="message.toolStatuses?.length" />
               <div v-else>
                 <template v-if="ctx.enableReasoning">
                   <Button variant="ghost" size="xs" class="h-6 p-0 text-xs gap-1">
@@ -148,16 +165,14 @@
           :enable-streaming="ctx.enableStreaming" :enable-reasoning="ctx.enableReasoning"
           :reasoning-effort="ctx.reasoningEffort" :enable-context="ctx.enableContext"
           :enable-file-upload="ctx.enableFileUpload" :mcp-servers="ctx.mcpServers"
-          :mcp-server-toggles="ctx.mcpServerToggles"
-          :auto-paste-global-assistant="ctx.autoPasteGlobalAssistant"
+          :mcp-server-toggles="ctx.mcpServerToggles" :auto-paste-global-assistant="ctx.autoPasteGlobalAssistant"
           :bg-class="ctx.bgClass" :blur-class="ctx.blurClass" :current-model-name="ctx.currentModelName"
           :grouped-models="ctx.groupedModels" :selected-pair-key="ctx.selectedPairKey"
           @update:modelValue="ctx.updateText" @selectModel="ctx.selectModel" @send="ctx.handleSend"
           @stop="ctx.stopGenerating" @toggleStreaming="ctx.toggleStreaming" @toggleReasoning="ctx.toggleReasoning"
           @changeReasoningEffort="ctx.changeReasoningEffort" @toggleContext="ctx.toggleContext"
           @toggleClipboardListening="ctx.toggleClipboardListening" @toggleFileUpload="ctx.toggleFileUpload"
-          @toggleMcpServer="ctx.toggleMcpServer"
-          @openSettings="ctx.openSettings" />
+          @toggleMcpServer="ctx.toggleMcpServer" @openSettings="ctx.openSettings" />
       </footer>
     </ScrollArea>
 
