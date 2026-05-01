@@ -38,11 +38,11 @@
           </DropdownMenu>
         </div>
 
-        <Button variant="ghost"
-          class="w-full justify-center gap-2 border-none text-olive-500 hover:!bg-olive-100 hover:text-amber-800"
-          title="添加助手" @click="$emit('addAssistant')">
-          <Icon icon="ri:add-line" class="h-4 w-4" />
-        </Button>
+      <Button variant="ghost"
+        class="w-full h-7 justify-center gap-2 border-none text-olive-500 hover:!bg-olive-100 hover:text-amber-800"
+        title="添加助手" @click="$emit('addAssistant')">
+        <Icon icon="ri:add-line" class="h-4 w-4" />
+      </Button>
       </div>
 
       <ScrollArea class="min-h-30 flex-1">
@@ -52,7 +52,7 @@
           @click="$emit('switchSession', session.id)" @keydown.enter.prevent="$emit('switchSession', session.id)"
           @keydown.space.prevent="$emit('switchSession', session.id)">
           <div class="min-w-0 flex-1">
-            <div class="truncate text-sm font-medium">
+            <div class="truncate">
               {{ session.title || '新对话' }}
             </div>
             <div class="flex gap-1 text-[11px] text-olive-400">

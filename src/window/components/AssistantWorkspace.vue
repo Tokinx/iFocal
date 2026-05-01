@@ -55,8 +55,9 @@
                 <div v-if="message.toolStatuses?.length" class="my-1 space-y-1 text-xs text-olive-500">
                   <div v-for="status in message.toolStatuses" :key="status.id"
                     class="flex min-w-0 items-center gap-1.5">
-                    <Icon v-if="status.phase === 'preparing' || status.phase === 'running'" icon="ri:loader-4-line"
-                      class="h-3 w-3 shrink-0 animate-spin text-olive-400" />
+                    <span v-if="status.phase === 'preparing' || status.phase === 'running'"
+                      class="ifocal-loading shrink-0 text-olive-400"
+                      style="--ifocal-loading-size: 12px; --ifocal-loading-stroke: 2px; --ifocal-loading-color: currentColor;" />
                     <Icon v-else-if="status.phase === 'error'" icon="ri:close-circle-line"
                       class="h-3 w-3 shrink-0 text-red-400" />
                     <Icon v-else icon="ri:check-line" class="h-3 w-3 shrink-0 text-olive-500" />
@@ -168,19 +169,15 @@
           :mcp-server-toggles="ctx.mcpServerToggles" :auto-paste-global-assistant="ctx.autoPasteGlobalAssistant"
           :bg-class="ctx.bgClass" :blur-class="ctx.blurClass" :current-model-name="ctx.currentModelName"
           :grouped-models="ctx.groupedModels" :selected-pair-key="ctx.selectedPairKey"
+          :show-scroll-to-bottom-button="ctx.showScrollToBottomButton"
           @update:modelValue="ctx.updateText" @selectModel="ctx.selectModel" @send="ctx.handleSend"
           @stop="ctx.stopGenerating" @toggleStreaming="ctx.toggleStreaming" @toggleReasoning="ctx.toggleReasoning"
           @changeReasoningEffort="ctx.changeReasoningEffort" @toggleContext="ctx.toggleContext"
           @toggleClipboardListening="ctx.toggleClipboardListening" @toggleFileUpload="ctx.toggleFileUpload"
-          @toggleMcpServer="ctx.toggleMcpServer" @openSettings="ctx.openSettings" />
+          @toggleMcpServer="ctx.toggleMcpServer" @openSettings="ctx.openSettings"
+          @scrollToBottom="ctx.handleScrollToBottomClick" />
       </footer>
     </ScrollArea>
-
-    <Button v-if="ctx.showScrollToBottomButton" variant="outline" size="icon"
-      :class="['absolute left-[50%] translate-x-[-50%] z-20 h-8 w-8 shadow-md border-none', ctx.bgClass, ctx.blurClass]"
-      :style="{ bottom: 'var(--ifocal-bottom-gap, 150px)' }" title="滚动到底部" @click="ctx.handleScrollToBottomClick">
-      <Icon icon="ri:arrow-down-line" class="h-4 w-4" />
-    </Button>
   </div>
 </template>
 

@@ -18,10 +18,10 @@
     />
 
     <main class="relative min-h-0 flex-1">
-      <Transition name="ifocal-route" mode="out-in">
+      <Transition name="ifocal-route" mode="out-in" @after-enter="handleRouteAfterEnter">
         <AssistantPage
           v-if="isAssistantRoute"
-          :key="currentRoute.name"
+          :key="assistantPageKey"
           ref="activePageRef"
           :ctx="assistantCtx"
         />
@@ -130,6 +130,9 @@ let inflightRequestId: string | null = null;
 const abortedRequests = new Set<string>();
 let boundScrollableEl: HTMLElement | null = null;
 let isProgrammaticScroll = false;
+let scrollToBottomScheduleToken = 0;
+let scheduledScrollResizeObserver: ResizeObserver | null = null;
+let scheduledScrollResizeTimer: ReturnType<typeof setTimeout> | null = null;
 let onInAppCopy: ((e: ClipboardEvent) => void) | null = null;
 
 const SCROLL_BOTTOM_THRESHOLD = 48;
@@ -189,6 +192,7 @@ watch(activePageRef, () => {
     syncFooterObserver();
     bindScrollableListener();
     updateBottomGap();
+    scheduleScrollToBottomAfterRender(true);
   });
 });
 
@@ -287,10 +291,16 @@ const currentSession = computed(() => {
   };
 });
 
+const assistantPageKey = computed(() => {
+  return `${currentRoute.value.name}:${activeAssistantId.value}`;
+});
+
 // 设置 AI 消息元素 ref
 function setAiMessageRef(el: Element | ComponentPublicInstance | null, idx: number) {
   if (el && el instanceof HTMLElement) {
     aiMessageElements.value[idx] = el;
+  } else {
+    delete aiMessageElements.value[idx];
   }
 }
 
@@ -344,6 +354,7 @@ const enabledMcpServerNames = computed(() => {
 // 切换会话时清空解析缓存
 watch(currentSessionId, () => {
   for (const k in parsedCache) delete (parsedCache as any)[k];
+  aiMessageElements.value = [];
 });
 
 // 动态类名：根据 reduceVisualEffects 决定是否应用 backdrop-blur 和背景透明
@@ -412,15 +423,20 @@ function getScrollableElement(): HTMLElement | null {
   const host = (el?.$el || el) as HTMLElement | null;
   if (!host) return null;
 
-  // 尝试 1: 通过 data-radix 属性查找
-  let scrollableEl = host.querySelector('[data-radix-scroll-area-viewport]');
+  // 尝试 1: 通过 ScrollArea viewport 标识查找
+  let scrollableEl = host.querySelector('[data-slot="scroll-area-viewport"]');
 
-  // 尝试 2: 通过 class 查找
+  // 尝试 2: 兼容 Radix 旧属性
+  if (!scrollableEl) {
+    scrollableEl = host.querySelector('[data-radix-scroll-area-viewport]');
+  }
+
+  // 尝试 3: 通过 class 查找
   if (!scrollableEl) {
     scrollableEl = host.querySelector('.scroll-area-viewport');
   }
 
-  // 尝试 3: 查找所有 div，找到有 overflow 的
+  // 尝试 4: 查找所有 div，找到有 overflow 的
   if (!scrollableEl) {
     const divs = host.querySelectorAll('div');
     for (const div of divs) {
@@ -481,6 +497,48 @@ function unbindScrollableListener() {
   boundScrollableEl = null;
 }
 
+function clearScheduledScrollResizeObserver() {
+  scheduledScrollResizeObserver?.disconnect();
+  scheduledScrollResizeObserver = null;
+  if (scheduledScrollResizeTimer) {
+    clearTimeout(scheduledScrollResizeTimer);
+    scheduledScrollResizeTimer = null;
+  }
+}
+
+function applyScrollToBottom(scrollableEl: HTMLElement) {
+  isProgrammaticScroll = true;
+  scrollableEl.scrollTop = scrollableEl.scrollHeight;
+  requestAnimationFrame(() => {
+    isProgrammaticScroll = false;
+    syncScrollAutoState(scrollableEl);
+  });
+}
+
+function observeScrollContentForBottom(scrollableEl: HTMLElement, token: number, duration = 1500) {
+  clearScheduledScrollResizeObserver();
+  if (typeof ResizeObserver === 'undefined') return;
+
+  const contentEl = scrollableEl.firstElementChild as HTMLElement | null;
+  if (!contentEl) return;
+
+  scheduledScrollResizeObserver = new ResizeObserver(() => {
+    if (token !== scrollToBottomScheduleToken) {
+      clearScheduledScrollResizeObserver();
+      return;
+    }
+    if (!autoScrollEnabled.value) return;
+    applyScrollToBottom(scrollableEl);
+  });
+  scheduledScrollResizeObserver.observe(contentEl);
+  scheduledScrollResizeObserver.observe(scrollableEl);
+  scheduledScrollResizeTimer = setTimeout(() => {
+    if (token === scrollToBottomScheduleToken) {
+      clearScheduledScrollResizeObserver();
+    }
+  }, duration);
+}
+
 // 滚动到底部
 function scrollToBottom(force = false) {
   nextTick(() => {
@@ -490,16 +548,55 @@ function scrollToBottom(force = false) {
         showScrollToBottomButton.value = true;
         return;
       }
-      isProgrammaticScroll = true;
-      scrollableEl.scrollTop = scrollableEl.scrollHeight;
-      requestAnimationFrame(() => {
-        isProgrammaticScroll = false;
-        syncScrollAutoState(scrollableEl);
-      });
+      applyScrollToBottom(scrollableEl);
     } else {
       console.warn('未找到可滚动元素');
     }
   });
+}
+
+function scheduleScrollToBottomAfterRender(force = true, attempts = 20) {
+  const token = ++scrollToBottomScheduleToken;
+  clearScheduledScrollResizeObserver();
+  if (force) {
+    autoScrollEnabled.value = true;
+    showScrollToBottomButton.value = false;
+  }
+  let observingContentResize = false;
+
+  const run = async (remaining: number) => {
+    await nextTick();
+    if (token !== scrollToBottomScheduleToken) return;
+
+    const scrollableEl = getScrollableElement();
+    if (scrollableEl) {
+      if (force || autoScrollEnabled.value) {
+        applyScrollToBottom(scrollableEl);
+        if (!observingContentResize) {
+          observingContentResize = true;
+          observeScrollContentForBottom(scrollableEl, token);
+        }
+      } else {
+        syncScrollAutoState(scrollableEl);
+        return;
+      }
+    }
+
+    if (remaining <= 0) return;
+    requestAnimationFrame(() => {
+      void run(remaining - 1);
+    });
+  };
+
+  void run(attempts);
+}
+
+function handleRouteAfterEnter() {
+  if (!isAssistantRoute.value) return;
+  syncFooterObserver();
+  bindScrollableListener();
+  updateBottomGap();
+  scheduleScrollToBottomAfterRender(true);
 }
 
 // 智能滚动：将指定元素滚动到距离顶部指定偏移量的位置
@@ -592,6 +689,15 @@ watch(
 watch(currentSessionId, () => {
   saveSessions();
 });
+
+watch(
+  [activeAssistantId, currentSessionId],
+  () => {
+    if (!isAssistantRoute.value) return;
+    scheduleScrollToBottomAfterRender(true);
+  },
+  { flush: 'post' }
+);
 
 // 监听发送状态变化，自动滚动到底部
 watch(sending, () => {
@@ -1043,8 +1149,7 @@ function startNewChat(autoRun = false) {
 function startNewChatFromAside() {
   startNewChat(false);
   navigateTo(taskToRouteName(state.task));
-  autoScrollEnabled.value = true;
-  scrollToBottom(true);
+  scheduleScrollToBottomAfterRender(true);
 }
 
 function switchSession(sessionId: string) {
@@ -1057,8 +1162,7 @@ function switchSession(sessionId: string) {
   lastAutoFilledClipboard = '';
 
   // 切换会话后滚动到底部
-  autoScrollEnabled.value = true;
-  scrollToBottom(true);
+  scheduleScrollToBottomAfterRender(true);
 }
 
 function deleteSession(sessionId: string) {
@@ -1930,7 +2034,7 @@ async function switchAssistant(assistantId: string, options: { navigate?: boolea
   syncFooterObserver();
   bindScrollableListener();
   updateBottomGap();
-  scrollToBottom(true);
+  scheduleScrollToBottomAfterRender(true);
 }
 
 function openAssistantEditor(assistantId: string | null) {
@@ -2316,8 +2420,7 @@ onMounted(async () => {
 
   // 初始加载后滚动到底部
   setTimeout(() => {
-    autoScrollEnabled.value = true;
-    scrollToBottom(true);
+    scheduleScrollToBottomAfterRender(true);
   }, 150);
 
   // 启动“思考用时”心跳，实时刷新
@@ -2358,6 +2461,7 @@ onBeforeUnmount(() => {
   }
   unbindScrollableListener();
   if (footerResizeObserver) footerResizeObserver.disconnect();
+  clearScheduledScrollResizeObserver();
   window.removeEventListener('resize', updateBottomGap);
   // 停止“思考用时”心跳
   try { if (nowTickTimer) clearInterval(nowTickTimer); } catch { }

@@ -93,6 +93,11 @@
       </DropdownMenu>
 
       <div class="flex-1"></div>
+
+      <Button v-show="showScrollToBottomButton" variant="outline" size="icon"
+        :class="['h-8 w-8 shrink-0', bgClass, blurClass]" title="滚动到底部" @click="$emit('scrollToBottom')">
+        <Icon icon="ri:arrow-down-line" class="h-4 w-4" />
+      </Button>
     </div>
 
     <!-- 输入框容器 -->
@@ -143,14 +148,21 @@
         <!-- 右侧：发送/停止按钮 -->
         <div class="flex gap-1 pointer-events-auto">
           <!-- 发送按钮 -->
-          <Button variant="ghost" size="icon" class="h-7 w-7 bg-amber-800 hover:!bg-amber-800/80 !text-white" @click="trySend"
-            v-show="canSend && !sending">
+          <Button variant="ghost" size="icon" class="h-7 w-7 bg-amber-800 hover:!bg-amber-800/80 !text-white"
+            @click="trySend" v-show="canSend && !sending">
             <Icon icon="ri:send-plane-2-fill" class="h-3 w-3" />
           </Button>
           <!-- 停止按钮 -->
-          <Button variant="ghost" size="icon" class="h-7 w-7 bg-amber-800 hover:!bg-amber-800/80 !text-white" @click="$emit('stop')"
-            v-show="sending">
-            <Icon icon="ri:stop-fill" class="h-3 w-3" />
+          <Button variant="ghost" size="icon"
+            class="group h-7 w-7 bg-amber-800 hover:!bg-amber-800/80 !text-white"
+            @click="$emit('stop')" v-show="sending" title="停止生成">
+            <span class="relative flex h-3.5 w-3.5 items-center justify-center">
+              <span
+                class="ifocal-loading absolute opacity-100 transition-opacity duration-800 group-hover:opacity-0"
+                style="--ifocal-loading-size: 14px; --ifocal-loading-stroke: 2px; --ifocal-loading-color: currentColor;" />
+              <Icon icon="ri:stop-fill"
+                class="absolute h-3 w-3 opacity-0 transition-opacity duration-150 group-hover:opacity-100" />
+            </span>
           </Button>
         </div>
       </div>
@@ -198,6 +210,7 @@ const props = defineProps<{
   currentModelName: string
   groupedModels: Record<string, Array<{ key: string; model: string; channel: string }>>
   selectedPairKey: string
+  showScrollToBottomButton: boolean
   bgClass?: string
   blurClass?: string
   blurClassSm?: string
@@ -215,6 +228,7 @@ const emit = defineEmits<{
   (e: 'toggleFileUpload', checked: boolean): void
   (e: 'toggleMcpServer', name: string, checked: boolean): void
   (e: 'selectModel', key: string): void
+  (e: 'scrollToBottom'): void
   (e: 'attachmentsChange', files: FileAttachment[]): void
 }>()
 
