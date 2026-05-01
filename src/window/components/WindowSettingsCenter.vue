@@ -27,9 +27,11 @@ import {
   type MachineTranslateProvider,
 } from '@/shared/machine-translation';
 import {
+  isMcpAuthType,
   mcpEntriesToServers,
   mcpServersToEntries,
   normalizeMcpServerName,
+  type McpAuthType,
   type McpServerEntry,
   type McpServerType,
 } from '@/shared/mcp';
@@ -61,11 +63,18 @@ const mtDefaultChannelId = ref(DEFAULT_CONFIG.mtDefaultChannelId);
 const mcpServers = ref<McpServerEntry[]>(mcpServersToEntries(DEFAULT_CONFIG.mcpServers));
 const mcpExpanded = reactive<boolean[]>([]);
 const mcpTesting = reactive<boolean[]>([]);
+const mcpShowAuthSecret = reactive<boolean[]>([]);
 const showAddMcpServer = ref(false);
 const mcpAddForm = reactive({
   name: '',
   type: 'streamable_http' as McpServerType,
   url: '',
+  authType: 'none' as McpAuthType,
+  authToken: '',
+  username: '',
+  password: '',
+  headerName: '',
+  headerValue: '',
 });
 const mtExpanded = reactive<boolean[]>([]);
 const mtTesting = reactive<boolean[]>([]);
@@ -99,6 +108,12 @@ const reasoningEffortOptions: Array<{ value: ReasoningEffort; label: string }> =
   { value: 'high', label: '高' },
   { value: 'xhigh', label: '超高' },
 ];
+const mcpAuthTypeOptions: Array<{ value: McpAuthType; label: string }> = [
+  { value: 'none', label: '无' },
+  { value: 'bearer', label: 'Bearer Token' },
+  { value: 'basic', label: 'Basic Auth' },
+  { value: 'header', label: '自定义请求头' },
+];
 
 function normalizeContextMessagesCount(value: unknown): number {
   const num = Number(value);
@@ -122,15 +137,23 @@ function syncMcpServerUiState() {
   mcpServers.value.forEach((_, index) => {
     mcpExpanded[index] = !!mcpExpanded[index];
     mcpTesting[index] = !!mcpTesting[index];
+    mcpShowAuthSecret[index] = !!mcpShowAuthSecret[index];
   });
   mcpExpanded.length = mcpServers.value.length;
   mcpTesting.length = mcpServers.value.length;
+  mcpShowAuthSecret.length = mcpServers.value.length;
 }
 
 function resetMcpAddForm() {
   mcpAddForm.name = '';
   mcpAddForm.type = 'streamable_http';
   mcpAddForm.url = '';
+  mcpAddForm.authType = 'none';
+  mcpAddForm.authToken = '';
+  mcpAddForm.username = '';
+  mcpAddForm.password = '';
+  mcpAddForm.headerName = '';
+  mcpAddForm.headerValue = '';
 }
 
 function openAddMcpServer() {
@@ -574,7 +597,11 @@ function getEnabledAssistantMcpServers(assistant: AssistantConfig): string[] {
   if (assistant.settings.enableMcpTools === false) return [];
   const toggles = assistant.settings.mcpServerToggles || {};
   return mcpServers.value
-    .filter((server) => !!toggles[server.name])
+    .filter((server) => (
+      Object.prototype.hasOwnProperty.call(toggles, server.name)
+        ? !!toggles[server.name]
+        : server.enabled !== false
+    ))
     .map((server) => server.name);
 }
 
@@ -787,7 +814,12 @@ async function handleTestMcpServer(idx: number) {
           name,
           type: server.type,
           url,
-          builtin: !!server.builtin,
+          authType: server.authType,
+          authToken: server.authToken,
+          username: server.username,
+          password: server.password,
+          headerName: server.headerName,
+          headerValue: server.headerValue,
         },
       }, (result: any) => {
         const error = chrome.runtime.lastError;
@@ -870,7 +902,12 @@ async function handleAddMcpServer() {
       type: mcpAddForm.type,
       url,
       enabled: true,
-      builtin: false,
+      authType: mcpAddForm.authType,
+      authToken: mcpAddForm.authToken,
+      username: mcpAddForm.username,
+      password: mcpAddForm.password,
+      headerName: mcpAddForm.headerName,
+      headerValue: mcpAddForm.headerValue,
     },
   ];
   await saveMcpSettings(false);
@@ -881,10 +918,6 @@ async function handleAddMcpServer() {
 async function removeMcpServer(idx: number) {
   const server = mcpServers.value[idx];
   if (!server) return;
-  if (server.builtin) {
-    toast.error('内置 MCP 服务不可删除，可选择禁用');
-    return;
-  }
   mcpServers.value.splice(idx, 1);
   await saveMcpSettings(false);
   toast.success('MCP 服务已删除');
@@ -905,8 +938,26 @@ function validateMcpNames(): boolean {
     seen.add(name);
     server.name = name;
     server.url = String(server.url || '').trim();
+    server.authType = isMcpAuthType(server.authType) ? server.authType : 'none';
+    server.authToken = String(server.authToken || '').trim();
+    server.username = String(server.username || '').trim();
+    server.password = String(server.password || '');
+    server.headerName = String(server.headerName || '').trim();
+    server.headerValue = String(server.headerValue || '');
     if (!server.url) {
       toast.error(`MCP URL 不能为空：${name}`);
+      return false;
+    }
+    if (server.authType === 'bearer' && !server.authToken) {
+      toast.error(`Bearer Token 不能为空：${name}`);
+      return false;
+    }
+    if (server.authType === 'basic' && !server.username) {
+      toast.error(`Basic Auth 用户名不能为空：${name}`);
+      return false;
+    }
+    if (server.authType === 'header' && (!server.headerName || !server.headerValue)) {
+      toast.error(`自定义请求头鉴权不能为空：${name}`);
       return false;
     }
   }
@@ -1688,7 +1739,7 @@ async function fetchAddFormModels() {
           </header>
 
           <div class="border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-900">
-            默认内置 DuckDuckGo 搜索和 Time 服务。这里管理 MCP Server 名称、类型和 URL；每个助手是否启用某个 MCP 由输入框功能菜单分别控制。
+            这里管理 MCP Server 名称、类型、地址和鉴权方式；每个助手是否启用某个 MCP 由输入框功能菜单分别控制。
           </div>
 
           <div v-if="showAddMcpServer" class="border p-4 space-y-3">
@@ -1723,6 +1774,39 @@ async function fetchAddFormModels() {
                 <Label class="block">URL</Label>
                 <Input v-model="mcpAddForm.url" placeholder="https://example.com/mcp" />
               </div>
+              <div class="space-y-1">
+                <Label class="block">鉴权方式</Label>
+                <Select v-model="mcpAddForm.authType">
+                  <SelectTrigger class="w-full">
+                    <SelectValue placeholder="选择鉴权方式" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem v-for="item in mcpAuthTypeOptions" :key="item.value" :value="item.value">
+                      {{ item.label }}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div v-if="mcpAddForm.authType === 'bearer'" class="space-y-1">
+                <Label class="block">Bearer Token</Label>
+                <Input v-model="mcpAddForm.authToken" type="password" placeholder="输入 Token" />
+              </div>
+              <div v-if="mcpAddForm.authType === 'basic'" class="space-y-1">
+                <Label class="block">用户名</Label>
+                <Input v-model="mcpAddForm.username" placeholder="输入用户名" />
+              </div>
+              <div v-if="mcpAddForm.authType === 'basic'" class="space-y-1">
+                <Label class="block">密码</Label>
+                <Input v-model="mcpAddForm.password" type="password" placeholder="输入密码" />
+              </div>
+              <div v-if="mcpAddForm.authType === 'header'" class="space-y-1">
+                <Label class="block">Header 名称</Label>
+                <Input v-model="mcpAddForm.headerName" placeholder="如 X-API-Key" />
+              </div>
+              <div v-if="mcpAddForm.authType === 'header'" class="space-y-1">
+                <Label class="block">Header 值</Label>
+                <Input v-model="mcpAddForm.headerValue" type="password" placeholder="输入 Header 值" />
+              </div>
             </div>
           </div>
 
@@ -1737,9 +1821,6 @@ async function fetchAddFormModels() {
                   <div class="flex-1 w-0 truncate">
                     <div class="font-medium inline-flex items-center gap-2">
                       <span>{{ server.name }}</span>
-                      <span v-if="server.builtin" class="px-1.5 py-0.5 text-[11px] text-emerald-600 bg-emerald-100">
-                        内置
-                      </span>
                     </div>
                     <div class="text-xs text-muted-foreground truncate max-w-[80%]" :title="server.url">
                       {{ server.type }} · {{ server.url }}
@@ -1760,10 +1841,10 @@ async function fetchAddFormModels() {
                 <div class="flex items-center justify-between gap-4">
                   <div>
                     <label class="text-sm font-medium leading-none block mb-1">名称</label>
-                    <p class="text-xs text-muted-foreground">自定义项可修改；内置项名称用于默认配置识别</p>
+                    <p class="text-xs text-muted-foreground">名称需唯一，会作为助手启用开关的标识</p>
                   </div>
                   <div class="w-72">
-                    <Input v-model="server.name" :disabled="!!server.builtin" />
+                    <Input v-model="server.name" />
                   </div>
                 </div>
                 <div class="flex items-center justify-between gap-4">
@@ -1792,8 +1873,89 @@ async function fetchAddFormModels() {
                     <Input v-model="server.url" placeholder="https://example.com/mcp" />
                   </div>
                 </div>
+                <div class="flex items-center justify-between gap-4">
+                  <div>
+                    <label class="text-sm font-medium leading-none block mb-1">鉴权方式</label>
+                    <p class="text-xs text-muted-foreground">按 MCP 服务端要求配置请求鉴权</p>
+                  </div>
+                  <div class="w-72">
+                    <Select v-model="server.authType">
+                      <SelectTrigger class="w-full">
+                        <SelectValue placeholder="选择鉴权方式" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem v-for="item in mcpAuthTypeOptions" :key="item.value" :value="item.value">
+                          {{ item.label }}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div v-if="server.authType === 'bearer'" class="flex items-center justify-between gap-4">
+                  <div>
+                    <label class="text-sm font-medium leading-none block mb-1">Bearer Token</label>
+                    <p class="text-xs text-muted-foreground">会以 Authorization: Bearer 方式发送</p>
+                  </div>
+                  <div class="w-[32rem] relative">
+                    <Input :type="mcpShowAuthSecret[idx] ? 'text' : 'password'" v-model="server.authToken" placeholder="输入 Token" class="pr-10" />
+                    <Button variant="ghost" size="icon" class="absolute right-1 top-1 h-7 w-7"
+                      @click="mcpShowAuthSecret[idx] = !mcpShowAuthSecret[idx]">
+                      <Icon
+                        :icon="mcpShowAuthSecret[idx] ? 'material-symbols:visibility-off-outline' : 'material-symbols:visibility-outline'"
+                        width="16" />
+                    </Button>
+                  </div>
+                </div>
+                <div v-if="server.authType === 'basic'" class="flex items-center justify-between gap-4">
+                  <div>
+                    <label class="text-sm font-medium leading-none block mb-1">用户名</label>
+                    <p class="text-xs text-muted-foreground">会与密码一起组成 Basic Authorization</p>
+                  </div>
+                  <div class="w-[32rem]">
+                    <Input v-model="server.username" placeholder="输入用户名" />
+                  </div>
+                </div>
+                <div v-if="server.authType === 'basic'" class="flex items-center justify-between gap-4">
+                  <div>
+                    <label class="text-sm font-medium leading-none block mb-1">密码</label>
+                    <p class="text-xs text-muted-foreground">会与用户名一起组成 Basic Authorization</p>
+                  </div>
+                  <div class="w-[32rem] relative">
+                    <Input :type="mcpShowAuthSecret[idx] ? 'text' : 'password'" v-model="server.password" placeholder="输入密码" class="pr-10" />
+                    <Button variant="ghost" size="icon" class="absolute right-1 top-1 h-7 w-7"
+                      @click="mcpShowAuthSecret[idx] = !mcpShowAuthSecret[idx]">
+                      <Icon
+                        :icon="mcpShowAuthSecret[idx] ? 'material-symbols:visibility-off-outline' : 'material-symbols:visibility-outline'"
+                        width="16" />
+                    </Button>
+                  </div>
+                </div>
+                <div v-if="server.authType === 'header'" class="flex items-center justify-between gap-4">
+                  <div>
+                    <label class="text-sm font-medium leading-none block mb-1">Header 名称</label>
+                    <p class="text-xs text-muted-foreground">例如 X-API-Key</p>
+                  </div>
+                  <div class="w-[32rem]">
+                    <Input v-model="server.headerName" placeholder="如 X-API-Key" />
+                  </div>
+                </div>
+                <div v-if="server.authType === 'header'" class="flex items-center justify-between gap-4">
+                  <div>
+                    <label class="text-sm font-medium leading-none block mb-1">Header 值</label>
+                    <p class="text-xs text-muted-foreground">会按自定义请求头发送</p>
+                  </div>
+                  <div class="w-[32rem] relative">
+                    <Input :type="mcpShowAuthSecret[idx] ? 'text' : 'password'" v-model="server.headerValue" placeholder="输入 Header 值" class="pr-10" />
+                    <Button variant="ghost" size="icon" class="absolute right-1 top-1 h-7 w-7"
+                      @click="mcpShowAuthSecret[idx] = !mcpShowAuthSecret[idx]">
+                      <Icon
+                        :icon="mcpShowAuthSecret[idx] ? 'material-symbols:visibility-off-outline' : 'material-symbols:visibility-outline'"
+                        width="16" />
+                    </Button>
+                  </div>
+                </div>
                 <div class="flex items-center gap-2">
-                  <Button variant="outline" class="flex items-center gap-1 text-red-600" :disabled="!!server.builtin"
+                  <Button variant="outline" class="flex items-center gap-1 text-red-600"
                     @click="removeMcpServer(idx)">
                     <Icon :icon="iconOfAction('delete')" width="16" /> 删除
                   </Button>

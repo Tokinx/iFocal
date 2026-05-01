@@ -1,6 +1,6 @@
 import { DEFAULT_PROMPT_TEMPLATES, type PromptTemplates } from '@/shared/ai';
 import { DEFAULT_REASONING_EFFORT, DEFAULT_TASK_SETTINGS, type ReasoningEffort, type TaskSettings } from '@/shared/config';
-import { DEFAULT_MCP_SERVER_NAMES } from '@/shared/mcp';
+import { normalizeBuiltinMcpServerName } from '@/shared/mcp';
 
 export type AssistantPreset = 'chat' | 'translate' | 'summarize';
 
@@ -239,19 +239,16 @@ function normalizeMcpServerToggles(
   const normalized: Record<string, boolean> = {};
   if (fallback && typeof fallback === 'object') {
     for (const [name, enabled] of Object.entries(fallback)) {
-      const key = String(name || '').trim();
+      const key = normalizeBuiltinMcpServerName(name);
       if (key) normalized[key] = !!enabled;
     }
   }
   if (input) {
     for (const [name, enabled] of Object.entries(input)) {
-      const key = String(name || '').trim();
+      const key = normalizeBuiltinMcpServerName(name);
       if (key) normalized[key] = !!enabled;
     }
     return normalized;
-  }
-  if (legacyEnableMcpTools === true) {
-    for (const name of DEFAULT_MCP_SERVER_NAMES) normalized[name] = true;
   }
   return normalized;
 }

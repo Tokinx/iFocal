@@ -1,10 +1,18 @@
 export type McpServerType = 'sse' | 'streamable_http';
+export type McpAuthType = 'none' | 'bearer' | 'basic' | 'header';
 
 export interface McpServerConfig {
   type: McpServerType;
   url: string;
   enabled: boolean;
+  authType?: McpAuthType;
+  authToken?: string;
+  username?: string;
+  password?: string;
+  headerName?: string;
+  headerValue?: string;
   builtin?: boolean;
+  builtinId?: string;
 }
 
 export type McpServersConfig = Record<string, McpServerConfig>;
@@ -13,48 +21,33 @@ export interface McpServerEntry extends McpServerConfig {
   name: string;
 }
 
-export const DEFAULT_MCP_SERVER_NAMES = ['duckduckgo-mcp-server', 'time'] as const;
-
-export const DEFAULT_MCP_SERVERS: McpServersConfig = {
-  'duckduckgo-mcp-server': {
-    type: 'sse',
-    url: 'https://mcp.api-inference.modelscope.net/641472f8636f43/sse',
-    enabled: true,
-    builtin: true,
-  },
-  time: {
-    type: 'streamable_http',
-    url: 'https://mcp.api-inference.modelscope.net/3934a224f65e4e/mcp',
-    enabled: true,
-    builtin: true,
-  },
-};
+export const DEFAULT_MCP_SERVER_NAMES: readonly string[] = [];
+export const DEFAULT_MCP_SERVERS: McpServersConfig = {};
 
 export function isMcpServerType(value: unknown): value is McpServerType {
   return value === 'sse' || value === 'streamable_http';
+}
+
+export function isMcpAuthType(value: unknown): value is McpAuthType {
+  return value === 'none' || value === 'bearer' || value === 'basic' || value === 'header';
 }
 
 export function normalizeMcpServerName(value: unknown): string {
   return String(value ?? '').trim();
 }
 
+export function normalizeBuiltinMcpServerName(value: unknown): string {
+  return normalizeMcpServerName(value);
+}
+
 export function normalizeMcpServers(raw: unknown): McpServersConfig {
   const input = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
   const normalized: McpServersConfig = {};
 
-  for (const name of DEFAULT_MCP_SERVER_NAMES) {
-    const fallback = DEFAULT_MCP_SERVERS[name];
-    const source = input[name] && typeof input[name] === 'object'
-      ? input[name] as Partial<McpServerConfig>
-      : fallback;
-    normalized[name] = normalizeMcpServerConfig(source, fallback, true);
-  }
-
   for (const [name, value] of Object.entries(input)) {
     const normalizedName = normalizeMcpServerName(name);
-    if (!normalizedName || DEFAULT_MCP_SERVER_NAMES.includes(normalizedName as any)) continue;
-    if (!value || typeof value !== 'object') continue;
-    const server = normalizeMcpServerConfig(value as Partial<McpServerConfig>, null, false);
+    if (!normalizedName || !value || typeof value !== 'object') continue;
+    const server = normalizeMcpServerConfig(value as Partial<McpServerConfig>);
     if (!server.url) continue;
     normalized[normalizedName] = server;
   }
@@ -75,28 +68,24 @@ export function mcpEntriesToServers(entries: McpServerEntry[]): McpServersConfig
   for (const entry of entries) {
     const name = normalizeMcpServerName(entry.name);
     if (!name) continue;
-    next[name] = {
-      type: isMcpServerType(entry.type) ? entry.type : 'streamable_http',
-      url: String(entry.url || '').trim(),
-      enabled: true,
-      builtin: DEFAULT_MCP_SERVER_NAMES.includes(name as any) ? true : !!entry.builtin,
-    };
+    next[name] = normalizeMcpServerConfig(entry);
   }
   return normalizeMcpServers(next);
 }
 
-function normalizeMcpServerConfig(
-  raw: Partial<McpServerConfig>,
-  fallback: McpServerConfig | null,
-  builtin: boolean,
-): McpServerConfig {
-  const fallbackType = fallback?.type || 'streamable_http';
-  const fallbackUrl = fallback?.url || '';
-  const type = isMcpServerType(raw.type) ? raw.type : fallbackType;
+function normalizeMcpServerConfig(raw: Partial<McpServerConfig>): McpServerConfig {
+  const authType = isMcpAuthType(raw.authType) ? raw.authType : 'none';
   return {
-    type,
-    url: String(raw.url || fallbackUrl).trim(),
-    enabled: true,
-    builtin,
+    type: isMcpServerType(raw.type) ? raw.type : 'streamable_http',
+    url: String(raw.url || '').trim(),
+    enabled: raw.enabled !== false,
+    authType,
+    authToken: authType === 'bearer' ? String(raw.authToken || '').trim() : '',
+    username: authType === 'basic' ? String(raw.username || '').trim() : '',
+    password: authType === 'basic' ? String(raw.password || '') : '',
+    headerName: authType === 'header' ? String(raw.headerName || '').trim() : '',
+    headerValue: authType === 'header' ? String(raw.headerValue || '') : '',
+    builtin: false,
+    builtinId: undefined,
   };
 }

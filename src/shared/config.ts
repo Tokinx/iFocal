@@ -142,7 +142,7 @@ export const DEFAULT_CONFIG = {
   mtChannels: DEFAULT_MACHINE_TRANSLATE_CHANNELS,
   mtDefaultChannelId: DEFAULT_MACHINE_TRANSLATE_CHANNEL_ID,
 
-  // MCP 服务：默认内置 DuckDuckGo 搜索与时间工具，具体调用由助手功能开关控制
+  // MCP 服务：为空时由用户自行添加
   mcpServers: DEFAULT_MCP_SERVERS,
 
   // 新增：译文样式名称（应用到译文包裹元素），默认点状下划线
@@ -309,7 +309,7 @@ export async function loadConfig(): Promise<typeof DEFAULT_CONFIG> {
             else if (key === 'mtChannels') {
               (config as any)[key] = normalizeMachineTranslateChannels(items[key]);
             }
-            // 特殊处理：MCP 服务始终补齐内置 duckduckgo/time
+            // 特殊处理：MCP 服务结构统一归一化
             else if (key === 'mcpServers') {
               (config as any)[key] = normalizeMcpServers(items[key]);
             }

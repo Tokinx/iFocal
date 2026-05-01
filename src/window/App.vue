@@ -311,9 +311,25 @@ const groupedModels = computed(() => {
   return groups;
 });
 
+function hasOwnMcpToggle(toggles: Record<string, boolean>, name: string): boolean {
+  return Object.prototype.hasOwnProperty.call(toggles, name);
+}
+
+const effectiveMcpServerToggles = computed(() => {
+  const toggles = mcpServerToggles.value || {};
+  const next: Record<string, boolean> = { ...toggles };
+  for (const server of mcpServers.value) {
+    if (!hasOwnMcpToggle(toggles, server.name)) {
+      next[server.name] = server.enabled !== false;
+    }
+  }
+  return next;
+});
+
 const enabledMcpServerNames = computed(() => {
+  const toggles = effectiveMcpServerToggles.value;
   return mcpServers.value
-    .filter((server) => !!mcpServerToggles.value[server.name])
+    .filter((server) => !!toggles[server.name])
     .map((server) => server.name);
 });
 
@@ -337,7 +353,7 @@ const assistantCtx = computed<AssistantWorkspaceContext>(() => ({
   enableContext: enableContext.value,
   enableFileUpload: enableFileUpload.value,
   mcpServers: mcpServers.value,
-  mcpServerToggles: mcpServerToggles.value,
+  mcpServerToggles: effectiveMcpServerToggles.value,
   autoPasteGlobalAssistant: autoPasteGlobalAssistant.value,
   currentModelName: currentModelName.value,
   groupedModels: groupedModels.value,
@@ -577,7 +593,7 @@ watch(sending, () => {
 function renderMarkdown(content: string) {
   // 使用标准 Markdown 渲染（不启用 breaks）
   // 标准 Markdown 换行规则：行尾两个空格+\n 或 两个 \n（空行）才会换行
-  return marked(content, {
+  return marked(formatDsmlToolCallsForDisplay(content), {
     breaks: false, // 关闭 GFM 单换行支持，使用标准 Markdown 换行
     gfm: true // 启用 GitHub Flavored Markdown 其他特性（表格、删除线等）
   });
@@ -598,6 +614,40 @@ function escapeUserHtml(text: string) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function formatDsmlToolCallsForDisplay(content: string) {
+  return String(content ?? '').replace(/<[\uFF5C|]DSML[\uFF5C|]tool_calls>([\s\S]*?)<\/[\uFF5C|]DSML[\uFF5C|]tool_calls>/g, (_block, inner) => {
+    const lines: string[] = [];
+    const invokeRegex = /<[\uFF5C|]DSML[\uFF5C|]invoke\s+name="([^"]+)"[^>]*>([\s\S]*?)<\/[\uFF5C|]DSML[\uFF5C|]invoke>/g;
+    let invokeMatch: RegExpExecArray | null = null;
+
+    while ((invokeMatch = invokeRegex.exec(String(inner || '')))) {
+      const name = String(invokeMatch[1] || '').trim();
+      const params = formatDsmlParametersForDisplay(invokeMatch[2] || '');
+      if (name) lines.push(`> MCP 工具调用：${name}${params ? ` ${params}` : ''}`);
+    }
+
+    return lines.length ? `\n\n${lines.join('\n')}\n\n` : '\n\n> 已隐藏一段工具调用内容。\n\n';
+  });
+}
+
+function formatDsmlParametersForDisplay(content: string) {
+  const params: string[] = [];
+  const parameterRegex = /<[\uFF5C|]DSML[\uFF5C|]parameter\b([\s\S]*?)<\/[\uFF5C|]DSML[\uFF5C|]parameter>/g;
+  let match: RegExpExecArray | null = null;
+
+  while ((match = parameterRegex.exec(String(content || '')))) {
+    const source = String(match[1] || '');
+    const closeIndex = source.indexOf('>');
+    const attrs = closeIndex >= 0 ? source.slice(0, closeIndex) : source;
+    const value = closeIndex >= 0 ? source.slice(closeIndex + 1).trim() : '';
+    const name = attrs.match(/\bname\s*=\s*"([^"]*)"/)?.[1]?.trim();
+    if (!name) continue;
+    params.push(value ? `${name}=${value}` : name);
+  }
+
+  return params.length ? `(${params.join(', ')})` : '';
 }
 
 // 解析消息中的思考过程和答案（兼容多种标签/字段，并支持流式未闭合标签）

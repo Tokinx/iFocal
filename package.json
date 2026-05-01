@@ -15,6 +15,8 @@
         "ui:add:more": "shadcn-vue add tooltip badge tabs separator avatar breadcrumb card progress skeleton switch toggle"
     },
     "dependencies": {
+        "@ai-sdk/mcp": "^1.0.38",
+        "@ai-sdk/openai-compatible": "^2.0.43",
         "@modelcontextprotocol/sdk": "^1.29.0",
         "@phosphor-icons/vue": "^2.2.1",
         "@radix-icons/vue": "^1.0.0",
@@ -22,6 +24,7 @@
         "@tanstack/vue-table": "^8.21.3",
         "@vee-validate/zod": "^4.15.1",
         "@vueuse/core": "^14.2.1",
+        "ai": "^6.0.172",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
         "embla-carousel-vue": "^8.6.0",

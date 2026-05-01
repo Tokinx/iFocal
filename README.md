@@ -30,7 +30,7 @@ iFocal 是一款面向 Chrome / Edge 的 Manifest V3 浏览器扩展，核心定
 - **AI 渠道**：支持 OpenAI、Google Gemini、OpenAI-compatible 三类渠道。
 - **模型命名**：模型可写成 `modelId#displayName`，请求时使用 `modelId`，界面显示 `displayName`。
 - **机器翻译渠道**：内置 Microsoft / Google 免费实验渠道，并支持 Google Cloud Translation、Azure Translator、DeepL、DeepLX、百度翻译等自定义渠道。
-- **MCP 功能设置**：默认内置 DuckDuckGo 搜索和 Time 服务，支持添加自定义 MCP 名称、类型和 URL，可在设置中心测试 `listTools()`，并按助手分别启用；OpenAI-compatible 请求会按启用项注入 `tools` 并执行单轮工具调用。
+- **MCP 功能设置**：支持用户自行添加 MCP 名称、类型、URL 与鉴权配置，可在设置中心测试 `listTools()`，并按助手分别启用；OpenAI-compatible 请求会按启用项注入 `tools` 并执行单轮工具调用。
 - **连通性测试**：AI 渠道和机器翻译渠道均提供测试入口。
 - **设置中心**：完整配置集中在助手窗口中，旧 options 页面只保留兼容壳层。
 - **导入导出**：支持导出和导入主要配置、渠道、术语库和样式设置。

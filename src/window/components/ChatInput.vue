@@ -13,7 +13,7 @@
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" :class="['w-56', bgClass, blurClass]">
-          <ScrollArea class="h-60 p-2">
+          <ScrollArea class="h-60 p-3">
             <div class="space-y-3">
               <!-- 流式开关 -->
               <div class="flex items-center justify-between">
@@ -72,12 +72,12 @@
                 <Switch :model-value="enableFileUpload" @update:modelValue="$emit('toggleFileUpload', $event)" />
               </div>
               <!-- MCP 功能 -->
-              <div class="space-y-2">
+              <div v-if="mcpServers.length" class="space-y-2">
                 <div class="flex items-center gap-2">
                   <Icon icon="ri:apps-2-ai-line" class="h-4 w-4" />
                   <span class="text-sm font-medium">MCP 功能</span>
                 </div>
-                <div v-if="mcpServers.length" class="space-y-2 pl-6">
+                <div class="space-y-2 pl-6">
                   <div v-for="server in mcpServers" :key="server.name" class="flex items-center justify-between gap-3">
                     <span class="min-w-0 truncate text-xs text-muted-foreground" :title="server.name">
                       {{ server.name }}
@@ -86,7 +86,6 @@
                       @update:modelValue="$emit('toggleMcpServer', server.name, !!$event)" />
                   </div>
                 </div>
-                <p v-else class="pl-6 text-xs text-muted-foreground">暂无可用 MCP Server</p>
               </div>
             </div>
           </ScrollArea>
