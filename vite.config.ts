@@ -14,7 +14,8 @@ export default defineConfig({
     target: 'es2020',
     outDir: 'dist',
     emptyOutDir: true,
-    rollupOptions: {
+    chunkSizeWarningLimit: 800,
+    rolldownOptions: {
       input: {
         window: path.resolve(__dirname, 'window.html'),
         background: path.resolve(__dirname, 'src/background/index.ts'),
@@ -27,7 +28,26 @@ export default defineConfig({
           return 'assets/[name].js';
         },
         chunkFileNames: 'assets/[name].[hash].js',
-        assetFileNames: 'assets/[name].[hash][extname]'
+        assetFileNames: 'assets/[name].[hash][extname]',
+        codeSplitting: {
+          groups: [
+            {
+              name: 'vue-vendor',
+              test: /node_modules[\\/](vue|@vue|@vueuse)[\\/]/,
+              priority: 30
+            },
+            {
+              name: 'ui-vendor',
+              test: /node_modules[\\/](reka-ui|@phosphor-icons|@radix-icons|lucide-vue-next|class-variance-authority|clsx|tailwind-merge)[\\/]/,
+              priority: 20
+            },
+            {
+              name: 'markdown-vendor',
+              test: /node_modules[\\/]marked[\\/]/,
+              priority: 20
+            }
+          ]
+        }
       }
     }
   }

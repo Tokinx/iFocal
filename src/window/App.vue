@@ -19,8 +19,7 @@
 
     <main class="relative min-h-0 flex-1">
       <Transition name="ifocal-route" mode="out-in">
-        <component
-          :is="activeAssistantPageComponent"
+        <AssistantPage
           v-if="isAssistantRoute"
           :key="currentRoute.name"
           ref="activePageRef"
@@ -31,6 +30,7 @@
     </main>
 
     <AssistantEditorDialog
+      v-if="assistantEditorOpen"
       :open="assistantEditorOpen"
       :assistant="editingAssistant"
       :model-pairs="modelPairs"
@@ -42,7 +42,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, nextTick, type ComponentPublicInstance } from 'vue';
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref, watch, nextTick, type ComponentPublicInstance } from 'vue';
 import { marked } from 'marked';
 import { DEFAULT_REASONING_EFFORT, SUPPORTED_LANGUAGES, loadConfig, saveConfig, type ReasoningEffort } from '@/shared/config';
 import {
@@ -63,10 +63,7 @@ import { modelIdFromSpec, parseModelSpec } from '@/shared/model-utils';
 import { loadPromptTemplates } from '@/shared/prompt-templates';
 import { mcpServersToEntries, type McpServerEntry } from '@/shared/mcp';
 import WindowSidebar from './components/WindowSidebar.vue';
-import AssistantEditorDialog from './components/AssistantEditorDialog.vue';
-import ChatPage from './pages/ChatPage.vue';
-import TranslatePage from './pages/TranslatePage.vue';
-import SummaryPage from './pages/SummaryPage.vue';
+import AssistantPage from './pages/AssistantPage.vue';
 import SettingsPage from './pages/SettingsPage.vue';
 import { currentRoute, hasInitialRoute, navigateTo, routeNameToTask, taskToRouteName } from './router';
 import type { AssistantPageExpose, AssistantTask, AssistantWorkspaceContext, SidebarTask, WindowMessage, WindowSession } from './types';
@@ -130,11 +127,7 @@ let onInAppCopy: ((e: ClipboardEvent) => void) | null = null;
 const SCROLL_BOTTOM_THRESHOLD = 48;
 const autoScrollEnabled = ref(true);
 const showScrollToBottomButton = ref(false);
-const assistantPageMap = {
-  chat: ChatPage,
-  translate: TranslatePage,
-  summary: SummaryPage,
-} as const;
+const AssistantEditorDialog = defineAsyncComponent(() => import('./components/AssistantEditorDialog.vue'));
 
 const activeAssistant = computed(() => {
   return assistantConfigs.value.find((assistant) => assistant.id === activeAssistantId.value) || assistantConfigs.value[0] || null;
@@ -154,10 +147,6 @@ const sidebarTasks = computed<SidebarTask[]>(() => assistantConfigs.value.map((a
 })));
 
 const isAssistantRoute = computed(() => !!routeNameToTask(currentRoute.value.name));
-const activeAssistantPageComponent = computed(() => {
-  const name = currentRoute.value.name;
-  return name === 'translate' ? assistantPageMap.translate : name === 'summary' ? assistantPageMap.summary : assistantPageMap.chat;
-});
 
 watch(
   () => currentRoute.value.name,
