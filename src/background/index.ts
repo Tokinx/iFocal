@@ -1834,12 +1834,13 @@ async function callOpenAI(
     if (mcpContext.tools.length > 0) {
       if (stream) {
         const firstRes = await postChatCompletion({ ...body, stream: true });
-        const firstStreamResult = await readStreamResponse(firstRes, false, true);
+        // 即使启用了 MCP，只要模型当前轮没有真正发起工具调用，也应该保持正常逐 token 上屏。
+        // 因此这里需要一边透传 content chunk，一边收集 tool_calls，避免“读完整段后一次性渲染”。
+        const firstStreamResult = await readStreamResponse(firstRes, true, true);
         if (firstStreamResult.toolCalls.length) {
           return completeWithToolCalls({ content: firstStreamResult.content, tool_calls: firstStreamResult.toolCalls }, true);
         }
         if (!firstStreamResult.content) throw new Error('OpenAI returned empty response');
-        if (onChunk) onChunk(firstStreamResult.content);
         return firstStreamResult.content;
       }
 

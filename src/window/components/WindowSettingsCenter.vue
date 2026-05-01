@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch, computed, reactive } from 'vue';
+import { onBeforeUnmount, onMounted, ref, watch, computed, reactive } from 'vue';
 import Icon from '@/components/ui/icon/Icon.vue';
 import { iconOfNav, iconOfAction } from '@/shared/icons';
 import { useChannels } from '@/options/composables/useChannels';
@@ -491,7 +491,7 @@ function handleSaveChannelInline(idx: number) {
   }
 }
 
-// 助手（非流式输出）
+// 助手调试输出（支持流式）
 const assistantDraft = ref('');
 const assistantModelValue = ref('');
 const assistantTask = ref<string>('');
@@ -563,12 +563,97 @@ function handleDebugModelSelect(key: string) {
 function handleDefaultModelSelect(key: string) {
   defaultModelValue.value = key;
 }
+
+function disconnectAssistantPort(port: chrome.runtime.Port | null = assistantPort) {
+  if (!port) return;
+  if (assistantPort === port) assistantPort = null;
+  try { port.disconnect(); } catch { }
+}
+
+function getEnabledAssistantMcpServers(assistant: AssistantConfig): string[] {
+  if (assistant.settings.enableMcpTools === false) return [];
+  const toggles = assistant.settings.mcpServerToggles || {};
+  return mcpServers.value
+    .filter((server) => !!toggles[server.name])
+    .map((server) => server.name);
+}
+
+function buildAssistantPayload(selectedAssistant: AssistantConfig, text: string, pair: ModelPair) {
+  const payload: any = {
+    action: 'performAiAction',
+    task: selectedAssistant.preset,
+    assistantPrompt: selectedAssistant.prompt,
+    text,
+    targetLang: selectedAssistant.settings.targetLang || (config.value as any).translateTargetLang || 'zh-CN',
+    prevLang: selectedAssistant.settings.prevLang || (config.value as any).prevLanguage || 'en',
+    enableStreaming: !!selectedAssistant.settings.enableStreaming,
+    enableReasoning: !!selectedAssistant.settings.enableReasoning,
+    reasoningEffort: selectedAssistant.settings.reasoningEffort,
+    enabledMcpServers: getEnabledAssistantMcpServers(selectedAssistant),
+  };
+  if (pair) {
+    payload.channel = pair.channel;
+    payload.model = pair.model;
+  }
+  return payload;
+}
+
+function startAssistantStreamingRequest(payload: any) {
+  let settled = false;
+
+  try {
+    const port = chrome.runtime.connect({ name: 'streaming' });
+    assistantPort = port;
+
+    port.onMessage.addListener((response: any) => {
+      if (response?.type === 'start') return;
+
+      if (response?.type === 'chunk') {
+        assistantResult.value += String(response.content || '');
+        return;
+      }
+
+      if (response?.type === 'done') {
+        settled = true;
+        assistantLoading.value = false;
+        disconnectAssistantPort(port);
+        return;
+      }
+
+      if (response?.type === 'error') {
+        settled = true;
+        assistantLoading.value = false;
+        const errorText = `【错误】${response.error || '未知错误'}`;
+        assistantResult.value = assistantResult.value
+          ? `${assistantResult.value}\n\n${errorText}`
+          : errorText;
+        disconnectAssistantPort(port);
+      }
+    });
+
+    port.onDisconnect.addListener(() => {
+      if (assistantPort === port) assistantPort = null;
+      if (settled) return;
+
+      assistantLoading.value = false;
+      assistantResult.value = assistantResult.value
+        ? `${assistantResult.value}\n\n【错误】连接中断`
+        : '【错误】连接中断';
+    });
+
+    port.postMessage(payload);
+  } catch (e: any) {
+    assistantLoading.value = false;
+    assistantResult.value = `【错误】${String(e?.message || e || '调用失败')}`;
+    disconnectAssistantPort();
+  }
+}
+
 // 已移除侧边栏相关设置
 function startAssistantStream() {
   const text = assistantDraft.value.trim();
   if (!text) return;
-  // 非流式：一次性返回完整结果
-  if (assistantPort) { try { assistantPort.disconnect(); } catch { } assistantPort = null; }
+  disconnectAssistantPort();
   assistantResult.value = '';
   assistantLoading.value = true;
   const selectedAssistant = assistantConfigs.value.find((item) => item.id === assistantTask.value) || null;
@@ -578,19 +663,21 @@ function startAssistantStream() {
     return;
   }
   const pair = parsePair(assistantModelValue.value);
-  const payload: any = {
-    action: 'performAiAction',
-    task: selectedAssistant.preset,
-    assistantPrompt: selectedAssistant.prompt,
-    text
-  };
-  if (pair) { payload.channel = pair.channel; payload.model = pair.model; }
-  // 目标语言统一取当前设置
-  try { payload.targetLang = (config.value as any).translateTargetLang || 'zh-CN'; } catch { }
+  const payload = buildAssistantPayload(selectedAssistant, text, pair);
+
+  if (selectedAssistant.settings.enableStreaming) {
+    startAssistantStreamingRequest(payload);
+    return;
+  }
+
   try {
     chrome.runtime.sendMessage(payload, (resp: any) => {
-      try { void chrome.runtime.lastError; } catch { }
       assistantLoading.value = false;
+      const runtimeError = chrome.runtime.lastError?.message;
+      if (runtimeError) {
+        assistantResult.value = `【错误】${runtimeError}`;
+        return;
+      }
       if (!resp) {
         assistantResult.value = '[错误] 无响应';
         return;
@@ -603,6 +690,10 @@ function startAssistantStream() {
     assistantResult.value = `【错误】${String(e?.message || e || '调用失败')}`;
   }
 }
+
+onBeforeUnmount(() => {
+  disconnectAssistantPort();
+});
 async function onLangChange() {
   try {
     await saveConfig({ translateTargetLang: config.value.translateTargetLang });
@@ -2085,9 +2176,13 @@ async function fetchAddFormModels() {
             <div class="flex space-x-3">
               <Textarea v-model="assistantDraft" class="min-h-28 w-[50%]" placeholder="在此粘贴需要处理的文本..." />
               <div class="w-[50%] border bg-secondary/40 p-3 text-sm whitespace-pre-wrap min-h-12 relative">
-                <div v-if="assistantLoading" class="absolute inset-0 flex items-center justify-center bg-white/60">
+                <div v-if="assistantLoading && !assistantResult" class="absolute inset-0 flex items-center justify-center bg-white/60">
                   <Icon icon="line-md:loading-twotone-loop" width="20" class="animate-spin" />
-                </div>{{ assistantResult }}
+                </div>
+                <div v-else-if="assistantLoading" class="absolute right-2 top-2 text-muted-foreground">
+                  <Icon icon="line-md:loading-twotone-loop" width="16" class="animate-spin" />
+                </div>
+                <div class="pr-6">{{ assistantResult }}</div>
               </div>
             </div>
             <div class="flex items-center gap-2">
