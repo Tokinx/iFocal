@@ -1704,7 +1704,7 @@ async function fetchAddFormModels() {
             </div>
             <div class="grid grid-cols-2 gap-3">
               <div class="space-y-1">
-                <Label class="block">MCP 名称</Label>
+                <Label class="block">名称</Label>
                 <Input v-model="mcpAddForm.name" placeholder="如 my-search" />
               </div>
               <div class="space-y-1">
@@ -1759,7 +1759,7 @@ async function fetchAddFormModels() {
               <div v-if="mcpExpanded[idx]" class="space-y-3">
                 <div class="flex items-center justify-between gap-4">
                   <div>
-                    <label class="text-sm font-medium leading-none block mb-1">MCP 名称</label>
+                    <label class="text-sm font-medium leading-none block mb-1">名称</label>
                     <p class="text-xs text-muted-foreground">自定义项可修改；内置项名称用于默认配置识别</p>
                   </div>
                   <div class="w-72">

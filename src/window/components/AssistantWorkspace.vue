@@ -38,7 +38,7 @@
               </div>
 
               <div v-if="message.content" v-html="ctx.renderMarkdownSafe(message.content)"
-                class="bg-olive-50 px-4 py-3 !text-olive-700 prose prose-sm max-w-none" />
+                class="bg-olive-100 px-4 py-3 !text-olive-700 prose prose-sm max-w-none" />
 
               <Button variant="ghost" size="icon"
                 class="absolute -left-7 bottom-0 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400"

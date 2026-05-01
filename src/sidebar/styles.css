@@ -134,6 +134,8 @@
   /* utility helpers built on CSS variables */
   .basic-bg {
     background-color: #f4f4f0;
+    /* background-image: radial-gradient(circle at top left, rgba(201, 100, 66, 0.16), transparent 35%),
+      radial-gradient(circle at bottom right, rgba(20, 20, 19, 0.08), transparent 30%); */
   }
   .bg-background {
     background-color: #fff;

@@ -1443,6 +1443,15 @@ function normalizeReasoningEffort(value: unknown): ReasoningEffort {
   return 'medium';
 }
 
+function mapReasoningEffortForModel(model: string, effort: ReasoningEffort): string {
+  const normalized = normalizeReasoningEffort(effort);
+  if (!model.includes('deepseek-v4')) return normalized;
+  // DeepSeek V4 仅支持 high / max：
+  // low、medium 会兼容映射到 high；xhigh 会映射到 max。
+  if (normalized === 'xhigh') return 'max';
+  return 'high';
+}
+
 async function invokeModel(
   channel: any,
   model: string,
@@ -1467,6 +1476,7 @@ async function invokeModel(
 function buildReasoningParams(model: string, enabled: boolean | undefined, effort: ReasoningEffort = 'medium') {
   const m = (model || '').toLowerCase();
   const normalizedEffort = normalizeReasoningEffort(effort);
+  const modelEffort = mapReasoningEffortForModel(model, normalizedEffort);
   // 常见别名，未被识别的字段通常会被服务端忽略（OpenAI 兼容行为）
   const params: any = {
     enable_thinking: undefined,         // 通用开关
@@ -1477,12 +1487,12 @@ function buildReasoningParams(model: string, enabled: boolean | undefined, effor
   };
   // DeepSeek 特殊：通常 deepseek-reasoner 会默认返回 reasoning_content，这里显式开启亦可被忽略
   // Qwen：部分兼容端要求 enable_thoughts/enable_thinking
-  if (m.includes('deepseek') || m.includes('qwen')) {
+  if (m.includes('deepseek-v4') || m.includes('qwen')) {
     params.model = model; // 不改模型，仅确保所有别名传递
   }
   // 显式关闭：部分模型默认开启思考，需要明确指定才能关闭
   if (!enabled) {
-    if (m.includes('glm')) {
+    if (m.includes('deepseek-v4') || m.includes('glm')) {
       params.thinking = { type: 'disabled' };
     }
     if (m.includes('qwen')) {
@@ -1494,10 +1504,10 @@ function buildReasoningParams(model: string, enabled: boolean | undefined, effor
   params.enable_reasoning = true;  // 别名 
   params.enable_thoughts = true;   // Qwen/DashScope 常见命名
   // OpenAI o3 系列在 Responses API 支持 reasoning.effort，这里仅作为兼容字段透传
-  params.reasoning = { effort: normalizedEffort };
-  params.reasoning_effort = normalizedEffort;
+  params.reasoning = { effort: modelEffort };
+  params.reasoning_effort = modelEffort;
   // GLM（智谱/ChatGLM）思考开关：官方文档为 thinking: { type: 'enabled' }
-  if (m.includes('glm')) {
+  if (m.includes('deepseek-v4') || m.includes('glm')) {
     params.thinking = { type: 'enabled' };
   }
   return params;

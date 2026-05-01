@@ -1,5 +1,5 @@
 <template>
-  <div class="mx-auto max-w-[50rem] space-y-2">
+  <div class="mx-auto max-w-[52rem] space-y-2">
     <!-- 顶部操作按钮 -->
     <div class="flex items-center gap-2">
       <!-- 模型选择 Dropdown -->
