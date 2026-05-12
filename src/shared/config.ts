@@ -116,6 +116,7 @@ export const DEFAULT_CONFIG = {
   // 显示设置
   hoverDisplayMode: 'insert' as 'insert' | 'overlay',
   fullPageDisplayMode: 'insert' as 'insert' | 'replace',
+  fullPageScopeMode: 'smart' as 'smart' | 'page',
   // 划词：是否启用划词翻译（显示小圆点）
   enableSelectionTranslation: true,
   selectionTranslationMode: 'ai' as 'ai' | 'machine',
@@ -269,6 +270,7 @@ export const CONFIG_KEYS = [
   'defaultTask',
   'hoverDisplayMode',
   'fullPageDisplayMode',
+  'fullPageScopeMode',
   'enableSelectionTranslation',
   'selectionTranslationMode',
   'hoverTranslationMode',
@@ -326,6 +328,7 @@ export async function loadConfig(): Promise<typeof DEFAULT_CONFIG> {
         }
         if (config.hoverDisplayMode !== 'overlay') config.hoverDisplayMode = 'insert';
         if (config.fullPageDisplayMode !== 'replace') config.fullPageDisplayMode = 'insert';
+        if (config.fullPageScopeMode !== 'page') config.fullPageScopeMode = 'smart';
         config.mtChannels = normalizeMachineTranslateChannels((config as any).mtChannels);
         config.mtDefaultChannelId = normalizeMachineTranslateDefaultChannelId((config as any).mtDefaultChannelId, config.mtChannels);
         config.mcpServers = normalizeMcpServers((config as any).mcpServers);

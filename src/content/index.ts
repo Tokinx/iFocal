@@ -340,10 +340,22 @@ type ChannelPair = { channel: string; model: string } | null;
 type TranslationMode = 'ai' | 'machine';
 type HoverDisplayMode = 'insert' | 'overlay';
 type FullPageDisplayMode = 'insert' | 'replace';
+type FullPageScopeMode = 'smart' | 'page';
 type FullPageVisibleMode = 'translation' | 'original';
 type OverlayTranslateRunner = (overlay: OverlayHandle, task: string, text: string, pair: ChannelPair, lang: string, prevLang?: string) => void;
 type FullPageTargetStatus = 'idle' | 'queued' | 'translating' | 'done' | 'failed';
 type MachineTranslateChannelConfig = { id?: string; provider?: string; enabled?: boolean };
+type FullPageScopeDescriptor = {
+  element: HTMLElement;
+  score: number;
+  reason: string;
+};
+type FullPageScopeDecision = {
+  mode: FullPageScopeMode;
+  pageType: 'article' | 'docs' | 'product' | 'generic';
+  confidence: number;
+  scopes: FullPageScopeDescriptor[];
+};
 type FullPageTranslationTarget = {
   id: string;
   element: HTMLElement;
@@ -365,12 +377,14 @@ type FullPageTranslationSession = {
   channelId?: string;
   styleName: string;
   displayMode: FullPageDisplayMode;
+  scopeMode: FullPageScopeMode;
   visibleMode: FullPageVisibleMode;
   channelSupportsHtml: boolean;
   targets: Map<string, FullPageTranslationTarget>;
   queue: string[];
   observer: IntersectionObserver | null;
   mutationObserver: MutationObserver | null;
+  scopeDecision: FullPageScopeDecision | null;
   scanTimer?: number;
   processing: boolean;
   translatedCount: number;
@@ -388,6 +402,7 @@ type StorageConfig = {
   prevLanguage?: string;
   hoverDisplayMode?: HoverDisplayMode;
   fullPageDisplayMode?: FullPageDisplayMode;
+  fullPageScopeMode?: FullPageScopeMode;
   selectionTranslationMode?: TranslationMode;
   hoverTranslationMode?: TranslationMode;
   mtChannels?: MachineTranslateChannelConfig[];
@@ -851,6 +866,10 @@ function normalizePageText(text: string): string {
     .trim();
 }
 
+function fullPageScopeModeOf(value: unknown): FullPageScopeMode {
+  return value === 'page' ? 'page' : 'smart';
+}
+
 const TRANSLATE_EXCLUDED_SELECTOR = 'script,style,noscript,code,pre,kbd,samp,var,textarea,input,select,option,svg,canvas';
 const FULL_PAGE_REMOVE_SELECTOR = 'script,style,noscript,textarea,input,select,option,svg,canvas,iframe,button';
 const FULL_PAGE_REPLACE_BLOCKING_SELECTOR = 'img,picture,video,audio,svg,canvas,iframe,table,form,input,textarea,select,button';
@@ -863,6 +882,11 @@ const FULL_PAGE_MAX_TEXT_LENGTH = 1200;
 const FULL_PAGE_BATCH_SIZE = 10;
 const FULL_PAGE_BATCH_CHAR_LIMIT = 4000;
 const FULL_PAGE_RESCAN_DELAY = 180;
+const FULL_PAGE_SCOPE_ATTR = 'data-ifocal-full-page-scope';
+const FULL_PAGE_SCOPE_CANDIDATE_SELECTOR = 'main,article,[role="main"],[itemprop="articleBody"],section,div';
+const FULL_PAGE_SCOPE_MAX_CANDIDATES = 80;
+const FULL_PAGE_SCOPE_MIN_SCORE = 18;
+const FULL_PAGE_SCOPE_CONFIDENCE_MIN = 0.52;
 let fullPageTargetSeed = 0;
 
 function isExcludedTranslateElement(target: EventTarget | Node | null): boolean {
@@ -887,6 +911,207 @@ function extractTranslatableText(element: HTMLElement): string {
   } catch {
     return normalizePageText(element.innerText || element.textContent || '');
   }
+}
+
+function countMatches(text: string, pattern: RegExp): number {
+  const matches = String(text || '').match(pattern);
+  return matches ? matches.length : 0;
+}
+
+function safeNumber(value: number, min = 0, max = Number.POSITIVE_INFINITY) {
+  if (!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(max, value));
+}
+
+function textDensityScore(text: string, area: number): number {
+  const length = text.length;
+  if (!length || !area) return 0;
+  return safeNumber((length / area) * 180000, 0, 22);
+}
+
+function keywordHitScore(raw: string, positives: string[], negatives: string[]) {
+  const text = String(raw || '').toLowerCase();
+  let score = 0;
+  positives.forEach((item) => {
+    if (text.includes(item)) score += 5;
+  });
+  negatives.forEach((item) => {
+    if (text.includes(item)) score -= 7;
+  });
+  return score;
+}
+
+function getElementIdentityText(element: HTMLElement): string {
+  return `${element.id || ''} ${element.className || ''} ${element.getAttribute('role') || ''} ${element.getAttribute('itemprop') || ''}`;
+}
+
+function inferFullPageType(): 'article' | 'docs' | 'product' | 'generic' {
+  try {
+    const ldNodes = Array.from(document.querySelectorAll('script[type="application/ld+json"]'));
+    for (const node of ldNodes) {
+      const raw = String(node.textContent || '').trim();
+      if (!raw) continue;
+      const lowered = raw.toLowerCase();
+      if (lowered.includes('"@type":"product"') || lowered.includes('"@type": "product"')) return 'product';
+      if (lowered.includes('"@type":"article"') || lowered.includes('"@type": "article"') || lowered.includes('"@type":"newsarticle"')) return 'article';
+    }
+  } catch {}
+
+  const pathname = String(location.pathname || '').toLowerCase();
+  const host = String(location.hostname || '').toLowerCase();
+  const title = `${document.title || ''} ${pathname} ${host}`.toLowerCase();
+  if (/docs|guide|reference|api|manual|tutorial/.test(title)) return 'docs';
+  if (/product|sku|item|shop|store|goods|dp\/|gp\/product/.test(title)) return 'product';
+  if (/article|post|blog|news|story|read/.test(title)) return 'article';
+  return 'generic';
+}
+
+function getScopeTextMetrics(text: string) {
+  const normalized = normalizePageText(text);
+  const paragraphs = normalized ? normalized.split('\n').filter(Boolean) : [];
+  const sentenceCount = countMatches(normalized, /[.!?。！？；;]/g);
+  const chineseCount = countMatches(normalized, /[\u4e00-\u9fff]/g);
+  const latinWordCount = countMatches(normalized, /\b[a-zA-Z]{2,}\b/g);
+  return {
+    normalized,
+    paragraphs,
+    paragraphCount: paragraphs.length,
+    sentenceCount,
+    chineseCount,
+    latinWordCount,
+    length: normalized.length,
+  };
+}
+
+function scoreFullPageScopeCandidate(element: HTMLElement, pageType: 'article' | 'docs' | 'product' | 'generic'): FullPageScopeDescriptor | null {
+  if (!isVisibleForFullPageTranslate(element)) return null;
+  if (element.closest('nav,header,footer,aside,dialog,[role=\"navigation\"],[role=\"complementary\"]')) return null;
+
+  const rect = element.getBoundingClientRect();
+  const area = Math.max(rect.width, 1) * Math.max(rect.height, 1);
+  if (rect.width < 220 || rect.height < 120 || area < 40000) return null;
+
+  const text = extractTranslatableText(element);
+  const metrics = getScopeTextMetrics(text);
+  if (metrics.length < 80) return null;
+
+  const identity = getElementIdentityText(element);
+  const linkTextLength = Array.from(element.querySelectorAll('a'))
+    .map((node) => normalizePageText((node as HTMLElement).innerText || node.textContent || '').length)
+    .reduce((sum, value) => sum + value, 0);
+  const linkDensity = metrics.length ? linkTextLength / metrics.length : 0;
+  const headingCount = element.querySelectorAll('h1,h2,h3').length;
+  const codeCount = element.querySelectorAll('pre,code').length;
+  const inputLikeCount = element.querySelectorAll('button,input,select,textarea').length;
+  const imageCount = element.querySelectorAll('img,picture,video').length;
+
+  let score = 0;
+  score += textDensityScore(metrics.length > 0 ? metrics.normalized : '', area);
+  score += safeNumber(metrics.paragraphCount * 2.4, 0, 16);
+  score += safeNumber(metrics.sentenceCount * 0.8, 0, 10);
+  score += safeNumber((metrics.chineseCount + metrics.latinWordCount * 2) / 120, 0, 8);
+
+  if (element.matches('main,article,[role="main"],[itemprop="articleBody"]')) score += 18;
+  if (element.querySelector('article,main,[itemprop="articleBody"]')) score += 8;
+  if (headingCount > 0) score += Math.min(headingCount * 2, 6);
+
+  score += keywordHitScore(
+    identity,
+    ['article', 'content', 'main', 'body', 'post', 'entry', 'detail', 'docs', 'markdown', 'readme', 'product', 'description', 'summary'],
+    ['nav', 'menu', 'footer', 'header', 'sidebar', 'comment', 'reply', 'related', 'recommend', 'share', 'toolbar', 'banner', 'ad', 'popup'],
+  );
+
+  if (pageType === 'article') {
+    score += metrics.paragraphCount >= 3 ? 8 : 0;
+    score -= linkDensity > 0.45 ? 14 : linkDensity > 0.28 ? 6 : 0;
+    score -= inputLikeCount > 8 ? 8 : 0;
+  } else if (pageType === 'docs') {
+    score += codeCount > 0 ? 6 : 0;
+    score += headingCount >= 2 ? 5 : 0;
+    score -= linkDensity > 0.55 ? 12 : linkDensity > 0.35 ? 5 : 0;
+  } else if (pageType === 'product') {
+    score += keywordHitScore(identity, ['product', 'detail', 'sku', 'spec', 'feature', 'description', 'overview'], ['comment', 'review', 'recommend', 'similar']);
+    score += headingCount > 0 ? 4 : 0;
+    score -= inputLikeCount > 18 ? 10 : 0;
+    score -= linkDensity > 0.58 ? 10 : linkDensity > 0.4 ? 4 : 0;
+  } else {
+    score -= linkDensity > 0.5 ? 12 : linkDensity > 0.32 ? 5 : 0;
+    score -= inputLikeCount > 12 ? 8 : 0;
+  }
+
+  score -= imageCount > 20 && metrics.length < 500 ? 10 : 0;
+
+  if (score < FULL_PAGE_SCOPE_MIN_SCORE) return null;
+  return {
+    element,
+    score,
+    reason: `${pageType}|text:${metrics.length}|p:${metrics.paragraphCount}|link:${linkDensity.toFixed(2)}`,
+  };
+}
+
+function dedupeFullPageScopes(scopes: FullPageScopeDescriptor[]): FullPageScopeDescriptor[] {
+  const accepted: FullPageScopeDescriptor[] = [];
+  scopes.forEach((candidate) => {
+    const contained = accepted.find((item) => item.element.contains(candidate.element) || candidate.element.contains(item.element));
+    if (!contained) {
+      accepted.push(candidate);
+      return;
+    }
+    if (candidate.score > contained.score) {
+      const index = accepted.indexOf(contained);
+      if (index >= 0) accepted.splice(index, 1, candidate);
+    }
+  });
+  return accepted;
+}
+
+function clearFullPageScopeMarks() {
+  try {
+    document.querySelectorAll(`[${FULL_PAGE_SCOPE_ATTR}]`).forEach((node) => {
+      try { (node as HTMLElement).removeAttribute(FULL_PAGE_SCOPE_ATTR); } catch {}
+    });
+  } catch {}
+}
+
+function resolveSmartFullPageScopes(): FullPageScopeDecision {
+  const pageType = inferFullPageType();
+  const candidates: FullPageScopeDescriptor[] = [];
+  try {
+    const preferredRoots = Array.from(document.querySelectorAll('main,article,[role="main"],[itemprop="articleBody"]'));
+    const fallbackRoots = Array.from(document.querySelectorAll('section,div'));
+    const roots = [...preferredRoots];
+    fallbackRoots.forEach((node) => {
+      if (roots.length >= FULL_PAGE_SCOPE_MAX_CANDIDATES) return;
+      if (roots.includes(node)) return;
+      roots.push(node);
+    });
+    roots.forEach((node) => {
+      const element = node as HTMLElement;
+      const scored = scoreFullPageScopeCandidate(element, pageType);
+      if (scored) candidates.push(scored);
+    });
+  } catch {}
+
+  candidates.sort((left, right) => right.score - left.score);
+  const scopes = dedupeFullPageScopes(candidates).slice(0, 3);
+  const topScore = scopes[0]?.score || 0;
+  const secondScore = scopes[1]?.score || 0;
+  const confidence = safeNumber((topScore / 42) + Math.max(0, (topScore - secondScore) / 30), 0, 1);
+  const useSmart = scopes.length > 0 && confidence >= FULL_PAGE_SCOPE_CONFIDENCE_MIN;
+
+  clearFullPageScopeMarks();
+  if (useSmart) {
+    scopes.forEach((item, index) => {
+      try { item.element.setAttribute(FULL_PAGE_SCOPE_ATTR, `${index + 1}`); } catch {}
+    });
+  }
+
+  return {
+    mode: useSmart ? 'smart' : 'page',
+    pageType,
+    confidence,
+    scopes: useSmart ? scopes : [],
+  };
 }
 
 function machineTranslateTexts(
@@ -1468,12 +1693,76 @@ function collectFullPageTargetsFromRoot(root: ParentNode, session: FullPageTrans
   visit(FULL_PAGE_FALLBACK_SELECTOR, true);
 }
 
+function isTargetInsideScope(target: FullPageTranslationTarget, scopes: FullPageScopeDescriptor[]): boolean {
+  return scopes.some((scope) => scope.element === target.element || scope.element.contains(target.element));
+}
+
+function removeFullPageTarget(target: FullPageTranslationTarget, session: FullPageTranslationSession) {
+  try {
+    if (target.observed && session.observer) session.observer.unobserve(target.element);
+  } catch {}
+  if (target.mode === 'replace') {
+    try {
+      const sourceHost = target.sourceHost;
+      if (sourceHost && sourceHost.isConnected && target.element.isConnected) {
+        while (sourceHost.firstChild) {
+          target.element.insertBefore(sourceHost.firstChild, sourceHost);
+        }
+        sourceHost.remove();
+      }
+    } catch {}
+    try { target.translationHost?.remove(); } catch {}
+  } else {
+    try { target.translationHost?.remove(); } catch {}
+  }
+  try {
+    if (target.element.dataset.ifocalFullPageTargetId === target.id) {
+      delete target.element.dataset.ifocalFullPageTargetId;
+    }
+  } catch {}
+  session.targets.delete(target.id);
+  session.queue = session.queue.filter((id) => id !== target.id);
+}
+
+function cleanupFullPageTargets(session: FullPageTranslationSession, decision: FullPageScopeDecision) {
+  const toRemove: FullPageTranslationTarget[] = [];
+  session.targets.forEach((target) => {
+    if (!target.element.isConnected) {
+      toRemove.push(target);
+      return;
+    }
+    if (decision.mode === 'smart' && decision.scopes.length && !isTargetInsideScope(target, decision.scopes)) {
+      toRemove.push(target);
+    }
+  });
+  toRemove.forEach((target) => removeFullPageTarget(target, session));
+  if (toRemove.length) syncFullPageSessionCounts(session);
+}
+
+function collectFullPageTargets(session: FullPageTranslationSession) {
+  const decision = session.scopeMode === 'smart'
+    ? resolveSmartFullPageScopes()
+    : { mode: 'page' as FullPageScopeMode, pageType: inferFullPageType(), confidence: 0, scopes: [] as FullPageScopeDescriptor[] };
+  session.scopeDecision = decision;
+  cleanupFullPageTargets(session, decision);
+
+  if (decision.mode === 'smart' && decision.scopes.length) {
+    decision.scopes.forEach((scope) => {
+      collectFullPageTargetsFromRoot(scope.element, session);
+    });
+    return;
+  }
+
+  clearFullPageScopeMarks();
+  collectFullPageTargetsFromRoot(document, session);
+}
+
 function scheduleFullPageScan(session: FullPageTranslationSession, immediate = false) {
   if (fullPageSession !== session) return;
   if (typeof session.scanTimer === 'number') window.clearTimeout(session.scanTimer);
   session.scanTimer = window.setTimeout(() => {
     session.scanTimer = undefined;
-    collectFullPageTargetsFromRoot(document, session);
+    collectFullPageTargets(session);
   }, immediate ? 0 : FULL_PAGE_RESCAN_DELAY);
 }
 
@@ -1613,6 +1902,10 @@ function getFullPageTranslationState() {
       ok: true,
       hasSession: false,
       visibleMode: 'none',
+      scopeMode: 'page',
+      scopeResolvedMode: 'page',
+      pageType: 'generic',
+      confidence: 0,
       translated: 0,
       failed: 0,
       processing: false,
@@ -1623,6 +1916,10 @@ function getFullPageTranslationState() {
     ok: true,
     hasSession: true,
     visibleMode: fullPageSession.visibleMode,
+    scopeMode: fullPageSession.scopeMode,
+    scopeResolvedMode: fullPageSession.scopeDecision?.mode || 'page',
+    pageType: fullPageSession.scopeDecision?.pageType || 'generic',
+    confidence: Number(fullPageSession.scopeDecision?.confidence || 0),
     translated: fullPageSession.translatedCount,
     failed: fullPageSession.failedCount,
     processing: fullPageSession.processing,
@@ -1654,6 +1951,7 @@ function disposeFullPageSession(session: FullPageTranslationSession) {
   try { session.mutationObserver?.disconnect(); } catch {}
   session.observer = null;
   session.mutationObserver = null;
+  clearFullPageScopeMarks();
 }
 
 async function translateFullPage() {
@@ -1667,7 +1965,7 @@ async function translateFullPage() {
   try {
     const cfg = await new Promise<StorageConfig>((resolve) => {
       try {
-        chrome.storage.sync.get(['translateTargetLang', 'mtChannels', 'mtDefaultChannelId', 'wrapperStyleName', 'targetStylePresets', 'fullPageDisplayMode'], (items: any) => {
+        chrome.storage.sync.get(['translateTargetLang', 'mtChannels', 'mtDefaultChannelId', 'wrapperStyleName', 'targetStylePresets', 'fullPageDisplayMode', 'fullPageScopeMode'], (items: any) => {
           resolve(items || {});
         });
       } catch {
@@ -1678,6 +1976,7 @@ async function translateFullPage() {
     const channelId = String(cfg.mtDefaultChannelId || '').trim() || undefined;
     const styleName = String(cfg.wrapperStyleName || 'ifocal-target-style-dotted').trim() || 'ifocal-target-style-dotted';
     const displayMode: FullPageDisplayMode = cfg.fullPageDisplayMode === 'replace' ? 'replace' : 'insert';
+    const scopeMode = fullPageScopeModeOf((cfg as any).fullPageScopeMode);
     const channel = resolveMachineChannel(channelId, cfg.mtChannels);
 
     ensureDocLoadingStyle();
@@ -1689,19 +1988,21 @@ async function translateFullPage() {
       channelId,
       styleName,
       displayMode,
+      scopeMode,
       visibleMode: 'translation',
       channelSupportsHtml: machineChannelSupportsHtml(channel),
       targets: new Map(),
       queue: [],
       observer: null,
       mutationObserver: null,
+      scopeDecision: null,
       processing: false,
       translatedCount: 0,
       failedCount: 0,
     };
     fullPageSession = session;
     ensureFullPageObservers(session);
-    collectFullPageTargetsFromRoot(document, session);
+    collectFullPageTargets(session);
 
     if (!session.targets.size) {
       disposeFullPageSession(session);

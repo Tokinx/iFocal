@@ -34,6 +34,10 @@ type FullPageTranslationState = {
   ok?: boolean;
   hasSession?: boolean;
   visibleMode?: 'translation' | 'original' | 'none';
+  scopeMode?: 'smart' | 'page';
+  scopeResolvedMode?: 'smart' | 'page';
+  pageType?: 'article' | 'docs' | 'product' | 'generic';
+  confidence?: number;
   translated?: number;
   failed?: number;
   processing?: boolean;

@@ -400,6 +400,7 @@ async function saveBasics() {
     const hoverTranslationMode = config.value.hoverTranslationMode === 'machine' ? 'machine' : selectionTranslationMode;
     const hoverDisplayMode = config.value.hoverDisplayMode === 'overlay' ? 'overlay' : 'insert';
     const fullPageDisplayMode = config.value.fullPageDisplayMode === 'replace' ? 'replace' : 'insert';
+    const fullPageScopeMode = config.value.fullPageScopeMode === 'page' ? 'page' : 'smart';
     const mtDefaultId = normalizeMachineTranslateDefaultChannelId(mtDefaultChannelId.value, machineChannels.value);
     if (!k) {
       toast.error('快捷键不能为空');
@@ -411,6 +412,7 @@ async function saveBasics() {
     config.value.translateTargetLang = lang;
     config.value.hoverDisplayMode = hoverDisplayMode;
     config.value.fullPageDisplayMode = fullPageDisplayMode;
+    config.value.fullPageScopeMode = fullPageScopeMode;
     if (typeof config.value.enableSelectionTranslation !== 'boolean') config.value.enableSelectionTranslation = true;
     config.value.selectionTranslationMode = selectionTranslationMode;
     config.value.hoverTranslationMode = hoverTranslationMode;
@@ -436,6 +438,7 @@ async function saveBasics() {
       translateTargetLang: lang,
       hoverDisplayMode,
       fullPageDisplayMode,
+      fullPageScopeMode,
       wrapperStyleName: wrapperStyleNameToSave,
       targetStylePresets: presetsToSave,
       enableSelectionTranslation: config.value.enableSelectionTranslation,
@@ -2177,6 +2180,23 @@ async function fetchAddFormModels() {
                   <SelectContent>
                     <SelectItem value="insert">插入原文下方</SelectItem>
                     <SelectItem value="replace">覆盖原文（原地替换）</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <label class="text-sm font-medium leading-none block mb-1">全文翻译范围</label>
+                <p class="text-xs text-muted-foreground">默认优先识别正文、详情、文档主体，识别不准时再切回整页</p>
+              </div>
+              <div class="w-60">
+                <Select v-model="config.fullPageScopeMode">
+                  <SelectTrigger class="w-full">
+                    <SelectValue placeholder="翻译范围" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="smart">智能主内容</SelectItem>
+                    <SelectItem value="page">整页扫描</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
