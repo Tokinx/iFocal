@@ -398,7 +398,9 @@ async function saveBasics() {
     const lang = (config.value.translateTargetLang || 'zh-CN').trim() || 'zh-CN';
     const selectionTranslationMode = config.value.selectionTranslationMode === 'machine' ? 'machine' : 'ai';
     const hoverTranslationMode = config.value.hoverTranslationMode === 'machine' ? 'machine' : selectionTranslationMode;
-    const hoverDisplayMode = config.value.hoverDisplayMode === 'overlay' ? 'overlay' : 'insert';
+    const hoverDisplayMode = config.value.hoverDisplayMode === 'overlay'
+      ? 'overlay'
+      : (config.value.hoverDisplayMode === 'replace' ? 'replace' : 'insert');
     const fullPageDisplayMode = config.value.fullPageDisplayMode === 'replace' ? 'replace' : 'insert';
     const fullPageScopeMode = config.value.fullPageScopeMode === 'page' ? 'page' : 'smart';
     const mtDefaultId = normalizeMachineTranslateDefaultChannelId(mtDefaultChannelId.value, machineChannels.value);
@@ -2153,7 +2155,7 @@ async function fetchAddFormModels() {
             <div class="flex items-center justify-between gap-4">
               <div>
                 <label class="text-sm font-medium leading-none block mb-1">悬浮翻译结果显示方式</label>
-                <p class="text-xs text-muted-foreground">在原页面内插入结果，或使用悬浮面板展示</p>
+                <p class="text-xs text-muted-foreground">插入原文下方、覆盖原文，或使用悬浮面板展示</p>
               </div>
               <div class="w-60">
                 <Select v-model="config.hoverDisplayMode">
@@ -2161,7 +2163,8 @@ async function fetchAddFormModels() {
                     <SelectValue placeholder="显示方式" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="insert">插入页面</SelectItem>
+                    <SelectItem value="insert">插入原文下方</SelectItem>
+                    <SelectItem value="replace">覆盖原文</SelectItem>
                     <SelectItem value="overlay">悬浮面板</SelectItem>
                   </SelectContent>
                 </Select>
@@ -2179,7 +2182,7 @@ async function fetchAddFormModels() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="insert">插入原文下方</SelectItem>
-                    <SelectItem value="replace">覆盖原文（原地替换）</SelectItem>
+                    <SelectItem value="replace">覆盖原文</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

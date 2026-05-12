@@ -6,6 +6,39 @@ const DOC_STYLE = `
 .ifocal-target-inline-wrapper{}
 .ifocal-tx{display:inline;overflow-wrap:anywhere;word-break:break-word;hyphens:auto}
 .ifocal-fullpage-translation-replace{display:inline;margin-top:0}
+@keyframes ifocal-shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
+.ifocal-inline-source.ifocal-inline-loading{
+  display:inline !important;
+  color:transparent !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  background:linear-gradient(90deg, rgba(15,23,42,0.3) 25%, rgba(15,23,42,0.6) 37%, rgba(15,23,42,0.3) 63%);
+  background-size:400% 100%;
+  animation:ifocal-shimmer 1.2s ease-in-out infinite;
+  border-radius:4px;
+}
+.ifocal-inline-source.ifocal-inline-loading *{
+  visibility:hidden !important;
+}
+.ifocal-inline-translation.ifocal-inline-loading{
+  display:none !important;
+}
+.ifocal-fullpage-source.ifocal-fullpage-loading{
+  display:inline !important;
+  color:transparent !important;
+  -webkit-background-clip:text !important;
+  background-clip:text !important;
+  background:linear-gradient(90deg, rgba(15,23,42,0.3) 25%, rgba(15,23,42,0.6) 37%, rgba(15,23,42,0.3) 63%);
+  background-size:400% 100%;
+  animation:ifocal-shimmer 1.2s ease-in-out infinite;
+  border-radius:4px;
+}
+.ifocal-fullpage-source.ifocal-fullpage-loading *{
+  visibility:hidden !important;
+}
+.ifocal-target-wrapper.ifocal-fullpage-loading{
+  display:none !important;
+}
 @keyframes ifocal-spin{to{transform:rotate(360deg)}}
 .ifocal-loading{width:12px;height:12px;border:2px solid rgba(15,23,42,0.18);border-top-color:#0f172a;border-radius:50%;animation:ifocal-spin .8s linear infinite;display:inline-block;vertical-align:middle;line-height:1;flex:0 0 auto}
 .ifocal-loading-wrap{display:flex;align-items:center;justify-content:center;min-height:56px}
@@ -20,6 +53,15 @@ function needsLineBreak(tag: string) {
 function shouldInsertBreakFromSource(text: string): boolean {
   const spaces = (text.match(/ /g) || []).length;
   return spaces > 3;
+}
+function shouldUseTranslatedBreak(wrapper: HTMLElement, blockEl: HTMLElement | null, sourceText?: string): boolean {
+  if (!blockEl || !sourceText) return false;
+  if (wrapper.getAttribute('data-ifocal-inline-mode') === 'replace') return false;
+  const tag = (blockEl.tagName || 'div').toLowerCase();
+  return needsLineBreak(tag) && shouldInsertBreakFromSource(sourceText);
+}
+function shouldInsertTranslatedSpacer(wrapper: HTMLElement): boolean {
+  return wrapper.getAttribute('data-ifocal-inline-mode') !== 'replace';
 }
 function updateBreakForTranslated(blockEl: HTMLElement, source: string) {
   const tag = (blockEl.tagName || 'div').toLowerCase();
@@ -69,18 +111,20 @@ function sharedApplyWrapperLoading(wrapper: HTMLElement, sourceText?: string) {
     try { wrapper.setAttribute('data-tx-done', '0'); } catch {}
     wrapper.innerHTML = '';
     const block = wrapper.closest('p,div,section,article,li,td,a,h1,h2,h3,h4,h5,h6') as HTMLElement | null;
-    let needBr = false;
-    if (block && sourceText) {
-      const tag = (block.tagName || 'div').toLowerCase();
-      needBr = needsLineBreak(tag) && shouldInsertBreakFromSource(sourceText);
-    }
+    const needBr = shouldUseTranslatedBreak(wrapper, block, sourceText);
     if (needBr && block && sourceText) {
       updateBreakForTranslated(block, sourceText);
     } else {
-      const spacer = document.createElement('font');
-      spacer.className = 'notranslate';
-      spacer.innerHTML = '&nbsp;&nbsp;';
-      wrapper.appendChild(spacer);
+      if (block) {
+        const br = block.querySelector('br.ifocal-target-break');
+        br?.remove();
+      }
+      if (shouldInsertTranslatedSpacer(wrapper)) {
+        const spacer = document.createElement('font');
+        spacer.className = 'notranslate';
+        spacer.innerHTML = '&nbsp;&nbsp;';
+        wrapper.appendChild(spacer);
+      }
     }
     const styleName = (wrapper.getAttribute('data-tx-style') || '').trim() || 'ifocal-target-style-dotted';
     const typeClass = needBr ? 'ifocal-target-block-wrapper' : 'ifocal-target-inline-wrapper';
@@ -103,18 +147,20 @@ function sharedApplyWrapperResult(wrapper: HTMLElement, text: string, targetLang
     if (rtl) wrapper.setAttribute('dir', 'rtl'); else wrapper.removeAttribute('dir');
     wrapper.innerHTML = '';
     const block = wrapper.closest('p,div,section,article,li,td,a,h1,h2,h3,h4,h5,h6') as HTMLElement | null;
-    let needBr = false;
-    if (block && sourceText) {
-      const tag = (block.tagName || 'div').toLowerCase();
-      needBr = needsLineBreak(tag) && shouldInsertBreakFromSource(sourceText);
-    }
+    const needBr = shouldUseTranslatedBreak(wrapper, block, sourceText);
     if (needBr) {
       updateBreakForTranslated(block!, sourceText!);
     } else {
-      const spacer = document.createElement('font');
-      spacer.className = 'notranslate';
-      spacer.innerHTML = '&nbsp;&nbsp;';
-      wrapper.appendChild(spacer);
+      if (block) {
+        const br = block.querySelector('br.ifocal-target-break');
+        br?.remove();
+      }
+      if (shouldInsertTranslatedSpacer(wrapper)) {
+        const spacer = document.createElement('font');
+        spacer.className = 'notranslate';
+        spacer.innerHTML = '&nbsp;&nbsp;';
+        wrapper.appendChild(spacer);
+      }
     }
     const styleName = (wrapper.getAttribute('data-tx-style') || '').trim() || 'ifocal-target-style-dotted';
     const typeClass = needBr ? 'ifocal-target-block-wrapper' : 'ifocal-target-inline-wrapper';
@@ -141,18 +187,20 @@ function sharedApplyWrapperHtmlResult(wrapper: HTMLElement, html: string, target
     if (rtl) wrapper.setAttribute('dir', 'rtl'); else wrapper.removeAttribute('dir');
     wrapper.innerHTML = '';
     const block = wrapper.closest('p,div,section,article,li,td,a,h1,h2,h3,h4,h5,h6') as HTMLElement | null;
-    let needBr = false;
-    if (block && sourceText) {
-      const tag = (block.tagName || 'div').toLowerCase();
-      needBr = needsLineBreak(tag) && shouldInsertBreakFromSource(sourceText);
-    }
+    const needBr = shouldUseTranslatedBreak(wrapper, block, sourceText);
     if (needBr) {
       updateBreakForTranslated(block!, sourceText!);
     } else {
-      const spacer = document.createElement('font');
-      spacer.className = 'notranslate';
-      spacer.innerHTML = '&nbsp;&nbsp;';
-      wrapper.appendChild(spacer);
+      if (block) {
+        const br = block.querySelector('br.ifocal-target-break');
+        br?.remove();
+      }
+      if (shouldInsertTranslatedSpacer(wrapper)) {
+        const spacer = document.createElement('font');
+        spacer.className = 'notranslate';
+        spacer.innerHTML = '&nbsp;&nbsp;';
+        wrapper.appendChild(spacer);
+      }
     }
     const styleName = (wrapper.getAttribute('data-tx-style') || '').trim() || 'ifocal-target-style-dotted';
     const typeClass = needBr ? 'ifocal-target-block-wrapper' : 'ifocal-target-inline-wrapper';
@@ -203,6 +251,123 @@ function sharedApplyWrapperErrorResult(
       });
     }
   } catch {}
+}
+
+function ensureInlineHoverHosts(blockEl: HTMLElement, mode: InlineHoverTranslationMode) {
+  const existingSource = blockEl.querySelector<HTMLElement>('[data-ifocal-inline-source="1"]');
+  const existingTranslation = blockEl.querySelector<HTMLElement>('[data-ifocal-inline-translation="1"]');
+
+  if (mode === 'insert') {
+    if (existingSource) {
+      existingSource.style.display = '';
+      try { existingSource.removeAttribute('aria-hidden'); } catch {}
+      while (existingSource.firstChild) {
+        blockEl.insertBefore(existingSource.firstChild, existingSource);
+      }
+      existingSource.remove();
+    }
+    if (existingTranslation) {
+      existingTranslation.style.display = '';
+      existingTranslation.remove();
+    }
+    return { wrapperParent: blockEl };
+  }
+
+  if (existingSource && existingTranslation) {
+    existingSource.style.display = 'none';
+    existingTranslation.style.display = '';
+    try { existingSource.setAttribute('aria-hidden', 'true'); } catch {}
+    try { existingTranslation.removeAttribute('aria-hidden'); } catch {}
+    return { sourceHost: existingSource, wrapperParent: existingTranslation };
+  }
+
+  if (existingSource && !existingTranslation) {
+    existingSource.style.display = 'none';
+    try { existingSource.setAttribute('aria-hidden', 'true'); } catch {}
+  }
+
+  if (!existingSource && existingTranslation) {
+    existingTranslation.style.display = '';
+    try { existingTranslation.removeAttribute('aria-hidden'); } catch {}
+    return { wrapperParent: existingTranslation };
+  }
+
+  const sourceHost = document.createElement('span');
+  sourceHost.className = 'ifocal-inline-source notranslate';
+  sourceHost.setAttribute('data-ifocal-inline-source', '1');
+  while (blockEl.firstChild) {
+    sourceHost.appendChild(blockEl.firstChild);
+  }
+  const translationHost = document.createElement('span');
+  translationHost.className = 'ifocal-inline-translation notranslate';
+  translationHost.setAttribute('data-ifocal-inline-translation', '1');
+  sourceHost.style.display = 'none';
+  try { sourceHost.setAttribute('aria-hidden', 'true'); } catch {}
+  try { translationHost.removeAttribute('aria-hidden'); } catch {}
+  blockEl.appendChild(sourceHost);
+  blockEl.appendChild(translationHost);
+  return { sourceHost, wrapperParent: translationHost };
+}
+
+function setInlineHoverLoadingState(blockEl: HTMLElement, mode: InlineHoverTranslationMode, isLoading: boolean) {
+  if (mode !== 'replace') return;
+  const sourceHost = blockEl.querySelector<HTMLElement>('[data-ifocal-inline-source="1"]');
+  const translationHost = blockEl.querySelector<HTMLElement>('[data-ifocal-inline-translation="1"]');
+  if (!sourceHost || !translationHost) return;
+  sourceHost.classList.toggle('ifocal-inline-loading', isLoading);
+  translationHost.classList.toggle('ifocal-inline-loading', isLoading);
+  if (isLoading) {
+    sourceHost.style.display = '';
+    translationHost.style.display = 'none';
+    try { sourceHost.removeAttribute('aria-hidden'); } catch {}
+    try { translationHost.setAttribute('aria-hidden', 'true'); } catch {}
+    return;
+  }
+  sourceHost.style.display = 'none';
+  translationHost.style.display = '';
+  try { sourceHost.setAttribute('aria-hidden', 'true'); } catch {}
+  try { translationHost.removeAttribute('aria-hidden'); } catch {}
+}
+
+function setFullPageReplaceLoadingState(target: FullPageTranslationTarget, isLoading: boolean) {
+  if (target.mode !== 'replace') return;
+  const sourceHost = target.sourceHost;
+  const translationHost = target.translationHost;
+  if (!sourceHost || !translationHost) return;
+  sourceHost.classList.toggle('ifocal-fullpage-loading', isLoading);
+  translationHost.classList.toggle('ifocal-fullpage-loading', isLoading);
+  if (isLoading) {
+    sourceHost.style.display = '';
+    translationHost.style.display = 'none';
+    try { sourceHost.removeAttribute('aria-hidden'); } catch {}
+    try { translationHost.setAttribute('aria-hidden', 'true'); } catch {}
+    return;
+  }
+  sourceHost.style.display = 'none';
+  translationHost.style.display = '';
+  try { sourceHost.setAttribute('aria-hidden', 'true'); } catch {}
+  try { translationHost.removeAttribute('aria-hidden'); } catch {}
+}
+
+function clearInlineHoverTranslation(blockEl: HTMLElement) {
+  const sourceHost = blockEl.querySelector<HTMLElement>('[data-ifocal-inline-source="1"]');
+  const translationHost = blockEl.querySelector<HTMLElement>('[data-ifocal-inline-translation="1"]');
+  if (sourceHost && translationHost) {
+    sourceHost.classList.remove('ifocal-inline-loading');
+    translationHost.classList.remove('ifocal-inline-loading');
+    while (sourceHost.firstChild) {
+      blockEl.insertBefore(sourceHost.firstChild, sourceHost);
+    }
+    sourceHost.remove();
+    translationHost.remove();
+  } else {
+    const existWrapper = blockEl.querySelector<HTMLElement>('font.ifocal-target-wrapper.notranslate');
+    existWrapper?.remove();
+  }
+  const br = blockEl.querySelector('br.ifocal-target-break');
+  br?.remove();
+  blockEl.dataset.fcTranslated = '';
+  try { blockEl.removeAttribute('aria-busy'); } catch {}
 }
 
 // 样式通过 Shadow DOM 注入；语言列表通过后台消息读取。
@@ -338,7 +503,7 @@ type OverlayHandle = {
 
 type ChannelPair = { channel: string; model: string } | null;
 type TranslationMode = 'ai' | 'machine';
-type HoverDisplayMode = 'insert' | 'overlay';
+type HoverDisplayMode = 'insert' | 'replace' | 'overlay';
 type FullPageDisplayMode = 'insert' | 'replace';
 type FullPageScopeMode = 'smart' | 'page';
 type FullPageVisibleMode = 'translation' | 'original';
@@ -356,6 +521,7 @@ type FullPageScopeDecision = {
   confidence: number;
   scopes: FullPageScopeDescriptor[];
 };
+type InlineHoverTranslationMode = 'insert' | 'replace';
 type FullPageTranslationTarget = {
   id: string;
   element: HTMLElement;
@@ -429,6 +595,11 @@ function channelHasModelId(channel: { models?: string[] } | null | undefined, mo
 
 function normalizeTranslationMode(value: unknown): TranslationMode {
   return value === 'machine' ? 'machine' : 'ai';
+}
+
+function normalizeHoverDisplayMode(value: unknown): HoverDisplayMode {
+  if (value === 'overlay' || value === 'replace') return value;
+  return 'insert';
 }
 
 function firstModelIdFromChannel(channel: { models?: string[] } | null | undefined): string | null {
@@ -560,10 +731,10 @@ function readHotkeys() {
       if (items?.actionKey) actionKey = items.actionKey;
       else if (items?.hoverKey) actionKey = items.hoverKey;
       else if (items?.selectKey) actionKey = items.selectKey;
-      if (items?.hoverDisplayMode === 'overlay' || items?.hoverDisplayMode === 'insert') {
-        hoverDisplayMode = items.hoverDisplayMode;
-      } else if (items?.displayMode === 'overlay' || items?.displayMode === 'insert') {
-        hoverDisplayMode = items.displayMode;
+      if (items?.hoverDisplayMode === 'overlay' || items?.hoverDisplayMode === 'insert' || items?.hoverDisplayMode === 'replace') {
+        hoverDisplayMode = normalizeHoverDisplayMode(items.hoverDisplayMode);
+      } else if (items?.displayMode === 'overlay' || items?.displayMode === 'insert' || items?.displayMode === 'replace') {
+        hoverDisplayMode = normalizeHoverDisplayMode(items.displayMode);
       }
       enableSelectionTranslation = typeof items?.enableSelectionTranslation === 'boolean' ? items.enableSelectionTranslation : true;
       selectionTranslationMode = normalizeTranslationMode(items?.selectionTranslationMode);
@@ -573,11 +744,9 @@ function readHotkeys() {
       if (areaName !== 'sync') return;
       if (changes.actionKey) actionKey = changes.actionKey.newValue || 'Alt';
       if (changes.hoverDisplayMode) {
-        const mode = changes.hoverDisplayMode.newValue as HoverDisplayMode;
-        hoverDisplayMode = mode === 'overlay' ? 'overlay' : 'insert';
+        hoverDisplayMode = normalizeHoverDisplayMode(changes.hoverDisplayMode.newValue);
       } else if (changes.displayMode) {
-        const mode = changes.displayMode.newValue as HoverDisplayMode;
-        hoverDisplayMode = mode === 'overlay' ? 'overlay' : 'insert';
+        hoverDisplayMode = normalizeHoverDisplayMode(changes.displayMode.newValue);
       }
       if (changes.enableSelectionTranslation) enableSelectionTranslation = !!changes.enableSelectionTranslation.newValue;
       if (changes.selectionTranslationMode) selectionTranslationMode = normalizeTranslationMode(changes.selectionTranslationMode.newValue);
@@ -683,6 +852,11 @@ function findTextBlockElement(target: EventTarget | null): HTMLElement | null {
   const element = target instanceof HTMLElement ? target : null;
   if (!element) return null;
   if (isInputArea(element)) return null;
+  const inlineTranslation = element.closest('[data-ifocal-inline-translation="1"]') as HTMLElement | null;
+  if (inlineTranslation) {
+    const owner = inlineTranslation.parentElement;
+    if (owner && !isIfocalElement(owner) && !isExcludedTranslateElement(owner)) return owner;
+  }
   const BLOCK_TAGS = new Set(['P', 'DIV', 'ARTICLE', 'SECTION', 'LI', 'TD', 'A', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6']);
   let current: HTMLElement | null = element;
   while (current && current !== document.body) {
@@ -1507,8 +1681,20 @@ function syncFullPageSessionCounts(session: FullPageTranslationSession) {
 function applyFullPageTargetVisibility(session: FullPageTranslationSession, target: FullPageTranslationTarget) {
   const showTranslation = session.visibleMode === 'translation';
   if (target.mode === 'replace') {
+    if (showTranslation && target.status === 'translating') {
+      setFullPageReplaceLoadingState(target, true);
+      return;
+    }
+    setFullPageReplaceLoadingState(target, false);
     if (target.sourceHost) target.sourceHost.style.display = showTranslation ? 'none' : '';
     if (target.translationHost) target.translationHost.style.display = showTranslation ? '' : 'none';
+    try {
+      if (target.sourceHost) target.sourceHost.setAttribute('aria-hidden', showTranslation ? 'true' : 'false');
+      if (target.translationHost) {
+        if (showTranslation) target.translationHost.removeAttribute('aria-hidden');
+        else target.translationHost.setAttribute('aria-hidden', 'true');
+      }
+    } catch {}
     return;
   }
   if (target.translationHost) target.translationHost.style.display = showTranslation ? '' : 'none';
@@ -1705,13 +1891,19 @@ function removeFullPageTarget(target: FullPageTranslationTarget, session: FullPa
     try {
       const sourceHost = target.sourceHost;
       if (sourceHost && sourceHost.isConnected && target.element.isConnected) {
+        sourceHost.classList.remove('ifocal-fullpage-loading');
+        try { sourceHost.removeAttribute('aria-hidden'); } catch {}
         while (sourceHost.firstChild) {
           target.element.insertBefore(sourceHost.firstChild, sourceHost);
         }
         sourceHost.remove();
       }
     } catch {}
-    try { target.translationHost?.remove(); } catch {}
+    try {
+      target.translationHost?.classList.remove('ifocal-fullpage-loading');
+      target.translationHost?.removeAttribute('aria-hidden');
+      target.translationHost?.remove();
+    } catch {}
   } else {
     try { target.translationHost?.remove(); } catch {}
   }
@@ -2183,28 +2375,31 @@ function toggleHoverTranslate(blockEl: HTMLElement) {
       return;
     }
 
-    const existWrapper = blockEl.querySelector<HTMLElement>('font.ifocal-target-wrapper.notranslate');
-    if (existWrapper || blockEl.dataset.fcTranslated === '1') {
-      existWrapper?.remove();
-      const br = blockEl.querySelector('br.ifocal-target-break');
-      br?.remove();
-      blockEl.dataset.fcTranslated = '';
+    if (blockEl.dataset.fcTranslated === '1' || blockEl.querySelector<HTMLElement>('font.ifocal-target-wrapper.notranslate') || blockEl.querySelector<HTMLElement>('[data-ifocal-inline-translation="1"]')) {
+      clearInlineHoverTranslation(blockEl);
       return;
     }
 
     chrome.storage.sync.get(['translateTargetLang', 'wrapperStyleName', 'targetStylePresets', 'selectionTranslationMode', 'hoverTranslationMode', 'mtChannels', 'mtDefaultChannelId'], (cfg: StorageConfig & any) => {
       const useMachineMode = shouldUseMachineTranslation(resolveHoverTranslationMode(cfg));
+      const inlineMode: InlineHoverTranslationMode = hoverDisplayMode === 'replace' ? 'replace' : 'insert';
       const structuredSource = useMachineMode ? extractTranslatableHtml(blockEl) : null;
       const sourceText = String(structuredSource?.text || blockEl.innerText || '').trim();
       const langCode = (cfg.translateTargetLang || 'zh-CN').trim();
       const styleName = (cfg.wrapperStyleName || 'ifocal-target-style-dotted').trim();
       ensureDocLoadingStyle();
       ensureTargetStylePresets(cfg.targetStylePresets as any[]);
+      const hosts = ensureInlineHoverHosts(blockEl, inlineMode);
       // 统一创建 wrapper，并标注样式名供 applyWrapperResult 使用
       const wrapper = sharedCreateWrapper(`inline_${Date.now()}`, langCode);
       try { wrapper.setAttribute('data-tx-style', styleName); } catch {}
-      blockEl.appendChild(wrapper);
-      sharedApplyWrapperLoading(wrapper, sourceText);
+      try { wrapper.setAttribute('data-ifocal-inline-mode', inlineMode); } catch {}
+      hosts.wrapperParent.appendChild(wrapper);
+      if (inlineMode === 'replace') {
+        setInlineHoverLoadingState(blockEl, inlineMode, true);
+      } else {
+        sharedApplyWrapperLoading(wrapper, sourceText);
+      }
       try { blockEl.setAttribute('aria-busy', 'true'); } catch {}
 
       if (useMachineMode) {
@@ -2213,6 +2408,7 @@ function toggleHoverTranslate(blockEl: HTMLElement) {
           : Promise.resolve({ html: '', error: '未找到可翻译内容' });
         void pending.then((response) => {
           blockEl.dataset.fcTranslated = '1';
+          setInlineHoverLoadingState(blockEl, inlineMode, false);
           if (response.html) {
             sharedApplyWrapperHtmlResult(wrapper, response.html, langCode, sourceText);
             return;
@@ -2226,6 +2422,7 @@ function toggleHoverTranslate(blockEl: HTMLElement) {
       chrome.runtime.sendMessage({ action: 'performAiAction', task: 'translate', text: sourceText }, (response: { ok?: boolean; result?: string; error?: string } | undefined) => {
         try { void chrome.runtime.lastError; } catch { }
         blockEl.dataset.fcTranslated = '1';
+        setInlineHoverLoadingState(blockEl, inlineMode, false);
         const msg = response && response.ok ? response.result : response?.error || '';
         sharedApplyWrapperResult(wrapper, msg || '', langCode, undefined, sourceText);
       });
