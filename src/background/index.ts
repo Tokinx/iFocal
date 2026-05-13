@@ -1255,30 +1255,61 @@ function extractGoogleFreeBatchTranslations(payload: any, expected: number): str
   throw new Error('Google Web Free 批量返回格式不兼容');
 }
 
-function extractDeepLXBatchTranslations(payload: any): string[] {
+function extractDeepLXTranslatedText(payload: any): string {
   if (typeof payload?.code !== 'undefined' && Number(payload.code) !== 200) {
     throw new Error(`DeepLX 翻译失败：${payload?.message || payload?.msg || payload.code}`);
   }
+  const text = payload?.data ?? payload?.translation ?? payload?.translated_text ?? payload?.result;
+  if (!text) throw new Error('DeepLX 返回空结果');
+  return String(text);
+}
 
-  if (Array.isArray(payload) && payload.every((item) => typeof item === 'string' || typeof item?.text === 'string')) {
-    return payload.map((item) => typeof item === 'string' ? item : String(item?.text || ''));
+function createDeepLXBatchTokens(texts: string[]): string[] {
+  let salt = '';
+  do {
+    salt = Math.random().toString(36).slice(2, 10).toUpperCase();
+  } while (texts.some((text) => String(text || '').includes(`__IFOCAL_SEG_${salt}_`)));
+  return texts.map((_, index) => `__IFOCAL_SEG_${salt}_${index.toString(36).toUpperCase()}__`);
+}
+
+function packDeepLXBatchText(requests: MachineTranslateBatchItemRequest[]) {
+  const texts = requests.map((request) => String(request.text || ''));
+  const tokens = createDeepLXBatchTokens(texts);
+  const text = requests
+    .map((request, index) => `${tokens[index]}\n${String(request.text || '')}`)
+    .join('\n\n');
+  return { text, tokens };
+}
+
+function unpackDeepLXBatchText(translated: string, tokens: string[]): string[] {
+  const source = String(translated || '');
+  if (!tokens.length) return [];
+  const positions = tokens.map((token) => source.indexOf(token));
+  if (positions.some((position) => position < 0)) {
+    throw new Error('DeepLX 批量拆分失败：缺少分段标记');
+  }
+  for (let index = 1; index < positions.length; index += 1) {
+    if (positions[index]! <= positions[index - 1]!) {
+      throw new Error('DeepLX 批量拆分失败：分段标记顺序异常');
+    }
   }
 
-  const candidates = [
-    payload?.data,
-    payload?.translations,
-    payload?.result,
-  ];
-  for (const candidate of candidates) {
-    if (!Array.isArray(candidate)) continue;
-    const translations = candidate.map((item: any) => {
-      if (typeof item === 'string') return item;
-      return String(item?.text || item?.translation || item?.translated_text || item?.result || '');
-    });
-    if (translations.length && translations.every(Boolean)) return translations;
+  const prefix = source.slice(0, positions[0]!);
+  if (prefix.trim()) {
+    throw new Error('DeepLX 批量拆分失败：首段前存在额外文本');
   }
 
-  throw new Error('DeepLX 批量返回格式不兼容');
+  const translations: string[] = [];
+  for (let index = 0; index < tokens.length; index += 1) {
+    const start = positions[index]! + tokens[index]!.length;
+    const end = index + 1 < tokens.length ? positions[index + 1]! : source.length;
+    const segment = source.slice(start, end).replace(/^\s+/, '').replace(/\s+$/, '');
+    if (!segment) {
+      throw new Error(`DeepLX 批量拆分失败：第 ${index + 1} 段为空`);
+    }
+    translations.push(segment);
+  }
+  return translations;
 }
 
 async function callGoogleFreeTranslate(channel: MachineTranslateChannel, request: MachineTranslateSingleRequest) {
@@ -1440,11 +1471,15 @@ async function callDeepLXBatchTranslate(channel: MachineTranslateChannel, reques
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (channel.apiKey) headers.Authorization = `Bearer ${channel.apiKey}`;
   const first = requests[0]!;
+  if (requests.length > 1 && first.format === 'html') {
+    throw new Error('DeepLX 批量 HTML 翻译不受支持');
+  }
+  const packed = requests.length > 1 ? packDeepLXBatchText(requests) : null;
   const res = await fetchWithTimeout(url, {
     method: 'POST',
     headers,
     body: JSON.stringify({
-      text: requests.length === 1 ? first.text : requests.map((request) => request.text),
+      text: requests.length === 1 ? first.text : packed!.text,
       source_lang: mapMachineLang(channel.provider, first.sourceLang || 'auto', 'source'),
       target_lang: mapMachineLang(channel.provider, first.targetLang, 'target'),
     }),
@@ -1452,14 +1487,9 @@ async function callDeepLXBatchTranslate(channel: MachineTranslateChannel, reques
   if (!res.ok) throw await buildHttpError('DeepLX', res);
   const json = await res.json();
   if (requests.length === 1) {
-    if (typeof json?.code !== 'undefined' && Number(json.code) !== 200) {
-      throw new Error(`DeepLX 翻译失败：${json?.message || json?.msg || json.code}`);
-    }
-    const text = json?.data ?? json?.translation ?? json?.translated_text ?? json?.result;
-    if (!text) throw new Error('DeepLX 返回空结果');
-    return [String(text)];
+    return [extractDeepLXTranslatedText(json)];
   }
-  return extractDeepLXBatchTranslations(json);
+  return unpackDeepLXBatchText(extractDeepLXTranslatedText(json), packed!.tokens);
 }
 
 const baiduTokenCache = new Map<string, { token: string; expiresAt: number }>();
