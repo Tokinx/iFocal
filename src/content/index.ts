@@ -12,13 +12,13 @@ const DOC_STYLE = `
   color:transparent !important;
   -webkit-background-clip: text !important;
   background-clip: text !important;
-  background:linear-gradient(90deg, rgba(15,23,42,0.3) 25%, rgba(15,23,42,0.6) 37%, rgba(15,23,42,0.3) 63%);
+  background:linear-gradient(90deg, rgba(15,23,42,0.6), transparent, rgba(15,23,42,0.6));
   background-size:400% 100%;
-  animation:ifocal-shimmer 1.2s ease-in-out infinite;
+  animation:ifocal-shimmer 1.6s ease-in-out infinite;
   border-radius:4px;
 }
 .ifocal-inline-source.ifocal-inline-loading *{
-  visibility:hidden !important;
+  color: transparent !important;
 }
 .ifocal-inline-translation.ifocal-inline-loading{
   display:none !important;
@@ -28,13 +28,13 @@ const DOC_STYLE = `
   color:transparent !important;
   -webkit-background-clip:text !important;
   background-clip:text !important;
-  background:linear-gradient(90deg, rgba(15,23,42,0.3) 25%, rgba(15,23,42,0.6) 37%, rgba(15,23,42,0.3) 63%);
+  background:linear-gradient(90deg, rgba(15,23,42,0.6), transparent, rgba(15,23,42,0.6));
   background-size:400% 100%;
-  animation:ifocal-shimmer 1.2s ease-in-out infinite;
+  animation:ifocal-shimmer 1.6s ease-in-out infinite;
   border-radius:4px;
 }
 .ifocal-fullpage-source.ifocal-fullpage-loading *{
-  visibility:hidden !important;
+  color: transparent !important;
 }
 .ifocal-target-wrapper.ifocal-fullpage-loading{
   display:none !important;

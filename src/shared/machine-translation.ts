@@ -20,6 +20,7 @@ export interface MachineTranslateChannel {
   qps?: number;
   maxConcurrent?: number;
   timeoutMs?: number;
+  batchSize?: number;
 }
 
 export interface MachineTranslateBatchRequest {
@@ -43,11 +44,13 @@ export interface MachineTranslateProviderMeta {
   defaultQps: number;
   defaultMaxConcurrent: number;
   defaultTimeoutMs: number;
+  defaultBatchSize: number;
 }
 
 export const MT_BUILTIN_MICROSOFT_FREE_ID = 'builtin-microsoft-free';
 export const MT_BUILTIN_GOOGLE_FREE_ID = 'builtin-google-free';
 export const DEFAULT_MACHINE_TRANSLATE_CHANNEL_ID = MT_BUILTIN_MICROSOFT_FREE_ID;
+export const DEFAULT_MACHINE_TRANSLATE_BATCH_SIZE = 5;
 
 export const MACHINE_TRANSLATE_PROVIDER_METAS: Record<MachineTranslateProvider, MachineTranslateProviderMeta> = {
   'microsoft-free': {
@@ -60,6 +63,7 @@ export const MACHINE_TRANSLATE_PROVIDER_METAS: Record<MachineTranslateProvider, 
     defaultQps: 4,
     defaultMaxConcurrent: 4,
     defaultTimeoutMs: 15000,
+    defaultBatchSize: DEFAULT_MACHINE_TRANSLATE_BATCH_SIZE,
   },
   'google-free': {
     value: 'google-free',
@@ -71,6 +75,7 @@ export const MACHINE_TRANSLATE_PROVIDER_METAS: Record<MachineTranslateProvider, 
     defaultQps: 3,
     defaultMaxConcurrent: 3,
     defaultTimeoutMs: 15000,
+    defaultBatchSize: DEFAULT_MACHINE_TRANSLATE_BATCH_SIZE,
   },
   'google-official': {
     value: 'google-official',
@@ -81,6 +86,7 @@ export const MACHINE_TRANSLATE_PROVIDER_METAS: Record<MachineTranslateProvider, 
     defaultQps: 5,
     defaultMaxConcurrent: 5,
     defaultTimeoutMs: 20000,
+    defaultBatchSize: DEFAULT_MACHINE_TRANSLATE_BATCH_SIZE,
   },
   'microsoft-official': {
     value: 'microsoft-official',
@@ -92,6 +98,7 @@ export const MACHINE_TRANSLATE_PROVIDER_METAS: Record<MachineTranslateProvider, 
     defaultQps: 5,
     defaultMaxConcurrent: 5,
     defaultTimeoutMs: 20000,
+    defaultBatchSize: DEFAULT_MACHINE_TRANSLATE_BATCH_SIZE,
   },
   deepl: {
     value: 'deepl',
@@ -102,6 +109,7 @@ export const MACHINE_TRANSLATE_PROVIDER_METAS: Record<MachineTranslateProvider, 
     defaultQps: 4,
     defaultMaxConcurrent: 4,
     defaultTimeoutMs: 20000,
+    defaultBatchSize: DEFAULT_MACHINE_TRANSLATE_BATCH_SIZE,
   },
   deeplx: {
     value: 'deeplx',
@@ -112,6 +120,7 @@ export const MACHINE_TRANSLATE_PROVIDER_METAS: Record<MachineTranslateProvider, 
     defaultQps: 4,
     defaultMaxConcurrent: 4,
     defaultTimeoutMs: 20000,
+    defaultBatchSize: DEFAULT_MACHINE_TRANSLATE_BATCH_SIZE,
   },
   baidu: {
     value: 'baidu',
@@ -123,6 +132,7 @@ export const MACHINE_TRANSLATE_PROVIDER_METAS: Record<MachineTranslateProvider, 
     defaultQps: 3,
     defaultMaxConcurrent: 3,
     defaultTimeoutMs: 20000,
+    defaultBatchSize: DEFAULT_MACHINE_TRANSLATE_BATCH_SIZE,
   },
 };
 
@@ -139,6 +149,7 @@ export const DEFAULT_MACHINE_TRANSLATE_CHANNELS: MachineTranslateChannel[] = [
     qps: MACHINE_TRANSLATE_PROVIDER_METAS['microsoft-free'].defaultQps,
     maxConcurrent: MACHINE_TRANSLATE_PROVIDER_METAS['microsoft-free'].defaultMaxConcurrent,
     timeoutMs: MACHINE_TRANSLATE_PROVIDER_METAS['microsoft-free'].defaultTimeoutMs,
+    batchSize: MACHINE_TRANSLATE_PROVIDER_METAS['microsoft-free'].defaultBatchSize,
   },
   {
     id: MT_BUILTIN_GOOGLE_FREE_ID,
@@ -150,6 +161,7 @@ export const DEFAULT_MACHINE_TRANSLATE_CHANNELS: MachineTranslateChannel[] = [
     qps: MACHINE_TRANSLATE_PROVIDER_METAS['google-free'].defaultQps,
     maxConcurrent: MACHINE_TRANSLATE_PROVIDER_METAS['google-free'].defaultMaxConcurrent,
     timeoutMs: MACHINE_TRANSLATE_PROVIDER_METAS['google-free'].defaultTimeoutMs,
+    batchSize: MACHINE_TRANSLATE_PROVIDER_METAS['google-free'].defaultBatchSize,
   },
 ];
 
@@ -176,12 +188,20 @@ export function createMachineTranslateChannel(provider: MachineTranslateProvider
     qps: meta.defaultQps,
     maxConcurrent: meta.defaultMaxConcurrent,
     timeoutMs: meta.defaultTimeoutMs,
+    batchSize: meta.defaultBatchSize,
   };
 }
 
-function positiveNumber(value: unknown, fallback: number): number {
+function positiveNumber(value: unknown, fallback: number, max?: number): number {
   const num = Number(value);
-  return Number.isFinite(num) && num > 0 ? Math.floor(num) : fallback;
+  if (!Number.isFinite(num) || num <= 0) return fallback;
+  const next = Math.floor(num);
+  if (typeof max === 'number' && max > 0) return Math.min(next, max);
+  return next;
+}
+
+function normalizeBatchSize(value: unknown, fallback: number): number {
+  return Math.max(1, Math.min(20, positiveNumber(value, fallback, 20)));
 }
 
 function normalizeOptionalString(value: unknown): string | undefined {
@@ -206,6 +226,7 @@ function normalizeChannel(raw: any, index: number): MachineTranslateChannel | nu
     qps: positiveNumber(raw.qps, meta.defaultQps),
     maxConcurrent: positiveNumber(raw.maxConcurrent, meta.defaultMaxConcurrent),
     timeoutMs: positiveNumber(raw.timeoutMs, meta.defaultTimeoutMs),
+    batchSize: normalizeBatchSize(raw.batchSize, meta.defaultBatchSize),
   };
 }
 

@@ -94,6 +94,7 @@ const mtAddForm = reactive({
   qps: 4,
   maxConcurrent: 4,
   timeoutMs: 20000,
+  batchSize: 5,
   enabled: true,
 });
 // 样式选择/编辑
@@ -200,13 +201,14 @@ function machineProviderModeLabel(provider: MachineTranslateProvider) {
   return '';
 }
 
-function applyMachineProviderDefaults(target: { provider: MachineTranslateProvider; name?: string; apiUrl?: string; qps?: number; maxConcurrent?: number; timeoutMs?: number }) {
+function applyMachineProviderDefaults(target: { provider: MachineTranslateProvider; name?: string; apiUrl?: string; qps?: number; maxConcurrent?: number; timeoutMs?: number; batchSize?: number }) {
   const meta = getMachineTranslateProviderMeta(target.provider);
   if (!target.name) target.name = meta.label;
   if (!target.apiUrl) target.apiUrl = meta.defaultApiUrl;
   target.qps = Number(target.qps) || meta.defaultQps;
   target.maxConcurrent = Number(target.maxConcurrent) || meta.defaultMaxConcurrent;
   target.timeoutMs = Number(target.timeoutMs) || meta.defaultTimeoutMs;
+  target.batchSize = Number(target.batchSize) || meta.defaultBatchSize;
 }
 
 function taskSettingsOf(task: string) {
@@ -1006,6 +1008,7 @@ function handleMachineChannelProviderChange(channel: MachineTranslateChannel, va
   channel.qps = meta.defaultQps;
   channel.maxConcurrent = meta.defaultMaxConcurrent;
   channel.timeoutMs = meta.defaultTimeoutMs;
+  channel.batchSize = meta.defaultBatchSize;
   if (!machineProviderShowsApiKey(channel.provider)) channel.apiKey = undefined;
   if (!machineProviderNeedsSecretKey(channel.provider)) channel.secretKey = undefined;
   if (!machineProviderSupportsRegion(channel.provider)) channel.region = undefined;
@@ -1023,6 +1026,7 @@ async function handleAddMachineChannel() {
   channel.qps = Number(mtAddForm.qps) || getMachineTranslateProviderMeta(mtAddForm.provider).defaultQps;
   channel.maxConcurrent = Number(mtAddForm.maxConcurrent) || getMachineTranslateProviderMeta(mtAddForm.provider).defaultMaxConcurrent;
   channel.timeoutMs = Number(mtAddForm.timeoutMs) || getMachineTranslateProviderMeta(mtAddForm.provider).defaultTimeoutMs;
+  channel.batchSize = Number(mtAddForm.batchSize) || getMachineTranslateProviderMeta(mtAddForm.provider).defaultBatchSize;
   machineChannels.value = [...machineChannels.value, channel];
   await saveMachineTranslateSettings(false);
   closeAddMachineChannel();
@@ -1055,6 +1059,7 @@ function toMachineChannelPayload(channel: MachineTranslateChannel): MachineTrans
     qps: Number(channel.qps) || undefined,
     maxConcurrent: Number(channel.maxConcurrent) || undefined,
     timeoutMs: Number(channel.timeoutMs) || undefined,
+    batchSize: Number(channel.batchSize) || undefined,
   };
 }
 
@@ -1568,18 +1573,22 @@ async function fetchAddFormModels() {
                 <Label class="block">Region</Label>
                 <Input v-model="mtAddForm.region" placeholder="Microsoft 官方渠道可选" />
               </div>
-              <div class="grid grid-cols-3 gap-2">
+              <div class="grid grid-cols-4 gap-2">
                 <div class="space-y-1">
                   <Label class="block">QPS</Label>
                   <Input v-model="mtAddForm.qps" />
                 </div>
                 <div class="space-y-1">
-                  <Label class="block">并发</Label>
+                  <Label class="block">最大并发</Label>
                   <Input v-model="mtAddForm.maxConcurrent" />
                 </div>
                 <div class="space-y-1">
                   <Label class="block">超时(ms)</Label>
                   <Input v-model="mtAddForm.timeoutMs" />
+                </div>
+                <div class="space-y-1">
+                  <Label class="block">并发段落</Label>
+                  <Input v-model="mtAddForm.batchSize" />
                 </div>
               </div>
             </div>
@@ -1702,7 +1711,7 @@ async function fetchAddFormModels() {
                     <Input v-model="ch.region" placeholder="如 eastasia" />
                   </div>
                 </div>
-                <div class="grid grid-cols-3 gap-3">
+                <div class="grid grid-cols-4 gap-3">
                   <div class="space-y-1">
                     <Label class="block">QPS</Label>
                     <Input v-model="ch.qps" />
@@ -1714,6 +1723,10 @@ async function fetchAddFormModels() {
                   <div class="space-y-1">
                     <Label class="block">超时(ms)</Label>
                     <Input v-model="ch.timeoutMs" />
+                  </div>
+                  <div class="space-y-1">
+                    <Label class="block">并发段落</Label>
+                    <Input v-model="ch.batchSize" />
                   </div>
                 </div>
                 <div class="flex items-center gap-2">

@@ -984,7 +984,14 @@ type MachineTranslateSingleRequest = {
   format: MachineTranslateFormat;
 };
 
+type MachineTranslateBatchItemRequest = MachineTranslateSingleRequest;
 type MachineTranslateAdapter = (channel: MachineTranslateChannel, request: MachineTranslateSingleRequest) => Promise<string>;
+type MachineTranslateBatchAdapter = (channel: MachineTranslateChannel, requests: MachineTranslateBatchItemRequest[]) => Promise<string[]>;
+
+type MachineTranslateIndexedTask = {
+  index: number;
+  request: MachineTranslateBatchItemRequest;
+};
 
 async function handleTestMachineTranslateChannel(request: any) {
   const channel = await resolveMachineTranslateChannel(request);
@@ -1013,13 +1020,33 @@ async function handleMachineTranslateBatch(request: any) {
 
   const translations = new Array<string>(texts.length).fill('');
   const errors = new Array<string>(texts.length).fill('');
-  const tasks = texts.map((text, index) => ({ text, index })).filter((item) => item.text.trim());
+  const tasks = texts
+    .map((text, index) => ({
+      index,
+      request: {
+        text,
+        sourceLang,
+        targetLang,
+        format,
+      },
+    }))
+    .filter((item) => item.request.text.trim());
+  const chunks = chunkMachineTranslateTasks(tasks, channel);
 
-  await runMachineTranslateTasks(tasks, channel, async ({ text, index }) => {
+  await runMachineTranslateTasks(chunks, channel, async (chunk) => {
     try {
-      translations[index] = await translateWithMachineChannel(channel, { text, sourceLang, targetLang, format });
+      const results = await translateBatchWithMachineChannel(channel, chunk.map((item) => item.request));
+      if (results.length !== chunk.length) {
+        throw new Error(`批量翻译返回数量异常：期望 ${chunk.length}，实际 ${results.length}`);
+      }
+      chunk.forEach((item, index) => {
+        translations[item.index] = String(results[index] || '');
+      });
     } catch (error) {
-      errors[index] = getErrorMessage(error);
+      const message = getErrorMessage(error);
+      chunk.forEach((item) => {
+        errors[item.index] = message;
+      });
     }
   });
 
@@ -1094,6 +1121,38 @@ async function translateWithMachineChannel(channel: MachineTranslateChannel, req
   return adapter(channel, request);
 }
 
+async function translateBatchWithMachineChannel(channel: MachineTranslateChannel, requests: MachineTranslateBatchItemRequest[]): Promise<string[]> {
+  if (!requests.length) return [];
+  if (requests.length === 1) {
+    return [await translateWithMachineChannel(channel, requests[0]!)];
+  }
+
+  const adapter = machineTranslateBatchAdapters[channel.provider];
+  if (!adapter) {
+    return translateWithMachineChannelIndividually(channel, requests);
+  }
+
+  try {
+    const translations = await adapter(channel, requests);
+    ensureBatchTranslations(translations, requests.length, channel.provider);
+    return translations.map((item) => String(item || ''));
+  } catch (error) {
+    if (!BATCH_FALLBACK_PROVIDERS.has(channel.provider)) throw error;
+    return translateWithMachineChannelIndividually(channel, requests);
+  }
+}
+
+async function translateWithMachineChannelIndividually(
+  channel: MachineTranslateChannel,
+  requests: MachineTranslateBatchItemRequest[],
+): Promise<string[]> {
+  const translations: string[] = [];
+  for (const request of requests) {
+    translations.push(await translateWithMachineChannel(channel, request));
+  }
+  return translations;
+}
+
 const machineTranslateAdapters: Record<MachineTranslateProvider, MachineTranslateAdapter> = {
   'google-free': callGoogleFreeTranslate,
   'microsoft-free': callMicrosoftFreeTranslate,
@@ -1104,38 +1163,165 @@ const machineTranslateAdapters: Record<MachineTranslateProvider, MachineTranslat
   baidu: callBaiduTranslate,
 };
 
-async function callGoogleFreeTranslate(channel: MachineTranslateChannel, request: MachineTranslateSingleRequest) {
-  const base = trimTrailingSlash(channel.apiUrl || getDefaultMachineTranslateApiUrl(channel.provider));
-  const params = new URLSearchParams({
-    client: 'gtx',
-    sl: mapMachineLang(channel.provider, request.sourceLang || 'auto', 'source'),
-    tl: mapMachineLang(channel.provider, request.targetLang, 'target'),
-    dt: 't',
-    strip: '1',
-    nonced: '1',
-    q: request.text,
-  });
-  const res = await fetchWithTimeout(`${base}/translate_a/single?${params.toString()}`, { method: 'GET' }, channel.timeoutMs);
-  if (!res.ok) throw await buildHttpError('Google Web Free', res);
-  const json = await res.json();
-  const parts = Array.isArray(json?.[0]) ? json[0] : [];
+const machineTranslateBatchAdapters: Partial<Record<MachineTranslateProvider, MachineTranslateBatchAdapter>> = {
+  'google-free': callGoogleFreeBatchTranslate,
+  'microsoft-free': callMicrosoftFreeBatchTranslate,
+  'google-official': callGoogleOfficialBatchTranslate,
+  'microsoft-official': callMicrosoftOfficialBatchTranslate,
+  deepl: callDeepLBatchTranslate,
+  deeplx: callDeepLXBatchTranslate,
+};
+
+const BATCH_FALLBACK_PROVIDERS = new Set<MachineTranslateProvider>(['google-free', 'microsoft-free', 'deeplx']);
+
+function getMachineTranslateBatchSize(channel: MachineTranslateChannel): number {
+  return Math.max(1, Math.min(Number(channel.batchSize) || 5, 20));
+}
+
+function chunkMachineTranslateTasks(tasks: MachineTranslateIndexedTask[], channel: MachineTranslateChannel): MachineTranslateIndexedTask[][] {
+  if (!tasks.length) return [];
+  const limit = getMachineTranslateBatchSize(channel);
+  if (channel.provider !== 'deepl') {
+    const chunks: MachineTranslateIndexedTask[][] = [];
+    for (let index = 0; index < tasks.length; index += limit) {
+      chunks.push(tasks.slice(index, index + limit));
+    }
+    return chunks;
+  }
+
+  const chunks: MachineTranslateIndexedTask[][] = [];
+  let current: MachineTranslateIndexedTask[] = [];
+  let currentBytes = 0;
+  const maxItems = Math.min(limit, 20, 50);
+  const maxBytes = 128 * 1024;
+  for (const task of tasks) {
+    const itemBytes = estimateDeepLTextBytes(task.request.text);
+    const wouldOverflow = current.length >= maxItems || (current.length > 0 && currentBytes + itemBytes > maxBytes);
+    if (wouldOverflow) {
+      chunks.push(current);
+      current = [];
+      currentBytes = 0;
+    }
+    current.push(task);
+    currentBytes += itemBytes;
+  }
+  if (current.length) chunks.push(current);
+  return chunks;
+}
+
+function estimateDeepLTextBytes(text: string): number {
+  return new TextEncoder().encode(String(text || '')).length + 64;
+}
+
+function ensureBatchTranslations(translations: string[], expected: number, provider: MachineTranslateProvider) {
+  if (!Array.isArray(translations) || translations.length !== expected) {
+    throw new Error(`${provider} 批量翻译返回数量异常`);
+  }
+}
+
+function extractMicrosoftBatchTranslations(payload: any, label: string): string[] {
+  if (!Array.isArray(payload)) throw new Error(`${label} 返回格式异常`);
+  const translations = payload.map((item) => String(item?.translations?.[0]?.text || ''));
+  if (translations.some((item) => !item)) throw new Error(`${label} 返回空结果`);
+  return translations;
+}
+
+function extractGoogleOfficialBatchTranslations(payload: any): string[] {
+  const list = Array.isArray(payload?.data?.translations) ? payload.data.translations : [];
+  const translations = list.map((item: any) => String(item?.translatedText || ''));
+  if (!translations.length || translations.some((item) => !item)) throw new Error('Google Cloud Translation 返回空结果');
+  return translations;
+}
+
+function extractDeepLBatchTranslations(payload: any): string[] {
+  const list = Array.isArray(payload?.translations) ? payload.translations : [];
+  const translations = list.map((item: any) => String(item?.text || ''));
+  if (!translations.length || translations.some((item) => !item)) throw new Error('DeepL 返回空结果');
+  return translations;
+}
+
+function extractGoogleFreeTranslatedText(payload: any): string {
+  const parts = Array.isArray(payload?.[0]) ? payload[0] : [];
   const text = parts.map((part: any) => Array.isArray(part) ? String(part[0] || '') : '').join('');
   if (!text) throw new Error('Google Web Free 返回空结果');
   return text;
 }
 
+function extractGoogleFreeBatchTranslations(payload: any, expected: number): string[] {
+  if (expected === 1) return [extractGoogleFreeTranslatedText(payload)];
+  if (Array.isArray(payload) && payload.length === expected) {
+    return payload.map((item) => extractGoogleFreeTranslatedText(item));
+  }
+  throw new Error('Google Web Free 批量返回格式不兼容');
+}
+
+function extractDeepLXBatchTranslations(payload: any): string[] {
+  if (typeof payload?.code !== 'undefined' && Number(payload.code) !== 200) {
+    throw new Error(`DeepLX 翻译失败：${payload?.message || payload?.msg || payload.code}`);
+  }
+
+  if (Array.isArray(payload) && payload.every((item) => typeof item === 'string' || typeof item?.text === 'string')) {
+    return payload.map((item) => typeof item === 'string' ? item : String(item?.text || ''));
+  }
+
+  const candidates = [
+    payload?.data,
+    payload?.translations,
+    payload?.result,
+  ];
+  for (const candidate of candidates) {
+    if (!Array.isArray(candidate)) continue;
+    const translations = candidate.map((item: any) => {
+      if (typeof item === 'string') return item;
+      return String(item?.text || item?.translation || item?.translated_text || item?.result || '');
+    });
+    if (translations.length && translations.every(Boolean)) return translations;
+  }
+
+  throw new Error('DeepLX 批量返回格式不兼容');
+}
+
+async function callGoogleFreeTranslate(channel: MachineTranslateChannel, request: MachineTranslateSingleRequest) {
+  const [text] = await callGoogleFreeBatchTranslate(channel, [request]);
+  return String(text || '');
+}
+
+async function callGoogleFreeBatchTranslate(channel: MachineTranslateChannel, requests: MachineTranslateBatchItemRequest[]) {
+  const base = trimTrailingSlash(channel.apiUrl || getDefaultMachineTranslateApiUrl(channel.provider));
+  const first = requests[0]!;
+  const params = new URLSearchParams({
+    client: 'gtx',
+    sl: mapMachineLang(channel.provider, first.sourceLang || 'auto', 'source'),
+    tl: mapMachineLang(channel.provider, first.targetLang, 'target'),
+    dt: 't',
+    strip: '1',
+    nonced: '1',
+  });
+  requests.forEach((request) => params.append('q', request.text));
+  const res = await fetchWithTimeout(`${base}/translate_a/single?${params.toString()}`, { method: 'GET' }, channel.timeoutMs);
+  if (!res.ok) throw await buildHttpError('Google Web Free', res);
+  const json = await res.json();
+  return extractGoogleFreeBatchTranslations(json, requests.length);
+}
+
 let microsoftEdgeTokenCache: { token: string; expiresAt: number } | null = null;
 
 async function callMicrosoftFreeTranslate(channel: MachineTranslateChannel, request: MachineTranslateSingleRequest) {
+  const [text] = await callMicrosoftFreeBatchTranslate(channel, [request]);
+  return String(text || '');
+}
+
+async function callMicrosoftFreeBatchTranslate(channel: MachineTranslateChannel, requests: MachineTranslateBatchItemRequest[]) {
   const base = trimTrailingSlash(channel.apiUrl || getDefaultMachineTranslateApiUrl(channel.provider));
   const token = await getMicrosoftEdgeToken(channel.timeoutMs);
+  const first = requests[0]!;
   const params = new URLSearchParams({
     'api-version': '3.0',
-    to: mapMachineLang(channel.provider, request.targetLang, 'target'),
+    to: mapMachineLang(channel.provider, first.targetLang, 'target'),
     includeSentenceLength: 'true',
-    textType: request.format === 'html' ? 'html' : 'plain',
+    textType: first.format === 'html' ? 'html' : 'plain',
   });
-  const source = mapMachineLang(channel.provider, request.sourceLang || 'auto', 'source');
+  const source = mapMachineLang(channel.provider, first.sourceLang || 'auto', 'source');
   if (source) params.set('from', source);
   const res = await fetchWithTimeout(`${base}/translate?${params.toString()}`, {
     method: 'POST',
@@ -1143,13 +1329,10 @@ async function callMicrosoftFreeTranslate(channel: MachineTranslateChannel, requ
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify([{ Text: request.text }]),
+    body: JSON.stringify(requests.map((request) => ({ Text: request.text }))),
   }, channel.timeoutMs);
   if (!res.ok) throw await buildHttpError('Microsoft Edge Free', res);
-  const json = await res.json();
-  const text = json?.[0]?.translations?.[0]?.text;
-  if (!text) throw new Error('Microsoft Edge Free 返回空结果');
-  return String(text);
+  return extractMicrosoftBatchTranslations(await res.json(), 'Microsoft Edge Free');
 }
 
 async function getMicrosoftEdgeToken(timeoutMs?: number): Promise<string> {
@@ -1166,14 +1349,20 @@ async function getMicrosoftEdgeToken(timeoutMs?: number): Promise<string> {
 }
 
 async function callGoogleOfficialTranslate(channel: MachineTranslateChannel, request: MachineTranslateSingleRequest) {
+  const [text] = await callGoogleOfficialBatchTranslate(channel, [request]);
+  return String(text || '');
+}
+
+async function callGoogleOfficialBatchTranslate(channel: MachineTranslateChannel, requests: MachineTranslateBatchItemRequest[]) {
   const base = trimTrailingSlash(channel.apiUrl || getDefaultMachineTranslateApiUrl(channel.provider));
   const url = `${base}/language/translate/v2?key=${encodeURIComponent(String(channel.apiKey || ''))}`;
+  const first = requests[0]!;
   const body: any = {
-    q: request.text,
-    target: mapMachineLang(channel.provider, request.targetLang, 'target'),
-    format: request.format === 'html' ? 'html' : 'text',
+    q: requests.map((request) => request.text),
+    target: mapMachineLang(channel.provider, first.targetLang, 'target'),
+    format: first.format === 'html' ? 'html' : 'text',
   };
-  const source = mapMachineLang(channel.provider, request.sourceLang || 'auto', 'source');
+  const source = mapMachineLang(channel.provider, first.sourceLang || 'auto', 'source');
   if (source && source !== 'auto') body.source = source;
   const res = await fetchWithTimeout(url, {
     method: 'POST',
@@ -1181,20 +1370,23 @@ async function callGoogleOfficialTranslate(channel: MachineTranslateChannel, req
     body: JSON.stringify(body),
   }, channel.timeoutMs);
   if (!res.ok) throw await buildHttpError('Google Cloud Translation', res);
-  const json = await res.json();
-  const text = json?.data?.translations?.[0]?.translatedText;
-  if (!text) throw new Error('Google Cloud Translation 返回空结果');
-  return String(text);
+  return extractGoogleOfficialBatchTranslations(await res.json());
 }
 
 async function callMicrosoftOfficialTranslate(channel: MachineTranslateChannel, request: MachineTranslateSingleRequest) {
+  const [text] = await callMicrosoftOfficialBatchTranslate(channel, [request]);
+  return String(text || '');
+}
+
+async function callMicrosoftOfficialBatchTranslate(channel: MachineTranslateChannel, requests: MachineTranslateBatchItemRequest[]) {
   const base = trimTrailingSlash(channel.apiUrl || getDefaultMachineTranslateApiUrl(channel.provider));
+  const first = requests[0]!;
   const params = new URLSearchParams({
     'api-version': '3.0',
-    to: mapMachineLang(channel.provider, request.targetLang, 'target'),
-    textType: request.format === 'html' ? 'html' : 'plain',
+    to: mapMachineLang(channel.provider, first.targetLang, 'target'),
+    textType: first.format === 'html' ? 'html' : 'plain',
   });
-  const source = mapMachineLang(channel.provider, request.sourceLang || 'auto', 'source');
+  const source = mapMachineLang(channel.provider, first.sourceLang || 'auto', 'source');
   if (source) params.set('from', source);
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -1204,25 +1396,28 @@ async function callMicrosoftOfficialTranslate(channel: MachineTranslateChannel, 
   const res = await fetchWithTimeout(`${base}/translate?${params.toString()}`, {
     method: 'POST',
     headers,
-    body: JSON.stringify([{ Text: request.text }]),
+    body: JSON.stringify(requests.map((request) => ({ Text: request.text }))),
   }, channel.timeoutMs);
   if (!res.ok) throw await buildHttpError('Microsoft Azure Translator', res);
-  const json = await res.json();
-  const text = json?.[0]?.translations?.[0]?.text;
-  if (!text) throw new Error('Microsoft Azure Translator 返回空结果');
-  return String(text);
+  return extractMicrosoftBatchTranslations(await res.json(), 'Microsoft Azure Translator');
 }
 
 async function callDeepLTranslate(channel: MachineTranslateChannel, request: MachineTranslateSingleRequest) {
+  const [text] = await callDeepLBatchTranslate(channel, [request]);
+  return String(text || '');
+}
+
+async function callDeepLBatchTranslate(channel: MachineTranslateChannel, requests: MachineTranslateBatchItemRequest[]) {
   const base = trimTrailingSlash(channel.apiUrl || getDefaultMachineTranslateApiUrl(channel.provider));
+  const first = requests[0]!;
   const body: any = {
-    text: [request.text],
-    target_lang: mapMachineLang(channel.provider, request.targetLang, 'target'),
+    text: requests.map((request) => request.text),
+    target_lang: mapMachineLang(channel.provider, first.targetLang, 'target'),
     preserve_formatting: true,
   };
-  const source = mapMachineLang(channel.provider, request.sourceLang || 'auto', 'source');
+  const source = mapMachineLang(channel.provider, first.sourceLang || 'auto', 'source');
   if (source && source !== 'auto') body.source_lang = source;
-  if (request.format === 'html') body.tag_handling = 'html';
+  if (first.format === 'html') body.tag_handling = 'html';
   const res = await fetchWithTimeout(`${base}/v2/translate`, {
     method: 'POST',
     headers: {
@@ -1232,33 +1427,39 @@ async function callDeepLTranslate(channel: MachineTranslateChannel, request: Mac
     body: JSON.stringify(body),
   }, channel.timeoutMs);
   if (!res.ok) throw await buildHttpError('DeepL', res);
-  const json = await res.json();
-  const text = json?.translations?.[0]?.text;
-  if (!text) throw new Error('DeepL 返回空结果');
-  return String(text);
+  return extractDeepLBatchTranslations(await res.json());
 }
 
 async function callDeepLXTranslate(channel: MachineTranslateChannel, request: MachineTranslateSingleRequest) {
+  const [text] = await callDeepLXBatchTranslate(channel, [request]);
+  return String(text || '');
+}
+
+async function callDeepLXBatchTranslate(channel: MachineTranslateChannel, requests: MachineTranslateBatchItemRequest[]) {
   const url = channel.apiUrl || getDefaultMachineTranslateApiUrl(channel.provider);
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (channel.apiKey) headers.Authorization = `Bearer ${channel.apiKey}`;
+  const first = requests[0]!;
   const res = await fetchWithTimeout(url, {
     method: 'POST',
     headers,
     body: JSON.stringify({
-      text: request.text,
-      source_lang: mapMachineLang(channel.provider, request.sourceLang || 'auto', 'source'),
-      target_lang: mapMachineLang(channel.provider, request.targetLang, 'target'),
+      text: requests.length === 1 ? first.text : requests.map((request) => request.text),
+      source_lang: mapMachineLang(channel.provider, first.sourceLang || 'auto', 'source'),
+      target_lang: mapMachineLang(channel.provider, first.targetLang, 'target'),
     }),
   }, channel.timeoutMs);
   if (!res.ok) throw await buildHttpError('DeepLX', res);
   const json = await res.json();
-  if (typeof json?.code !== 'undefined' && Number(json.code) !== 200) {
-    throw new Error(`DeepLX 翻译失败：${json?.message || json?.msg || json.code}`);
+  if (requests.length === 1) {
+    if (typeof json?.code !== 'undefined' && Number(json.code) !== 200) {
+      throw new Error(`DeepLX 翻译失败：${json?.message || json?.msg || json.code}`);
+    }
+    const text = json?.data ?? json?.translation ?? json?.translated_text ?? json?.result;
+    if (!text) throw new Error('DeepLX 返回空结果');
+    return [String(text)];
   }
-  const text = json?.data ?? json?.translation ?? json?.translated_text ?? json?.result;
-  if (!text) throw new Error('DeepLX 返回空结果');
-  return String(text);
+  return extractDeepLXBatchTranslations(json);
 }
 
 const baiduTokenCache = new Map<string, { token: string; expiresAt: number }>();
