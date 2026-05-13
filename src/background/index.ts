@@ -987,6 +987,10 @@ type MachineTranslateSingleRequest = {
 type MachineTranslateBatchItemRequest = MachineTranslateSingleRequest;
 type MachineTranslateAdapter = (channel: MachineTranslateChannel, request: MachineTranslateSingleRequest) => Promise<string>;
 type MachineTranslateBatchAdapter = (channel: MachineTranslateChannel, requests: MachineTranslateBatchItemRequest[]) => Promise<string[]>;
+type MachineTranslateBatchStrategy = {
+  arrayAdapter?: MachineTranslateBatchAdapter;
+  tokenAdapter?: MachineTranslateBatchAdapter;
+};
 
 type MachineTranslateIndexedTask = {
   index: number;
@@ -1127,19 +1131,24 @@ async function translateBatchWithMachineChannel(channel: MachineTranslateChannel
     return [await translateWithMachineChannel(channel, requests[0]!)];
   }
 
-  const adapter = machineTranslateBatchAdapters[channel.provider];
-  if (!adapter) {
+  const strategy = machineTranslateBatchStrategies[channel.provider];
+  if (!strategy) {
     return translateWithMachineChannelIndividually(channel, requests);
   }
 
-  try {
-    const translations = await adapter(channel, requests);
-    ensureBatchTranslations(translations, requests.length, channel.provider);
-    return translations.map((item) => String(item || ''));
-  } catch (error) {
-    if (!BATCH_FALLBACK_PROVIDERS.has(channel.provider)) throw error;
-    return translateWithMachineChannelIndividually(channel, requests);
+  const candidates = [strategy.arrayAdapter, strategy.tokenAdapter].filter((item): item is MachineTranslateBatchAdapter => !!item);
+  let lastError: unknown = null;
+  for (const adapter of candidates) {
+    try {
+      const translations = await adapter(channel, requests);
+      ensureBatchTranslations(translations, requests.length, channel.provider);
+      return translations.map((item) => String(item || ''));
+    } catch (error) {
+      lastError = error;
+    }
   }
+  if (lastError) console.warn(`[machine-translate] ${channel.provider} 批量失败，回退逐条：`, lastError);
+  return translateWithMachineChannelIndividually(channel, requests);
 }
 
 async function translateWithMachineChannelIndividually(
@@ -1163,16 +1172,30 @@ const machineTranslateAdapters: Record<MachineTranslateProvider, MachineTranslat
   baidu: callBaiduTranslate,
 };
 
-const machineTranslateBatchAdapters: Partial<Record<MachineTranslateProvider, MachineTranslateBatchAdapter>> = {
-  'google-free': callGoogleFreeBatchTranslate,
-  'microsoft-free': callMicrosoftFreeBatchTranslate,
-  'google-official': callGoogleOfficialBatchTranslate,
-  'microsoft-official': callMicrosoftOfficialBatchTranslate,
-  deepl: callDeepLBatchTranslate,
-  deeplx: callDeepLXBatchTranslate,
+const machineTranslateBatchStrategies: Partial<Record<MachineTranslateProvider, MachineTranslateBatchStrategy>> = {
+  'google-free': {
+    tokenAdapter: callGoogleFreeTokenBatchTranslate,
+  },
+  'microsoft-free': {
+    arrayAdapter: callMicrosoftFreeBatchTranslate,
+    tokenAdapter: callMicrosoftFreeTokenBatchTranslate,
+  },
+  'google-official': {
+    arrayAdapter: callGoogleOfficialBatchTranslate,
+  },
+  'microsoft-official': {
+    arrayAdapter: callMicrosoftOfficialBatchTranslate,
+  },
+  deepl: {
+    arrayAdapter: callDeepLBatchTranslate,
+  },
+  deeplx: {
+    tokenAdapter: callDeepLXBatchTranslate,
+  },
+  baidu: {
+    tokenAdapter: callBaiduTokenBatchTranslate,
+  },
 };
-
-const BATCH_FALLBACK_PROVIDERS = new Set<MachineTranslateProvider>(['google-free', 'microsoft-free', 'deeplx']);
 
 function getMachineTranslateBatchSize(channel: MachineTranslateChannel): number {
   return Math.max(1, Math.min(Number(channel.batchSize) || 5, 20));
@@ -1247,14 +1270,6 @@ function extractGoogleFreeTranslatedText(payload: any): string {
   return text;
 }
 
-function extractGoogleFreeBatchTranslations(payload: any, expected: number): string[] {
-  if (expected === 1) return [extractGoogleFreeTranslatedText(payload)];
-  if (Array.isArray(payload) && payload.length === expected) {
-    return payload.map((item) => extractGoogleFreeTranslatedText(item));
-  }
-  throw new Error('Google Web Free 批量返回格式不兼容');
-}
-
 function extractDeepLXTranslatedText(payload: any): string {
   if (typeof payload?.code !== 'undefined' && Number(payload.code) !== 200) {
     throw new Error(`DeepLX 翻译失败：${payload?.message || payload?.msg || payload.code}`);
@@ -1264,7 +1279,7 @@ function extractDeepLXTranslatedText(payload: any): string {
   return String(text);
 }
 
-function createDeepLXBatchTokens(texts: string[]): string[] {
+function createMachineTranslateBatchTokens(texts: string[]): string[] {
   let salt = '';
   do {
     salt = Math.random().toString(36).slice(2, 10).toUpperCase();
@@ -1272,16 +1287,16 @@ function createDeepLXBatchTokens(texts: string[]): string[] {
   return texts.map((_, index) => `__IFOCAL_SEG_${salt}_${index.toString(36).toUpperCase()}__`);
 }
 
-function packDeepLXBatchText(requests: MachineTranslateBatchItemRequest[]) {
+function packMachineTranslateTokenBatchText(requests: MachineTranslateBatchItemRequest[]) {
   const texts = requests.map((request) => String(request.text || ''));
-  const tokens = createDeepLXBatchTokens(texts);
+  const tokens = createMachineTranslateBatchTokens(texts);
   const text = requests
     .map((request, index) => `${tokens[index]}\n${String(request.text || '')}`)
     .join('\n\n');
   return { text, tokens };
 }
 
-function unpackDeepLXBatchText(translated: string, tokens: string[]): string[] {
+function unpackMachineTranslateTokenBatchText(translated: string, tokens: string[]): string[] {
   const source = String(translated || '');
   if (!tokens.length) return [];
   const positions = tokens.map((token) => source.indexOf(token));
@@ -1312,27 +1327,39 @@ function unpackDeepLXBatchText(translated: string, tokens: string[]): string[] {
   return translations;
 }
 
-async function callGoogleFreeTranslate(channel: MachineTranslateChannel, request: MachineTranslateSingleRequest) {
-  const [text] = await callGoogleFreeBatchTranslate(channel, [request]);
-  return String(text || '');
+function ensureTokenBatchIsPlain(requests: MachineTranslateBatchItemRequest[], label: string) {
+  if (requests.length > 1 && requests.some((request) => request.format === 'html')) {
+    throw new Error(`${label} 批量 HTML 翻译不受支持`);
+  }
 }
 
-async function callGoogleFreeBatchTranslate(channel: MachineTranslateChannel, requests: MachineTranslateBatchItemRequest[]) {
+async function callGoogleFreeTranslate(channel: MachineTranslateChannel, request: MachineTranslateSingleRequest) {
   const base = trimTrailingSlash(channel.apiUrl || getDefaultMachineTranslateApiUrl(channel.provider));
-  const first = requests[0]!;
   const params = new URLSearchParams({
     client: 'gtx',
-    sl: mapMachineLang(channel.provider, first.sourceLang || 'auto', 'source'),
-    tl: mapMachineLang(channel.provider, first.targetLang, 'target'),
+    sl: mapMachineLang(channel.provider, request.sourceLang || 'auto', 'source'),
+    tl: mapMachineLang(channel.provider, request.targetLang, 'target'),
     dt: 't',
     strip: '1',
     nonced: '1',
+    q: request.text,
   });
-  requests.forEach((request) => params.append('q', request.text));
   const res = await fetchWithTimeout(`${base}/translate_a/single?${params.toString()}`, { method: 'GET' }, channel.timeoutMs);
   if (!res.ok) throw await buildHttpError('Google Web Free', res);
-  const json = await res.json();
-  return extractGoogleFreeBatchTranslations(json, requests.length);
+  return extractGoogleFreeTranslatedText(await res.json());
+}
+
+async function callGoogleFreeTokenBatchTranslate(channel: MachineTranslateChannel, requests: MachineTranslateBatchItemRequest[]) {
+  ensureTokenBatchIsPlain(requests, 'Google Web Free');
+  const packed = packMachineTranslateTokenBatchText(requests);
+  const first = requests[0]!;
+  const translated = await callGoogleFreeTranslate(channel, {
+    text: packed.text,
+    sourceLang: first.sourceLang,
+    targetLang: first.targetLang,
+    format: 'plain',
+  });
+  return unpackMachineTranslateTokenBatchText(translated, packed.tokens);
 }
 
 let microsoftEdgeTokenCache: { token: string; expiresAt: number } | null = null;
@@ -1364,6 +1391,19 @@ async function callMicrosoftFreeBatchTranslate(channel: MachineTranslateChannel,
   }, channel.timeoutMs);
   if (!res.ok) throw await buildHttpError('Microsoft Edge Free', res);
   return extractMicrosoftBatchTranslations(await res.json(), 'Microsoft Edge Free');
+}
+
+async function callMicrosoftFreeTokenBatchTranslate(channel: MachineTranslateChannel, requests: MachineTranslateBatchItemRequest[]) {
+  ensureTokenBatchIsPlain(requests, 'Microsoft Edge Free');
+  const packed = packMachineTranslateTokenBatchText(requests);
+  const first = requests[0]!;
+  const translated = await callMicrosoftFreeTranslate(channel, {
+    text: packed.text,
+    sourceLang: first.sourceLang,
+    targetLang: first.targetLang,
+    format: 'plain',
+  });
+  return unpackMachineTranslateTokenBatchText(translated, packed.tokens);
 }
 
 async function getMicrosoftEdgeToken(timeoutMs?: number): Promise<string> {
@@ -1471,10 +1511,8 @@ async function callDeepLXBatchTranslate(channel: MachineTranslateChannel, reques
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (channel.apiKey) headers.Authorization = `Bearer ${channel.apiKey}`;
   const first = requests[0]!;
-  if (requests.length > 1 && first.format === 'html') {
-    throw new Error('DeepLX 批量 HTML 翻译不受支持');
-  }
-  const packed = requests.length > 1 ? packDeepLXBatchText(requests) : null;
+  ensureTokenBatchIsPlain(requests, 'DeepLX');
+  const packed = requests.length > 1 ? packMachineTranslateTokenBatchText(requests) : null;
   const res = await fetchWithTimeout(url, {
     method: 'POST',
     headers,
@@ -1489,7 +1527,7 @@ async function callDeepLXBatchTranslate(channel: MachineTranslateChannel, reques
   if (requests.length === 1) {
     return [extractDeepLXTranslatedText(json)];
   }
-  return unpackDeepLXBatchText(extractDeepLXTranslatedText(json), packed!.tokens);
+  return unpackMachineTranslateTokenBatchText(extractDeepLXTranslatedText(json), packed!.tokens);
 }
 
 const baiduTokenCache = new Map<string, { token: string; expiresAt: number }>();
@@ -1518,6 +1556,19 @@ async function callBaiduTranslate(channel: MachineTranslateChannel, request: Mac
   const text = candidates.find((item) => typeof item === 'string' && item);
   if (!text) throw new Error('百度翻译返回空结果');
   return String(text);
+}
+
+async function callBaiduTokenBatchTranslate(channel: MachineTranslateChannel, requests: MachineTranslateBatchItemRequest[]) {
+  ensureTokenBatchIsPlain(requests, '百度翻译');
+  const packed = packMachineTranslateTokenBatchText(requests);
+  const first = requests[0]!;
+  const translated = await callBaiduTranslate(channel, {
+    text: packed.text,
+    sourceLang: first.sourceLang,
+    targetLang: first.targetLang,
+    format: 'plain',
+  });
+  return unpackMachineTranslateTokenBatchText(translated, packed.tokens);
 }
 
 async function getBaiduAccessToken(channel: MachineTranslateChannel, base: string) {
