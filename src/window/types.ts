@@ -19,6 +19,9 @@ export interface WindowToolStatus {
 export interface WindowMessage {
   role: 'user' | 'assistant'
   content: string
+  renderedContent?: string
+  pendingContent?: string
+  isRevealing?: boolean
   isError?: boolean
   modelName?: string
   isStreaming?: boolean
@@ -108,12 +111,15 @@ export interface AssistantWorkspaceContext {
   handleScrollToBottomClick: () => void
   retryMessage: (messageIndex: number) => void
   copyMessage: (content: string) => void
+  copyCodeBlock: (content: string) => void
   viewAttachment: (attachment: unknown) => void
   downloadAttachment: (attachment: unknown) => void
   getFileIcon: (type: string) => string
   formatFileSize: (bytes: number) => string
   renderMarkdown: (content: string) => unknown
   renderMarkdownSafe: (content: string) => unknown
+  handleWorkspaceClick: (event: MouseEvent) => void
+  getDisplayContent: (message: WindowMessage) => string
   getParsed: (message: WindowMessage, index: number) => ParsedParts
   getReasoningElapsedSeconds: (message: WindowMessage) => number
   getReasoningElapsedLabel: (message: WindowMessage) => string

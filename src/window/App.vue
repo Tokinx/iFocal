@@ -65,6 +65,7 @@ import {
   type AssistantPreset,
 } from '@/shared/assistants';
 import { modelIdFromSpec, parseModelSpec } from '@/shared/model-utils';
+import { useToast } from '@/options/composables/useToast';
 import { loadPromptTemplates } from '@/shared/prompt-templates';
 import { mcpServersToEntries, type McpServerEntry } from '@/shared/mcp';
 import WindowSidebar from './components/WindowSidebar.vue';
@@ -141,9 +142,14 @@ let scheduledScrollResizeTimer: ReturnType<typeof setTimeout> | null = null;
 let onInAppCopy: ((e: ClipboardEvent) => void) | null = null;
 
 const SCROLL_BOTTOM_THRESHOLD = 48;
+const STREAM_REVEAL_INTERVAL_MS = 56;
+const STREAM_REVEAL_MAX_BATCH = 220;
+const STREAM_REVEAL_ANIMATION_MS = 160;
+const COPY_COOLDOWN_MS = 1500;
 const autoScrollEnabled = ref(true);
 const showScrollToBottomButton = ref(false);
 const AssistantEditorDialog = defineAsyncComponent(() => import('./components/AssistantEditorDialog.vue'));
+const toast = useToast();
 
 const activeAssistant = computed(() => {
   return assistantConfigs.value.find((assistant) => assistant.id === activeAssistantId.value) || assistantConfigs.value[0] || null;
@@ -253,17 +259,171 @@ let lastInAppCopiedText = '';
 // 解析缓存，按 会话ID:消息索引 做键，避免模板中重复解析
 type ParsedParts = { reasoning: string; answer: string };
 const parsedCache: Record<string, { content: string; parsed: ParsedParts }> = {};
+const revealFlushTimers = new WeakMap<Message, number>();
+const revealAnimationTimers = new WeakMap<Message, number>();
 
 function cacheKey(idx: number) {
   return `${currentSessionId.value}:${idx}`;
 }
 
+function getDisplayContent(message: Message): string {
+  if (message.role !== 'assistant') return String(message.content ?? '');
+  if (typeof message.renderedContent === 'string') return message.renderedContent;
+  return String(message.content ?? '');
+}
+
+function markInAppCopy(text: string) {
+  lastInAppCopiedText = String(text ?? '').trim();
+  suppressClipboardUntil = Date.now() + COPY_COOLDOWN_MS;
+}
+
+function isNodeWithinRoot(node: Node | null | undefined): boolean {
+  if (!node || !rootEl.value) return false;
+  const target = node.nodeType === Node.TEXT_NODE ? node.parentNode : node;
+  return !!(target && rootEl.value.contains(target));
+}
+
+function hasActiveSelectionInWorkspace(): boolean {
+  if (typeof window === 'undefined') return false;
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed) return false;
+  const text = String(selection.toString() || '').trim();
+  if (!text) return false;
+  return isNodeWithinRoot(selection.anchorNode) || isNodeWithinRoot(selection.focusNode);
+}
+
+function clearRevealFlushTimer(message: Message) {
+  const timer = revealFlushTimers.get(message);
+  if (typeof timer === 'number') {
+    window.clearTimeout(timer);
+    revealFlushTimers.delete(message);
+  }
+}
+
+function clearRevealAnimationTimer(message: Message) {
+  const timer = revealAnimationTimers.get(message);
+  if (typeof timer === 'number') {
+    window.clearTimeout(timer);
+    revealAnimationTimers.delete(message);
+  }
+}
+
+function takeRevealBatch(pending: string): string {
+  if (pending.length <= STREAM_REVEAL_MAX_BATCH) return pending;
+  const slice = pending.slice(0, STREAM_REVEAL_MAX_BATCH);
+  const newlineIndex = slice.lastIndexOf('\n');
+  if (newlineIndex >= Math.floor(STREAM_REVEAL_MAX_BATCH * 0.35)) {
+    return slice.slice(0, newlineIndex + 1);
+  }
+  const wordBoundary = Math.max(slice.lastIndexOf(' '), slice.lastIndexOf('\t'));
+  if (wordBoundary >= Math.floor(STREAM_REVEAL_MAX_BATCH * 0.5)) {
+    return slice.slice(0, wordBoundary + 1);
+  }
+  return slice;
+}
+
+function maybeTriggerReveal(message: Message) {
+  if (!autoScrollEnabled.value || hasActiveSelectionInWorkspace()) {
+    message.isRevealing = false;
+    clearRevealAnimationTimer(message);
+    return;
+  }
+  if (message.isRevealing) return;
+  message.isRevealing = true;
+  clearRevealAnimationTimer(message);
+  const timer = window.setTimeout(() => {
+    message.isRevealing = false;
+    revealAnimationTimers.delete(message);
+    sessions.value = [...sessions.value];
+  }, STREAM_REVEAL_ANIMATION_MS);
+  revealAnimationTimers.set(message, timer);
+}
+
+function resetMessageDisplayState(message: Message, displayedContent?: string) {
+  clearRevealFlushTimer(message);
+  clearRevealAnimationTimer(message);
+  if (typeof displayedContent === 'string') {
+    message.renderedContent = displayedContent;
+  } else if (message.role === 'assistant') {
+    message.renderedContent = String(message.content ?? '');
+  } else {
+    delete message.renderedContent;
+  }
+  message.pendingContent = '';
+  message.isRevealing = false;
+}
+
+function flushPendingContent(message: Message, options: { force?: boolean } = {}): boolean {
+  if (message.role !== 'assistant') return false;
+  if (!message.pendingContent) return false;
+  if (!options.force && hasActiveSelectionInWorkspace()) return false;
+
+  const currentRendered = typeof message.renderedContent === 'string' ? message.renderedContent : '';
+  const nextChunk = options.force ? message.pendingContent : takeRevealBatch(message.pendingContent);
+  message.renderedContent = currentRendered + nextChunk;
+  message.pendingContent = message.pendingContent.slice(nextChunk.length);
+  if (nextChunk) maybeTriggerReveal(message);
+  if (message.pendingContent) {
+    scheduleRevealFlush(message);
+  }
+  return !!nextChunk;
+}
+
+function scheduleRevealFlush(message: Message) {
+  if (message.role !== 'assistant') return;
+  if (!message.pendingContent) return;
+  if (revealFlushTimers.has(message)) return;
+  const timer = window.setTimeout(() => {
+    revealFlushTimers.delete(message);
+    const changed = flushPendingContent(message);
+    if (!changed && message.pendingContent) {
+      scheduleRevealFlush(message);
+      return;
+    }
+    if (changed) {
+      sessions.value = [...sessions.value];
+      scrollToBottom();
+    }
+  }, STREAM_REVEAL_INTERVAL_MS);
+  revealFlushTimers.set(message, timer);
+}
+
+function queueStreamingChunk(message: Message, chunk: string) {
+  if (message.role !== 'assistant' || !chunk) return;
+  if (typeof message.renderedContent !== 'string') {
+    message.renderedContent = String(message.content ?? '').slice(0, Math.max(0, String(message.content ?? '').length - chunk.length));
+  }
+  message.pendingContent = `${message.pendingContent || ''}${chunk}`;
+  scheduleRevealFlush(message);
+}
+
+function finalizeStreamingDisplay(message: Message) {
+  if (message.role !== 'assistant') return;
+  resetMessageDisplayState(message, String(message.content ?? ''));
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Node)) return false;
+  const element = target.nodeType === Node.ELEMENT_NODE ? target as Element : target.parentElement;
+  if (!element) return false;
+  return !!element.closest('input, textarea, select, option, [contenteditable=""], [contenteditable="true"], [role="textbox"]');
+}
+
+function normalizeCopiedText(raw: string): string {
+  return String(raw ?? '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/[ \t]+$/g, '')
+    .replace(/\n+$/g, '');
+}
+
 function getParsed(message: Message, idx: number): ParsedParts {
+  const sourceContent = message.role === 'assistant' ? getDisplayContent(message) : message.content;
   const key = cacheKey(idx);
   const cur = parsedCache[key];
-  if (cur && cur.content === message.content) return cur.parsed;
-  const parsed = parseMessageWithReasoning(message.content);
-  parsedCache[key] = { content: message.content, parsed };
+  if (cur && cur.content === sourceContent) return cur.parsed;
+  const parsed = parseMessageWithReasoning(sourceContent);
+  parsedCache[key] = { content: sourceContent, parsed };
   return parsed;
 }
 
@@ -404,12 +564,15 @@ const assistantCtx = computed<AssistantWorkspaceContext>(() => ({
   handleScrollToBottomClick,
   retryMessage,
   copyMessage,
+  copyCodeBlock,
   viewAttachment,
   downloadAttachment,
   getFileIcon,
   formatFileSize,
   renderMarkdown,
   renderMarkdownSafe,
+  handleWorkspaceClick,
+  getDisplayContent,
   getParsed,
   getReasoningElapsedSeconds,
   getReasoningElapsedLabel,
@@ -500,6 +663,23 @@ function unbindScrollableListener() {
   if (!boundScrollableEl) return;
   boundScrollableEl.removeEventListener('scroll', onScrollableScroll);
   boundScrollableEl = null;
+}
+
+function cleanupRevealState() {
+  sessions.value.forEach((session) => {
+    session.messages.forEach((message) => {
+      if (message.role !== 'assistant') return;
+      clearRevealFlushTimer(message);
+      clearRevealAnimationTimer(message);
+      if (message.isStreaming) {
+        finalizeStreamingDisplay(message);
+        message.isStreaming = false;
+      } else {
+        message.isRevealing = false;
+        message.pendingContent = '';
+      }
+    });
+  });
 }
 
 function clearScheduledScrollResizeObserver() {
@@ -770,10 +950,47 @@ function handleExternalLinkClick(event: MouseEvent) {
   openExternalLinkInNewTab(url);
 }
 
+function escapeHtml(text: string) {
+  return String(text ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function normalizeCodeLanguage(lang: string | undefined): string {
+  const trimmed = String(lang || '').trim();
+  return trimmed || 'text/plain';
+}
+
+const markedRenderer = new marked.Renderer();
+
+markedRenderer.code = ({ text, lang }) => {
+  const language = normalizeCodeLanguage(lang);
+  const escapedCode = escapeHtml(text);
+  return `
+    <div class="ifocal-code-block">
+      <button
+        type="button"
+        class="ifocal-code-copy"
+        data-copy-code="${encodeURIComponent(text)}"
+        aria-label="复制代码"
+        title="复制代码"
+        ${text ? '' : 'disabled'}
+      >
+        复制
+      </button>
+      <pre><code class="language-${escapeHtml(language)}">${escapedCode}</code></pre>
+    </div>
+  `;
+};
+
 function renderMarkdown(content: string) {
   // 使用标准 Markdown 渲染（不启用 breaks）
   // 标准 Markdown 换行规则：行尾两个空格+\n 或 两个 \n（空行）才会换行
   return applyExternalLinkAttributes(marked(content, {
+    renderer: markedRenderer,
     breaks: false, // 关闭 GFM 单换行支持，使用标准 Markdown 换行
     gfm: true // 启用 GitHub Flavored Markdown 其他特性（表格、删除线等）
   }));
@@ -781,19 +998,14 @@ function renderMarkdown(content: string) {
 
 function renderMarkdownSafe(content: string) {
   return applyExternalLinkAttributes(marked(escapeUserHtml(content), {
+    renderer: markedRenderer,
     breaks: true,
     gfm: true
   }));
 }
 
-// 新增：更严谨的用户输入转义（包含双引号/单引号）
 function escapeUserHtml(text: string) {
-  return String(text ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+  return escapeHtml(text);
 }
 
 // 解析消息中的思考过程和答案（兼容多种标签/字段，并支持流式未闭合标签）
@@ -1349,15 +1561,40 @@ function normalizeLoadedSession(raw: any): Session | null {
   );
   const assistant = getAssistantById(assistantId);
   if (!assistant) return null;
+  const normalizedMessages = Array.isArray(raw.messages)
+    ? raw.messages.map((message: any) => normalizeLoadedMessage(message)).filter((message: Message | null): message is Message => !!message)
+    : [];
   return {
     id: String(raw.id || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`),
     title: String(raw.title || '新对话'),
     assistantId,
     task: assistantTaskForPreset(assistant.preset) as AssistantTask,
-    messages: Array.isArray(raw.messages) ? raw.messages : [],
+    messages: normalizedMessages,
     createdAt: Number(raw.createdAt) || Date.now(),
     updatedAt: Number(raw.updatedAt) || Date.now(),
   };
+}
+
+function normalizeLoadedMessage(raw: any): Message | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const role = raw.role === 'assistant' ? 'assistant' : raw.role === 'user' ? 'user' : '';
+  if (!role) return null;
+  const content = String(raw.content ?? '');
+  const message: Message = {
+    ...raw,
+    role,
+    content,
+  };
+  if (role === 'assistant') {
+    message.renderedContent = typeof raw.renderedContent === 'string' ? raw.renderedContent : content;
+    message.pendingContent = '';
+    message.isRevealing = false;
+    if (raw.isStreaming) {
+      message.isStreaming = false;
+      message.renderedContent = content;
+    }
+  }
+  return message;
 }
 
 async function loadModels() {
@@ -1703,6 +1940,9 @@ async function handleNonStreamingSend(
       const assistantMessage: Message = {
         role: 'assistant',
         content: '',
+        renderedContent: '',
+        pendingContent: '',
+        isRevealing: false,
         isError: false,
         modelName: currentModelNameSnapshot,
         reasoningCollapsed: true
@@ -1710,9 +1950,11 @@ async function handleNonStreamingSend(
 
       if (!resp) {
         assistantMessage.content = '错误：无响应';
+        assistantMessage.renderedContent = '错误：无响应';
         assistantMessage.isError = true;
       } else if (resp.ok) {
         assistantMessage.content = String(resp.result || '');
+        assistantMessage.renderedContent = assistantMessage.content;
         if (enableReasoning) {
           const parsed = parseMessageWithReasoning(assistantMessage.content);
           if (parsed.reasoning) {
@@ -1722,6 +1964,7 @@ async function handleNonStreamingSend(
         }
       } else {
         assistantMessage.content = `错误：${resp.error || '未知错误'}`;
+        assistantMessage.renderedContent = assistantMessage.content;
         assistantMessage.isError = true;
       }
 
@@ -1743,6 +1986,9 @@ async function handleNonStreamingSend(
     const errorMessage: Message = {
       role: 'assistant',
       content: `错误：${String(e?.message || e || '调用失败')}`,
+      renderedContent: `错误：${String(e?.message || e || '调用失败')}`,
+      pendingContent: '',
+      isRevealing: false,
       isError: true,
       modelName: currentModelNameSnapshot,
       reasoningCollapsed: true
@@ -1818,6 +2064,9 @@ async function handleStreamingSend(
       const assistantMessage: Message = {
         role: 'assistant',
         content: initialContent,
+        renderedContent: initialContent,
+        pendingContent: '',
+        isRevealing: false,
         isError: false,
         modelName: currentModelNameSnapshot,
         isStreaming: true,
@@ -1850,21 +2099,29 @@ async function handleStreamingSend(
         // 真实流式：追加内容
         if (messageIndex === -1) {
           // 如果没有收到 start 消息，在第一个 chunk 时创建消息
-          ensureAssistantMessage(String(response.content || ''));
+          const firstChunk = String(response.content || '');
+          const message = ensureAssistantMessage('');
+          if (message) {
+            message.content += firstChunk;
+            queueStreamingChunk(message, firstChunk);
+            updateReasoningTimingForMessage(message);
+          }
         } else {
           const message = session.messages[messageIndex];
           if (message) {
-            message.content += response.content;
+            const chunk = String(response.content || '');
+            message.content += chunk;
+            queueStreamingChunk(message, chunk);
             // 更新思考计时
             updateReasoningTimingForMessage(message);
           }
         }
         sessions.value = [...sessions.value]; // 触发响应式更新
-        scrollToBottom();
       } else if (response.type === 'done') {
         if (messageIndex >= 0) {
           const message = session.messages[messageIndex];
           if (message) {
+            finalizeStreamingDisplay(message);
             message.isStreaming = false;
             completeActiveToolStatuses(message);
             if (enableReasoning) {
@@ -1891,6 +2148,9 @@ async function handleStreamingSend(
           const errorMessage: Message = {
             role: 'assistant',
             content: `错误：${response.error}`,
+            renderedContent: `错误：${response.error}`,
+            pendingContent: '',
+            isRevealing: false,
             isError: true,
             modelName: currentModelNameSnapshot,
             reasoningCollapsed: true
@@ -1901,6 +2161,7 @@ async function handleStreamingSend(
           const message = session.messages[messageIndex];
           if (message) {
             message.content = `错误：${response.error}`;
+            finalizeStreamingDisplay(message);
             message.isError = true;
             message.isStreaming = false;
             completeActiveToolStatuses(message);
@@ -1922,10 +2183,12 @@ async function handleStreamingSend(
       if (session && messageIndex >= 0) {
         const message = session.messages[messageIndex];
         if (message && message.isStreaming) {
+          finalizeStreamingDisplay(message);
           message.isStreaming = false;
           completeActiveToolStatuses(message);
           if (!message.content) {
             message.content = '错误：连接中断';
+            message.renderedContent = '错误：连接中断';
             message.isError = true;
           }
           saveSessions();
@@ -1944,6 +2207,9 @@ async function handleStreamingSend(
         session.messages.push({
           role: 'assistant',
           content: `错误：${String((e as any)?.message || e || '发送失败')}`,
+          renderedContent: `错误：${String((e as any)?.message || e || '发送失败')}`,
+          pendingContent: '',
+          isRevealing: false,
           isError: true,
           modelName: currentModelNameSnapshot,
           reasoningCollapsed: true,
@@ -1988,6 +2254,7 @@ function stopGenerating() {
           (m as any).isStreaming = false;
           // 强制覆盖为“已中断”，不保留任何既有片段
           m.content = '已中断';
+          finalizeStreamingDisplay(m);
           m.isError = false;
           m.reasoningCollapsed = true;
           // 清理计时
@@ -2023,6 +2290,9 @@ function stopGenerating() {
         session.messages.push({
           role: 'assistant',
           content: '已中断',
+          renderedContent: '已中断',
+          pendingContent: '',
+          isRevealing: false,
           isError: false,
           modelName: currentModelName.value,
           reasoningCollapsed: true
@@ -2210,17 +2480,36 @@ function selectLanguage(lang: string) {
   });
 }
 
-async function copyMessage(content: string) {
+async function writeTextWithToast(content: string, successMessage: string) {
+  const text = String(content ?? '');
   try {
-    await navigator.clipboard.writeText(content);
-    // 可以添加一个toast提示，这里简单处理
-    console.log('消息已复制到剪贴板');
-    // 标记为页面内复制，短时间内忽略回填
-    lastInAppCopiedText = String(content ?? '').trim();
-    suppressClipboardUntil = Date.now() + 1500; // 1.5s 冷却
+    await navigator.clipboard.writeText(text);
+    markInAppCopy(text);
+    toast.success(successMessage, 1400);
   } catch (e) {
     console.error('复制失败:', e);
+    toast.error('复制失败', 1800);
   }
+}
+
+async function copyMessage(content: string) {
+  await writeTextWithToast(content, '消息已复制');
+}
+
+async function copyCodeBlock(content: string) {
+  await writeTextWithToast(content, '代码已复制');
+}
+
+function handleWorkspaceClick(event: MouseEvent) {
+  const target = event.target instanceof Element ? event.target : null;
+  const copyButton = target?.closest<HTMLButtonElement>('.ifocal-code-copy');
+  if (!copyButton) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (copyButton.disabled) return;
+  const encoded = copyButton.getAttribute('data-copy-code') || '';
+  const decoded = decodeURIComponent(encoded);
+  void copyCodeBlock(decoded);
 }
 
 // 查看附件（图片）
@@ -2458,12 +2747,22 @@ onMounted(async () => {
 
   window.addEventListener('focus', windowFocusHandler);
   window.addEventListener('blur', windowBlurHandler);
-  // 监听在助手页内的复制事件，抑制剪贴板回填
+  // 监听在助手窗口内的复制事件：规范化纯文本并抑制剪贴板回填
   onInAppCopy = (e: ClipboardEvent) => {
+    if (isEditableTarget(e.target)) return;
+    let selectedText = '';
     try {
-      lastInAppCopiedText = String(window.getSelection()?.toString() ?? '').trim();
-    } catch { lastInAppCopiedText = ''; }
-    suppressClipboardUntil = Date.now() + 1500; // 1.5s 冷却
+      selectedText = String(window.getSelection()?.toString() ?? '');
+    } catch {
+      selectedText = '';
+    }
+    const normalized = normalizeCopiedText(selectedText);
+    if (!normalized) return;
+    markInAppCopy(normalized);
+    if (e.clipboardData) {
+      e.preventDefault();
+      e.clipboardData.setData('text/plain', normalized);
+    }
   };
   document.addEventListener('copy', onInAppCopy);
   if (document.hasFocus() && autoPasteGlobalAssistant.value) {
@@ -2503,6 +2802,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  cleanupRevealState();
   if (windowFocusHandler) {
     window.removeEventListener('focus', windowFocusHandler);
     windowFocusHandler = null;
@@ -2601,8 +2901,8 @@ onBeforeUnmount(() => {
   /* 与 GitHub 接近的浅灰 */
   /* border: 1px solid #e5e7eb; */
   /* zinc-200 边框 */
-  border-radius: 0.5rem;
-  padding: 0.85rem 1rem;
+  border-radius: 0.4rem;
+  padding: 0.95rem 1rem;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -2638,6 +2938,56 @@ onBeforeUnmount(() => {
   background-clip: text;
   color: transparent;
   animation: shimmer 2s linear infinite;
+}
+
+.stream-reveal {
+  transition: opacity 160ms ease, transform 160ms ease, filter 160ms ease;
+}
+
+.stream-reveal.is-revealing {
+  opacity: 0.94;
+  transform: translateY(1px);
+  filter: saturate(0.96);
+}
+
+.ifocal-code-block {
+  position: relative;
+}
+
+.ifocal-code-copy {
+  position: absolute;
+  top: 0.2rem;
+  right: 0.2rem;
+  pointer-events: auto;
+  opacity: 0;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.6);
+  color: #334155;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0.2rem 0.4rem;
+  cursor: pointer;
+  transition: opacity 140ms ease, background-color 140ms ease, transform 140ms ease;
+}
+
+.ifocal-code-copy:hover,
+.ifocal-code-copy:focus-visible {
+  background: #ffffff;
+}
+
+.ifocal-code-copy:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.3);
+  outline-offset: 2px;
+}
+
+.ifocal-code-copy:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.ifocal-code-block:hover .ifocal-code-copy,
+.ifocal-code-block:focus-within .ifocal-code-copy {
+  opacity: 1;
 }
 
 .ifocal-route-enter-active,

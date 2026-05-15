@@ -9,9 +9,16 @@ import {
 } from 'reka-ui'
 import { cn } from '@/lib/utils'
 
+type SwitchSize = 'sm' | 'default'
+
+const TRACK_SIZE_CLASSES: Record<SwitchSize, string> = {
+  sm: 'h-[16px] w-[26px] [--switch-thumb-size:12px] [--switch-thumb-translate:10px]',
+  default: 'h-[20px] w-[34px] [--switch-thumb-size:16px] [--switch-thumb-translate:14px]',
+}
+
 const props = withDefaults(defineProps<SwitchRootProps & {
   class?: HTMLAttributes['class']
-  size?: 'sm' | 'default'
+  size?: SwitchSize
 }>(), {
   size: 'default',
 })
@@ -30,13 +37,14 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
     :data-size="size"
     v-bind="forwarded"
     :class="cn(
-      'data-checked:bg-primary data-unchecked:bg-input focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:aria-invalid:border-destructive/50 dark:data-unchecked:bg-input/80 shrink-0 rounded-full border border-transparent focus-visible:ring-[3px] aria-invalid:ring-[3px] data-[size=default]:h-[18.4px] data-[size=default]:w-[32px] data-[size=sm]:h-[14px] data-[size=sm]:w-[24px] peer group/switch relative inline-flex items-center transition-all outline-none after:absolute after:-inset-x-3 after:-inset-y-2 data-disabled:cursor-not-allowed data-disabled:opacity-50',
+      'data-checked:bg-primary data-unchecked:bg-input focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:aria-invalid:border-destructive/50 dark:data-unchecked:bg-input/80 shrink-0 rounded-full border border-transparent focus-visible:ring-[3px] aria-invalid:ring-[3px] peer group/switch relative inline-flex transition-all outline-none after:absolute after:-inset-x-3 after:-inset-y-2 data-disabled:cursor-not-allowed data-disabled:opacity-50',
+      TRACK_SIZE_CLASSES[size],
       props.class,
     )"
   >
     <SwitchThumb
       data-slot="switch-thumb"
-      class="bg-background dark:data-unchecked:bg-foreground dark:data-checked:bg-primary-foreground rounded-full group-data-[size=default]/switch:size-4 group-data-[size=sm]/switch:size-3 group-data-[size=default]/switch:data-checked:translate-x-[calc(100%-2px)] group-data-[size=sm]/switch:data-checked:translate-x-[calc(100%-2px)] group-data-[size=default]/switch:data-unchecked:translate-x-0 group-data-[size=sm]/switch:data-unchecked:translate-x-0 pointer-events-none block ring-0 transition-transform"
+      class="bg-background dark:data-unchecked:bg-foreground dark:data-checked:bg-primary-foreground absolute left-px top-px block size-[var(--switch-thumb-size)] rounded-full ring-0 pointer-events-none transition-transform data-checked:translate-x-[var(--switch-thumb-translate)] data-unchecked:translate-x-0"
     >
       <slot name="thumb" v-bind="slotProps" />
     </SwitchThumb>

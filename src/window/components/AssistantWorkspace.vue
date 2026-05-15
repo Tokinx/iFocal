@@ -1,7 +1,8 @@
 <template>
-  <div class="relative h-full min-h-0 flex-1">
-    <ScrollArea ref="messagesContainer"
-      class="ifocal-scroll-style h-full flex-1 px-4 bg-white border border-olive-300/60 shadow-xs">
+  <div class="relative h-full min-h-0 flex-1" @click="ctx.handleWorkspaceClick">
+    <ScrollArea
+      ref="messagesContainer"
+      class="ifocal-scroll-style h-full flex-1 px-4 rounded-1xl bg-white border border-olive-300/60 shadow-xs">
       <header class="flex items-center justify-end absolute top-0 left-0 right-0 p-4 z-10">
         <LanguageSelect :current-lang-label="ctx.currentLangLabel" :current-target-lang="ctx.targetLang"
           :supported-languages="ctx.supportedLanguages" :bg-class="ctx.bgClass" :blur-class="ctx.blurClass"
@@ -48,7 +49,11 @@
             </div>
           </div>
 
-          <div v-else :ref="el => ctx.setAiMessageRef(el, idx)" class="w-full group">
+          <div
+            v-else
+            :ref="el => ctx.setAiMessageRef(el, idx)"
+            :class="['w-full group', { 'stream-reveal is-revealing': message.isRevealing }]"
+          >
             <div class="flex items-center justify-between">
               <div class="min-w-0">
                 <span class="text-xs font-medium !text-olive-600">{{ message.modelName || 'Assistant' }}</span>
@@ -71,7 +76,7 @@
               <div class="flex items-center gap-1">
                 <Button variant="ghost" size="icon"
                   class="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-olive-400" title="复制"
-                  @click="ctx.copyMessage(message.content)">
+                  @click="ctx.copyMessage(ctx.getDisplayContent(message))">
                   <Icon icon="ri:file-copy-line" class="h-3 w-3" />
                 </Button>
               </div>
@@ -79,7 +84,7 @@
 
             <div class="w-full">
               <div v-if="message.isError" class="text-red-600">{{ message.content }}</div>
-              <div v-else-if="message.content">
+              <div v-else-if="ctx.getDisplayContent(message)">
                 <template v-if="ctx.getParsed(message, idx).reasoning">
                   <template v-if="message.isStreaming && ctx.enableReasoning && !ctx.getParsed(message, idx).answer">
                     <div class="flex items-center gap-2">
@@ -118,7 +123,7 @@
                     v-html="ctx.renderMarkdown(ctx.getParsed(message, idx).answer)" />
                 </template>
                 <div v-else class="prose prose-sm max-w-none !text-olive-800"
-                  v-html="ctx.renderMarkdown(message.content)" />
+                  v-html="ctx.renderMarkdown(ctx.getDisplayContent(message))" />
               </div>
               <div v-else-if="message.toolStatuses?.length" />
               <div v-else>

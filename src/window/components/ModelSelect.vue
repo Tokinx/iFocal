@@ -2,14 +2,14 @@
   <DropdownMenu>
     <DropdownMenuTrigger as-child>
       <Button variant="outline"
-        :class="['justify-start truncate h-8 font-normal gap-1 px-3', bgClass, blurClass, buttonClass]">
+        :class="['justify-start truncate h-8 font-normal gap-1 px-3 rounded-xl', bgClass, blurClass, buttonClass]">
         <span class="truncate text-sm">{{ currentModelName || 'GPT-5' }}</span>
         <Icon icon="ri:arrow-down-s-line" class="h-7 w-7 shrink-0" />
       </Button>
     </DropdownMenuTrigger>
-    <DropdownMenuContent align="start" :class="['', bgClass, blurClass]">
-      <Input v-model="keyword" placeholder="搜索模型" class="h-8 mb-1" />
-      <ScrollArea class="h-60">
+    <DropdownMenuContent align="start" :class="['min-w-55', bgClass, blurClass]">
+      <Input v-model="keyword" placeholder="搜索模型" class="h-9 mb-1 rounded-xl" />
+      <ScrollArea class="h-50">
         <template v-for="(group, channelName, groupIndex) in filteredGroupedModels" :key="channelName">
           <DropdownMenuSeparator v-if="groupIndex" />
           <DropdownMenuLabel>{{ channelName }}</DropdownMenuLabel>

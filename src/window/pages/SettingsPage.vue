@@ -1,5 +1,5 @@
 <template>
-  <div class="relative h-full min-h-0 flex-1 overflow-hidden bg-white border border-olive-300/60 shadow-xs">
+  <div class="relative h-full min-h-0 flex-1 rounded-1xl overflow-hidden bg-white border border-olive-300/60 shadow-xs p-2">
     <WindowSettingsCenter embedded />
   </div>
 </template>

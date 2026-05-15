@@ -8,13 +8,13 @@
 
       <DropdownMenu>
         <DropdownMenuTrigger as-child>
-          <Button variant="outline" size="icon" :class="['h-8 w-8 shrink-0', bgClass, blurClass]">
+          <Button variant="outline" size="icon" :class="['h-8 w-8 shrink-0 rounded-xl', bgClass, blurClass]">
             <Icon icon="ri:apps-2-ai-line" class="h-5 w-5" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" :class="['w-56', bgClass, blurClass]">
-          <ScrollArea class="h-60 p-3">
-            <div class="space-y-3">
+          <ScrollArea class="h-60">
+            <div class="space-y-3 p-3">
               <!-- 流式开关 -->
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-2">
@@ -79,10 +79,10 @@
                 </div>
                 <div class="space-y-2 pl-6">
                   <div v-for="server in mcpServers" :key="server.name" class="flex items-center justify-between gap-3">
-                    <span class="min-w-0 truncate text-xs text-muted-foreground" :title="server.name">
+                    <span :class="['min-w-0 truncate text-xs', mcpServerToggles[server.name] ? 'text-foreground':'text-muted-foreground']" :title="server.name">
                       {{ server.name }}
                     </span>
-                    <Switch :model-value="!!mcpServerToggles[server.name]"
+                    <Switch :model-value="!!mcpServerToggles[server.name]" size="sm"
                       @update:modelValue="$emit('toggleMcpServer', server.name, !!$event)" />
                   </div>
                 </div>
@@ -95,22 +95,22 @@
       <div class="flex-1"></div>
 
       <Button v-show="showScrollToBottomButton" variant="outline" size="icon"
-        :class="['h-8 w-8 shrink-0', bgClass, blurClass]" title="滚动到底部" @click="$emit('scrollToBottom')">
+        :class="['h-8 w-8 shrink-0 rounded-xl', bgClass, blurClass]" title="滚动到底部" @click="$emit('scrollToBottom')">
         <Icon icon="ri:arrow-down-line" class="h-4 w-4" />
       </Button>
     </div>
 
     <!-- 输入框容器 -->
-    <div :class="['relative', bgClass, blurClass]">
+    <div :class="['relative rounded-xl', bgClass, blurClass]">
       <Textarea v-model="innerValue" v-autosize="8" :rows="2" placeholder="输入你想了解到内容"
-        class="resize-none pb-11 bg-transparent" @keydown.enter.exact.prevent="trySend" @paste="handlePaste" />
+        class="resize-none pb-11 bg-transparent rounded-xl" @keydown.enter.exact.prevent="trySend" @paste="handlePaste" />
       <div class="absolute bottom-2 left-2 right-2 flex items-center justify-between pointer-events-none">
         <!-- 输入框功能区 -->
         <div class="flex items-center pointer-events-auto">
           <!-- 附件预览区域 -->
           <div v-if="attachments.length > 0" class="flex flex-wrap gap-2">
             <div v-for="(file, idx) in attachments" :key="idx"
-              class="relative group flex items-center gap-2 py-1 px-2 bg-white/60 border border-zinc-200">
+              class="relative group flex items-center gap-2 py-1 pl-1 pr-2 rounded-lg bg-white/60 border border-zinc-200">
               <!-- 文件图标 -->
               <Icon :icon="getFileIcon(file.type)" class="h-4 w-4 text-muted-foreground shrink-0" />
               <!-- 文件名 -->
@@ -119,7 +119,7 @@
               <span class="text-xs text-muted-foreground">{{ formatFileSize(file.size) }}</span>
               <!-- 删除按钮 -->
               <Button variant="outline" size="icon"
-                class="h-4 w-4 absolute -top-1 -right-1 !bg-red-500 !text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                class="rounded-md h-4 w-4 absolute top-1 left-1 !bg-red-500 !text-white opacity-0 group-hover:opacity-100 transition-opacity"
                 @click="removeAttachment(idx)">
                 <Icon icon="ri:close-line" class="h-3 w-3" />
               </Button>
@@ -129,7 +129,7 @@
           <TooltipProvider v-else-if="enableFileUpload">
             <Tooltip>
               <TooltipTrigger as-child>
-                <Button variant="ghost" size="icon" class="h-7 w-7 hover:bg-zinc-200/80 relative"
+                <Button variant="ghost" size="icon" class="rounded-lg h-7 w-7 hover:bg-zinc-200/80 relative"
                   @click="triggerFileInput">
                   <Icon icon="ri:attachment-2" class="h-4 w-4 text-muted-foreground" />
                   <input ref="fileInputRef" type="file" :accept="acceptedFileTypes" class="hidden"
@@ -148,20 +148,20 @@
         <!-- 右侧：发送/停止按钮 -->
         <div class="flex gap-1 pointer-events-auto">
           <!-- 发送按钮 -->
-          <Button variant="ghost" size="icon" class="h-7 w-7 bg-amber-800 hover:!bg-amber-800/80 !text-white"
+          <Button variant="ghost" size="icon" class="rounded-lg h-7 w-7 bg-amber-800 hover:!bg-amber-800/80 !text-white"
             @click="trySend" v-show="canSend && !sending">
             <Icon icon="ri:send-plane-2-fill" class="h-3 w-3" />
           </Button>
           <!-- 停止按钮 -->
           <Button variant="ghost" size="icon"
-            class="group h-7 w-7 bg-amber-800 hover:!bg-amber-800/80 !text-white"
+            class="group rounded-lg h-7 w-7 bg-amber-800 hover:!bg-amber-800/80 !text-white"
             @click="$emit('stop')" v-show="sending" title="停止生成">
             <span class="relative flex h-3.5 w-3.5 items-center justify-center">
               <span
-                class="ifocal-loading absolute opacity-100 transition-opacity duration-800 group-hover:opacity-0"
+                class="ifocal-loading absolute opacity-100 duration-800 group-hover:opacity-0"
                 style="--ifocal-loading-size: 14px; --ifocal-loading-stroke: 2px; --ifocal-loading-color: currentColor;" />
               <Icon icon="ri:stop-fill"
-                class="absolute h-3 w-3 opacity-0 transition-opacity duration-150 group-hover:opacity-100" />
+                class="absolute h-3 w-3 opacity-0 duration-150 group-hover:opacity-100" />
             </span>
           </Button>
         </div>

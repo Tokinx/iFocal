@@ -1329,7 +1329,7 @@ async function fetchAddFormModels() {
 <template>
   <div class="flex h-full min-h-0 w-full text-foreground">
     <!-- 左侧导航 -->
-    <aside class="w-30 shrink-0 border-r p-1">
+    <aside class="w-30 shrink-0 border-r pr-2">
       <div class="flex h-full min-h-0 flex-col gap-4">
         <nav class="space-y-1" :class="embedded ? 'pt-0' : 'pt-12'">
           <Button v-for="item in [
@@ -1339,9 +1339,9 @@ async function fetchAddFormModels() {
             { id: 'mcp', label: 'MCP功能' },
             { id: 'debug', label: '其它设置' },
             { id: 'about', label: '关于插件' }
-          ] as Array<{ id: 'channels' | 'machine' | 'mcp' | 'settings' | 'debug' | 'about'; label: string }>" :key="item.id"
-            variant="ghost"
-            class="w-full justify-start gap-1 text-olive-500 hover:bg-olive-100 hover:text-amber-800/80"
+          ] as Array<{ id: 'channels' | 'machine' | 'mcp' | 'settings' | 'debug' | 'about'; label: string }>"
+            :key="item.id" variant="ghost"
+            class="w-full rounded-lg justify-start gap-2 text-olive-500 hover:bg-olive-100 hover:text-amber-800/80"
             :class="nav === (item.id as any) ? 'bg-olive-100 !text-amber-800' : ''" @click="nav = item.id as any">
             <Icon :icon="iconOfNav(item.id)" width="16" class="opacity-80" />
             <span>{{ item.label }}</span>
@@ -1358,7 +1358,7 @@ async function fetchAddFormModels() {
           <header class="flex items-center h-10 text-base font-semibold">
             <div class="shrink-0">渠道管理</div>
             <div class="w-full"></div>
-            <Button size="sm" @click="openAddChannel">
+            <Button size="sm" @click="openAddChannel" class="rounded-xl">
               <Icon icon="proicons:box-add" width="16" />
               添加渠道
             </Button>
@@ -1366,7 +1366,7 @@ async function fetchAddFormModels() {
 
           <div v-if="!channels.length" class="text-sm text-muted-foreground">暂无渠道，请先添加。</div>
           <div v-else class="space-y-3">
-            <div v-for="(ch, idx) in channels" :key="idx" class="border p-4 space-y-3 transition-all"
+            <div v-for="(ch, idx) in channels" :key="idx" class="border p-4 space-y-3 transition-all rounded-2xl"
               :class="{ 'opacity-50': draggedIndex === idx, 'border-primary border-2': dragOverIndex === idx }"
               :draggable="isDraggable[idx]" @dragstart="handleDragStart(idx)" @dragover="handleDragOver($event, idx)"
               @dragend="handleDragEnd" @dragleave="handleDragLeave">
@@ -1379,7 +1379,7 @@ async function fetchAddFormModels() {
                     title="拖拽排序">
                     <Icon icon="lucide:grip-vertical" class="text-muted-foreground !w-6 !h-6" />
                   </Button> -->
-                  <Button variant="ghost" size="icon" class="h-8 w-8 shrink-0" @mousedown="enableDrag(idx)"
+                  <Button variant="ghost" size="icon" class="h-8 w-8 shrink-0 rounded-xl" @mousedown="enableDrag(idx)"
                     @mouseup="disableDrag(idx)" @mouseleave="disableDrag(idx)"
                     @click="channelExpanded[idx] = !channelExpanded[idx]" :title="channelExpanded[idx] ? '收起' : '展开'">
                     <Icon :icon="channelExpanded[idx] ? 'lucide:chevron-down' : 'lucide:chevron-right'" />
@@ -1395,7 +1395,7 @@ async function fetchAddFormModels() {
                 <div class="flex items-center gap-2 w-64">
                   <div class="w-full">
                     <Select v-model="testModel[idx]">
-                      <SelectTrigger class="w-full">
+                      <SelectTrigger class="w-full rounded-xl">
                         <SelectValue placeholder="选择模型" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1404,7 +1404,7 @@ async function fetchAddFormModels() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <Button variant="outline" size="icon" class="flex items-center gap-1 shrink-0"
+                  <Button variant="outline" size="icon" class="flex items-center gap-1 shrink-0 rounded-xl"
                     @click="handleTestChannel(idx)" title="测试">
                     <Icon icon="proicons:bug" width="16" />
                   </Button>
@@ -1420,7 +1420,7 @@ async function fetchAddFormModels() {
                   </div>
                   <div class="w-64">
                     <Select v-model="ch.type">
-                      <SelectTrigger class="w-full">
+                      <SelectTrigger class="w-full rounded-xl">
                         <SelectValue placeholder="选择类型" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1437,7 +1437,7 @@ async function fetchAddFormModels() {
                     <p class="text-xs text-muted-foreground">用于区分不同渠道</p>
                   </div>
                   <div class="w-64">
-                    <Input v-model="ch.name" placeholder="如 my-openai" />
+                    <Input v-model="ch.name" placeholder="如 my-openai" class="rounded-xl" />
                   </div>
                 </div>
                 <div class="flex items-center justify-between gap-4">
@@ -1446,7 +1446,7 @@ async function fetchAddFormModels() {
                     <p class="text-xs text-muted-foreground">可留空以使用默认地址</p>
                   </div>
                   <div class="w-[32rem]">
-                    <Input v-model="ch.apiUrl" placeholder="留空使用默认" />
+                    <Input v-model="ch.apiUrl" placeholder="留空使用默认" class="rounded-xl" />
                   </div>
                 </div>
                 <div class="flex items-center justify-between gap-4">
@@ -1456,8 +1456,8 @@ async function fetchAddFormModels() {
                   </div>
                   <div class="w-[32rem] relative">
                     <Input :type="showApiKeyByIndex[idx] ? 'text' : 'password'" v-model="ch.apiKey"
-                      placeholder="留空表示不修改" class="pr-10" />
-                    <Button variant="ghost" size="icon" class="absolute right-1 top-1 h-7 w-7"
+                      placeholder="留空表示不修改" class="pr-10 rounded-xl" />
+                    <Button variant="ghost" size="icon" class="absolute right-1 top-1 h-7 w-7 rounded-xl"
                       :title="showApiKeyByIndex[idx] ? '隐藏' : '显示'"
                       @click="showApiKeyByIndex[idx] = !showApiKeyByIndex[idx]">
                       <Icon
@@ -1482,9 +1482,9 @@ async function fetchAddFormModels() {
                     <p class="text-xs text-muted-foreground">每行一个，支持 id#name 格式自定义显示名称</p>
                   </div>
                   <div class="w-[32rem] space-y-2 shrink-0">
-                    <Textarea v-model="modelsTextByIndex[idx]" class="h-36"
+                    <Textarea v-model="modelsTextByIndex[idx]" class="h-36 rounded-xl"
                       placeholder="gpt-4o&#10;gpt-4o-mini#GPT-4o Mini" />
-                    <Button variant="outline" size="sm" class="flex items-center gap-1" @click="fetchModels(idx)"
+                    <Button variant="outline" size="sm" class="flex items-center gap-1 rounded-xl" @click="fetchModels(idx)"
                       :disabled="fetchingModels[idx]">
                       <Icon v-if="!fetchingModels[idx]" icon="lucide:download" width="14" />
                       <Icon v-else icon="line-md:loading-twotone-loop" width="14" class="animate-spin" />
@@ -1495,12 +1495,12 @@ async function fetchAddFormModels() {
               </div>
 
               <div v-if="channelExpanded[idx]" class="flex items-center gap-2">
-                <Button variant="outline" class="flex items-center gap-1 text-red-600"
+                <Button variant="outline" class="flex items-center gap-1 text-red-600 rounded-xl"
                   @click="confirmRemoveChannel(idx)">
                   <Icon :icon="iconOfAction('delete')" width="16" /> 删除
                 </Button>
                 <div class="w-full"></div>
-                <Button class="bg-primary text-primary-foreground flex items-center gap-1"
+                <Button class="bg-primary text-primary-foreground flex items-center gap-1 rounded-xl"
                   @click="handleSaveChannelInline(idx)">
                   <Icon :icon="iconOfAction('save')" width="16" /> 保存
                 </Button>
@@ -1515,25 +1515,25 @@ async function fetchAddFormModels() {
           <header class="flex items-center h-10 text-base font-semibold">
             <div class="shrink-0">机器翻译</div>
             <div class="w-full"></div>
-            <Button size="sm" @click="openAddMachineChannel">
+            <Button size="sm" @click="openAddMachineChannel" class="rounded-xl">
               <Icon icon="proicons:box-add" width="16" />
               添加渠道
             </Button>
           </header>
 
-          <div class="border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-900">
+          <div class="border border-amber-200/50 bg-amber-50/70 p-3 text-xs text-amber-900 rounded-lg">
             内置 Google 与 Microsoft 翻译为非官方实验接口，免密但可能受网络、限流或上游策略影响，生产稳定性要求高时建议添加官方自备密钥渠道。
           </div>
 
-          <div v-if="showAddMachineChannel" class="border p-4 space-y-3">
+          <div v-if="showAddMachineChannel" class="border p-4 space-y-3 rounded-2xl">
             <div class="flex items-center justify-between gap-4">
               <div>
                 <label class="text-sm font-medium leading-none block mb-1">新增机器翻译渠道</label>
                 <p class="text-xs text-muted-foreground">官方渠道可先保存空密钥，调用或测试时会提示补齐</p>
               </div>
               <div class="flex items-center gap-2">
-                <Button class="bg-primary text-primary-foreground" @click="handleAddMachineChannel">添加</Button>
-                <Button variant="outline" @click="closeAddMachineChannel">取消</Button>
+                <Button class="bg-primary text-primary-foreground rounded-xl" @click="handleAddMachineChannel">添加</Button>
+                <Button variant="outline" @click="closeAddMachineChannel" class="rounded-xl">取消</Button>
               </div>
             </div>
             <div class="grid grid-cols-2 gap-3">
@@ -1541,7 +1541,7 @@ async function fetchAddFormModels() {
                 <Label class="block">类型</Label>
                 <Select :model-value="mtAddForm.provider"
                   @update:modelValue="handleMachineAddProviderChange(String($event))">
-                  <SelectTrigger class="w-full">
+                  <SelectTrigger class="w-full rounded-xl">
                     <SelectValue placeholder="选择类型" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1553,42 +1553,42 @@ async function fetchAddFormModels() {
               </div>
               <div class="space-y-1">
                 <Label class="block">名称</Label>
-                <Input v-model="mtAddForm.name" :placeholder="machineProviderLabel(mtAddForm.provider)" />
+                <Input v-model="mtAddForm.name" :placeholder="machineProviderLabel(mtAddForm.provider)" class="rounded-xl" />
               </div>
-              <div class="space-y-1 col-span-2">
+              <div class="space-y-1">
                 <Label class="block">API URL</Label>
                 <Input v-model="mtAddForm.apiUrl"
-                  :placeholder="getMachineTranslateProviderMeta(mtAddForm.provider).defaultApiUrl" />
+                  :placeholder="getMachineTranslateProviderMeta(mtAddForm.provider).defaultApiUrl" class="rounded-xl" />
               </div>
               <div v-if="machineProviderShowsApiKey(mtAddForm.provider)" class="space-y-1">
                 <Label class="block">API Key / Token</Label>
                 <Input v-model="mtAddForm.apiKey"
-                  :placeholder="machineProviderNeedsApiKey(mtAddForm.provider) ? '该渠道调用时必填' : '可留空'" />
+                  :placeholder="machineProviderNeedsApiKey(mtAddForm.provider) ? '该渠道调用时必填' : '可留空'" class="rounded-xl" />
               </div>
               <div v-if="machineProviderNeedsSecretKey(mtAddForm.provider)" class="space-y-1">
                 <Label class="block">Secret Key</Label>
-                <Input v-model="mtAddForm.secretKey" placeholder="百度等渠道需要" />
+                <Input v-model="mtAddForm.secretKey" placeholder="百度等渠道需要" class="rounded-xl" />
               </div>
               <div v-if="machineProviderSupportsRegion(mtAddForm.provider)" class="space-y-1">
                 <Label class="block">Region</Label>
-                <Input v-model="mtAddForm.region" placeholder="Microsoft 官方渠道可选" />
+                <Input v-model="mtAddForm.region" placeholder="Microsoft 官方渠道可选" class="rounded-xl" />
               </div>
-              <div class="grid grid-cols-4 gap-2">
+              <div class="grid grid-cols-4 gap-2 col-span-2">
                 <div class="space-y-1">
                   <Label class="block">QPS</Label>
-                  <Input v-model="mtAddForm.qps" />
+                  <Input v-model="mtAddForm.qps" class="rounded-xl" />
                 </div>
                 <div class="space-y-1">
                   <Label class="block">最大并发</Label>
-                  <Input v-model="mtAddForm.maxConcurrent" />
+                  <Input v-model="mtAddForm.maxConcurrent" class="rounded-xl" />
                 </div>
                 <div class="space-y-1">
                   <Label class="block">超时(ms)</Label>
-                  <Input v-model="mtAddForm.timeoutMs" />
+                  <Input v-model="mtAddForm.timeoutMs" class="rounded-xl" />
                 </div>
                 <div class="space-y-1">
                   <Label class="block">并发段落</Label>
-                  <Input v-model="mtAddForm.batchSize" />
+                  <Input v-model="mtAddForm.batchSize" class="rounded-xl" />
                 </div>
               </div>
             </div>
@@ -1596,10 +1596,10 @@ async function fetchAddFormModels() {
           </div>
 
           <div class="space-y-3">
-            <div v-for="(ch, idx) in machineChannels" :key="ch.id" class="border p-4 space-y-3">
+            <div v-for="(ch, idx) in machineChannels" :key="ch.id" class="border p-4 space-y-3 rounded-2xl">
               <div class="flex items-center justify-between gap-2">
                 <div class="flex items-center gap-2 flex-1 min-w-0">
-                  <Button variant="ghost" size="icon" class="h-8 w-8 shrink-0"
+                  <Button variant="ghost" size="icon" class="h-8 w-8 shrink-0 rounded-xl"
                     @click="mtExpanded[idx] = !mtExpanded[idx]" :title="mtExpanded[idx] ? '收起' : '展开'">
                     <Icon :icon="mtExpanded[idx] ? 'lucide:chevron-down' : 'lucide:chevron-right'" />
                   </Button>
@@ -1620,7 +1620,7 @@ async function fetchAddFormModels() {
                   </div>
                 </div>
                 <div class="flex items-center gap-2">
-                  <Button variant="outline" size="sm" class="flex items-center gap-1" :disabled="mtTesting[idx]"
+                  <Button variant="outline" size="sm" class="flex items-center gap-1 rounded-xl" :disabled="mtTesting[idx]"
                     @click="testMachineChannel(idx)">
                     <Icon v-if="!mtTesting[idx]" icon="proicons:bug" width="14" />
                     <Icon v-else icon="line-md:loading-twotone-loop" width="14" class="animate-spin" />
@@ -1635,10 +1635,10 @@ async function fetchAddFormModels() {
                     <label class="text-sm font-medium leading-none block mb-1">类型</label>
                     <p class="text-xs text-muted-foreground">{{ machineProviderDescription(ch.provider) }}</p>
                   </div>
-                  <div class="w-72">
+                  <div class="w-100">
                     <Select :model-value="ch.provider" :disabled="!!ch.builtin"
                       @update:modelValue="handleMachineChannelProviderChange(ch, String($event))">
-                      <SelectTrigger class="w-full">
+                      <SelectTrigger class="w-full rounded-xl">
                         <SelectValue placeholder="选择类型" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1655,7 +1655,7 @@ async function fetchAddFormModels() {
                     <p class="text-xs text-muted-foreground">用于区分不同机器翻译渠道</p>
                   </div>
                   <div class="w-100">
-                    <Input v-model="ch.name" />
+                    <Input v-model="ch.name" class="rounded-xl" />
                   </div>
                 </div>
                 <div class="flex items-center justify-between gap-4">
@@ -1665,7 +1665,7 @@ async function fetchAddFormModels() {
                   </div>
                   <div class="w-100">
                     <Input v-model="ch.apiUrl"
-                      :placeholder="getMachineTranslateProviderMeta(ch.provider).defaultApiUrl" />
+                      :placeholder="getMachineTranslateProviderMeta(ch.provider).defaultApiUrl" class="rounded-xl" />
                   </div>
                 </div>
                 <div v-if="machineProviderShowsApiKey(ch.provider)" class="flex items-center justify-between gap-4">
@@ -1675,10 +1675,10 @@ async function fetchAddFormModels() {
                       {{ machineProviderNeedsApiKey(ch.provider) ? '官方渠道调用时必填' : '可选；免费或 DeepLX 渠道通常可留空' }}
                     </p>
                   </div>
-                  <div class="w-[32rem] relative">
+                  <div class="w-100 relative">
                     <Input :type="mtShowApiKey[idx] ? 'text' : 'password'" v-model="ch.apiKey" placeholder="可留空"
-                      class="pr-10" />
-                    <Button variant="ghost" size="icon" class="absolute right-1 top-1 h-7 w-7"
+                      class="pr-10 rounded-xl" />
+                    <Button variant="ghost" size="icon" class="absolute right-1 top-1 h-7 w-7 rounded-xl"
                       @click="mtShowApiKey[idx] = !mtShowApiKey[idx]">
                       <Icon
                         :icon="mtShowApiKey[idx] ? 'material-symbols:visibility-off-outline' : 'material-symbols:visibility-outline'"
@@ -1691,10 +1691,10 @@ async function fetchAddFormModels() {
                     <label class="text-sm font-medium leading-none block mb-1">Secret Key</label>
                     <p class="text-xs text-muted-foreground">百度智能云 OAuth 需要</p>
                   </div>
-                  <div class="w-[32rem] relative">
+                  <div class="w-100 relative">
                     <Input :type="mtShowSecretKey[idx] ? 'text' : 'password'" v-model="ch.secretKey"
-                      placeholder="Secret Key" class="pr-10" />
-                    <Button variant="ghost" size="icon" class="absolute right-1 top-1 h-7 w-7"
+                      placeholder="Secret Key" class="pr-10 rounded-xl" />
+                    <Button variant="ghost" size="icon" class="absolute right-1 top-1 h-7 w-7 rounded-xl"
                       @click="mtShowSecretKey[idx] = !mtShowSecretKey[idx]">
                       <Icon
                         :icon="mtShowSecretKey[idx] ? 'material-symbols:visibility-off-outline' : 'material-symbols:visibility-outline'"
@@ -1708,34 +1708,34 @@ async function fetchAddFormModels() {
                     <p class="text-xs text-muted-foreground">Azure Translator 区域资源需要填写</p>
                   </div>
                   <div class="w-72">
-                    <Input v-model="ch.region" placeholder="如 eastasia" />
+                    <Input v-model="ch.region" placeholder="如 eastasia" class="rounded-xl" />
                   </div>
                 </div>
                 <div class="grid grid-cols-4 gap-3">
                   <div class="space-y-1">
                     <Label class="block">QPS</Label>
-                    <Input v-model="ch.qps" />
+                    <Input v-model="ch.qps" class="rounded-xl" />
                   </div>
                   <div class="space-y-1">
                     <Label class="block">最大并发</Label>
-                    <Input v-model="ch.maxConcurrent" />
+                    <Input v-model="ch.maxConcurrent" class="rounded-xl" />
                   </div>
                   <div class="space-y-1">
                     <Label class="block">超时(ms)</Label>
-                    <Input v-model="ch.timeoutMs" />
+                    <Input v-model="ch.timeoutMs" class="rounded-xl" />
                   </div>
                   <div class="space-y-1">
                     <Label class="block">并发段落</Label>
-                    <Input v-model="ch.batchSize" />
+                    <Input v-model="ch.batchSize" class="rounded-xl" />
                   </div>
                 </div>
                 <div class="flex items-center gap-2">
-                  <Button variant="outline" class="flex items-center gap-1 text-red-600" :disabled="!!ch.builtin"
+                  <Button variant="outline" class="flex items-center gap-1 text-red-600 rounded-xl" :disabled="!!ch.builtin"
                     @click="removeMachineChannel(idx)">
                     <Icon :icon="iconOfAction('delete')" width="16" /> 删除
                   </Button>
                   <div class="w-full"></div>
-                  <Button class="bg-primary text-primary-foreground flex items-center gap-1"
+                  <Button class="bg-primary text-primary-foreground flex items-center gap-1 rounded-xl"
                     @click="saveMachineTranslateSettings()">
                     <Icon :icon="iconOfAction('save')" width="16" /> 保存
                   </Button>
@@ -1750,36 +1750,36 @@ async function fetchAddFormModels() {
           <header class="flex items-center h-10 text-base font-semibold">
             <div class="shrink-0">MCP 功能</div>
             <div class="w-full"></div>
-            <Button size="sm" @click="openAddMcpServer">
+            <Button size="sm" @click="openAddMcpServer" class="rounded-xl">
               <Icon icon="proicons:box-add" width="16" />
               添加 MCP
             </Button>
           </header>
 
-          <div class="border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-900">
+          <div class="border border-amber-200/50 bg-amber-50/70 p-3 text-xs text-amber-900 rounded-lg">
             这里管理 MCP Server 名称、类型、地址和鉴权方式；每个助手是否启用某个 MCP 由输入框功能菜单分别控制。
           </div>
 
-          <div v-if="showAddMcpServer" class="border p-4 space-y-3">
+          <div v-if="showAddMcpServer" class="border p-4 space-y-3 rounded-2xl">
             <div class="flex items-center justify-between gap-4">
               <div>
                 <label class="text-sm font-medium leading-none block mb-1">新增 MCP Server</label>
                 <p class="text-xs text-muted-foreground">名称会作为 mcpServers 的 key，需保持唯一</p>
               </div>
               <div class="flex items-center gap-2">
-                <Button class="bg-primary text-primary-foreground" @click="handleAddMcpServer">添加</Button>
-                <Button variant="outline" @click="closeAddMcpServer">取消</Button>
+                <Button class="bg-primary text-primary-foreground rounded-xl" @click="handleAddMcpServer">添加</Button>
+                <Button variant="outline" class="rounded-xl" @click="closeAddMcpServer">取消</Button>
               </div>
             </div>
             <div class="grid grid-cols-2 gap-3">
               <div class="space-y-1">
                 <Label class="block">名称</Label>
-                <Input v-model="mcpAddForm.name" placeholder="如 my-search" />
+                <Input v-model="mcpAddForm.name" placeholder="如 my-search" class="rounded-xl" />
               </div>
               <div class="space-y-1">
                 <Label class="block">类型</Label>
                 <Select v-model="mcpAddForm.type">
-                  <SelectTrigger class="w-full">
+                  <SelectTrigger class="w-full rounded-xl">
                     <SelectValue placeholder="选择类型" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1790,12 +1790,12 @@ async function fetchAddFormModels() {
               </div>
               <div class="space-y-1 col-span-2">
                 <Label class="block">URL</Label>
-                <Input v-model="mcpAddForm.url" placeholder="https://example.com/mcp" />
+                <Input v-model="mcpAddForm.url" placeholder="https://example.com/mcp" class="rounded-xl" />
               </div>
               <div class="space-y-1">
                 <Label class="block">鉴权方式</Label>
                 <Select v-model="mcpAddForm.authType">
-                  <SelectTrigger class="w-full">
+                  <SelectTrigger class="w-full rounded-xl">
                     <SelectValue placeholder="选择鉴权方式" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1807,32 +1807,32 @@ async function fetchAddFormModels() {
               </div>
               <div v-if="mcpAddForm.authType === 'bearer'" class="space-y-1">
                 <Label class="block">Bearer Token</Label>
-                <Input v-model="mcpAddForm.authToken" type="password" placeholder="输入 Token" />
+                <Input v-model="mcpAddForm.authToken" type="password" placeholder="输入 Token" class="rounded-xl" />
               </div>
               <div v-if="mcpAddForm.authType === 'basic'" class="space-y-1">
                 <Label class="block">用户名</Label>
-                <Input v-model="mcpAddForm.username" placeholder="输入用户名" />
+                <Input v-model="mcpAddForm.username" placeholder="输入用户名" class="rounded-xl" />
               </div>
               <div v-if="mcpAddForm.authType === 'basic'" class="space-y-1">
                 <Label class="block">密码</Label>
-                <Input v-model="mcpAddForm.password" type="password" placeholder="输入密码" />
+                <Input v-model="mcpAddForm.password" type="password" placeholder="输入密码" class="rounded-xl" />
               </div>
               <div v-if="mcpAddForm.authType === 'header'" class="space-y-1">
                 <Label class="block">Header 名称</Label>
-                <Input v-model="mcpAddForm.headerName" placeholder="如 X-API-Key" />
+                <Input v-model="mcpAddForm.headerName" placeholder="如 X-API-Key" class="rounded-xl" />
               </div>
               <div v-if="mcpAddForm.authType === 'header'" class="space-y-1">
                 <Label class="block">Header 值</Label>
-                <Input v-model="mcpAddForm.headerValue" type="password" placeholder="输入 Header 值" />
+                <Input v-model="mcpAddForm.headerValue" type="password" placeholder="输入 Header 值" class="rounded-xl" />
               </div>
             </div>
           </div>
 
           <div class="space-y-3">
-            <div v-for="(server, idx) in mcpServers" :key="server.name" class="border p-4 space-y-3">
+            <div v-for="(server, idx) in mcpServers" :key="server.name" class="border p-4 space-y-3 rounded-2xl">
               <div class="flex items-center justify-between gap-2">
                 <div class="flex items-center gap-2 flex-1 min-w-0">
-                  <Button variant="ghost" size="icon" class="h-8 w-8 shrink-0"
+                  <Button variant="ghost" size="icon" class="h-8 w-8 shrink-0 rounded-xl"
                     @click="mcpExpanded[idx] = !mcpExpanded[idx]" :title="mcpExpanded[idx] ? '收起' : '展开'">
                     <Icon :icon="mcpExpanded[idx] ? 'lucide:chevron-down' : 'lucide:chevron-right'" />
                   </Button>
@@ -1846,7 +1846,7 @@ async function fetchAddFormModels() {
                   </div>
                 </div>
                 <div class="flex items-center gap-2 shrink-0">
-                  <Button variant="outline" size="sm" class="flex items-center gap-1" :disabled="!!mcpTesting[idx]"
+                  <Button variant="outline" size="sm" class="flex items-center gap-1 rounded-xl" :disabled="!!mcpTesting[idx]"
                     @click.stop="handleTestMcpServer(idx)">
                     <Icon :icon="mcpTesting[idx] ? 'ri:loader-4-line' : iconOfAction('test')" width="16"
                       :class="mcpTesting[idx] ? 'animate-spin' : ''" />
@@ -1862,7 +1862,7 @@ async function fetchAddFormModels() {
                     <p class="text-xs text-muted-foreground">名称需唯一，会作为助手启用开关的标识</p>
                   </div>
                   <div class="w-72">
-                    <Input v-model="server.name" />
+                    <Input v-model="server.name" class="rounded-xl" />
                   </div>
                 </div>
                 <div class="flex items-center justify-between gap-4">
@@ -1872,7 +1872,7 @@ async function fetchAddFormModels() {
                   </div>
                   <div class="w-72">
                     <Select v-model="server.type">
-                      <SelectTrigger class="w-full">
+                      <SelectTrigger class="w-full rounded-xl">
                         <SelectValue placeholder="选择类型" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1888,7 +1888,7 @@ async function fetchAddFormModels() {
                     <p class="text-xs text-muted-foreground">远程 MCP Server 地址</p>
                   </div>
                   <div class="w-[32rem]">
-                    <Input v-model="server.url" placeholder="https://example.com/mcp" />
+                    <Input v-model="server.url" placeholder="https://example.com/mcp" class="rounded-xl" />
                   </div>
                 </div>
                 <div class="flex items-center justify-between gap-4">
@@ -1898,7 +1898,7 @@ async function fetchAddFormModels() {
                   </div>
                   <div class="w-72">
                     <Select v-model="server.authType">
-                      <SelectTrigger class="w-full">
+                      <SelectTrigger class="w-full rounded-xl">
                         <SelectValue placeholder="选择鉴权方式" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1915,8 +1915,9 @@ async function fetchAddFormModels() {
                     <p class="text-xs text-muted-foreground">会以 Authorization: Bearer 方式发送</p>
                   </div>
                   <div class="w-[32rem] relative">
-                    <Input :type="mcpShowAuthSecret[idx] ? 'text' : 'password'" v-model="server.authToken" placeholder="输入 Token" class="pr-10" />
-                    <Button variant="ghost" size="icon" class="absolute right-1 top-1 h-7 w-7"
+                    <Input :type="mcpShowAuthSecret[idx] ? 'text' : 'password'" v-model="server.authToken"
+                      placeholder="输入 Token" class="pr-10 rounded-xl" />
+                    <Button variant="ghost" size="icon" class="absolute right-1 top-1 h-7 w-7 rounded-xl"
                       @click="mcpShowAuthSecret[idx] = !mcpShowAuthSecret[idx]">
                       <Icon
                         :icon="mcpShowAuthSecret[idx] ? 'material-symbols:visibility-off-outline' : 'material-symbols:visibility-outline'"
@@ -1930,7 +1931,7 @@ async function fetchAddFormModels() {
                     <p class="text-xs text-muted-foreground">会与密码一起组成 Basic Authorization</p>
                   </div>
                   <div class="w-[32rem]">
-                    <Input v-model="server.username" placeholder="输入用户名" />
+                    <Input v-model="server.username" placeholder="输入用户名" class="rounded-xl" />
                   </div>
                 </div>
                 <div v-if="server.authType === 'basic'" class="flex items-center justify-between gap-4">
@@ -1939,8 +1940,9 @@ async function fetchAddFormModels() {
                     <p class="text-xs text-muted-foreground">会与用户名一起组成 Basic Authorization</p>
                   </div>
                   <div class="w-[32rem] relative">
-                    <Input :type="mcpShowAuthSecret[idx] ? 'text' : 'password'" v-model="server.password" placeholder="输入密码" class="pr-10" />
-                    <Button variant="ghost" size="icon" class="absolute right-1 top-1 h-7 w-7"
+                    <Input :type="mcpShowAuthSecret[idx] ? 'text' : 'password'" v-model="server.password"
+                      placeholder="输入密码" class="pr-10 rounded-xl" />
+                    <Button variant="ghost" size="icon" class="absolute right-1 top-1 h-7 w-7 rounded-xl"
                       @click="mcpShowAuthSecret[idx] = !mcpShowAuthSecret[idx]">
                       <Icon
                         :icon="mcpShowAuthSecret[idx] ? 'material-symbols:visibility-off-outline' : 'material-symbols:visibility-outline'"
@@ -1954,7 +1956,7 @@ async function fetchAddFormModels() {
                     <p class="text-xs text-muted-foreground">例如 X-API-Key</p>
                   </div>
                   <div class="w-[32rem]">
-                    <Input v-model="server.headerName" placeholder="如 X-API-Key" />
+                    <Input v-model="server.headerName" placeholder="如 X-API-Key" class="rounded-xl" />
                   </div>
                 </div>
                 <div v-if="server.authType === 'header'" class="flex items-center justify-between gap-4">
@@ -1963,8 +1965,9 @@ async function fetchAddFormModels() {
                     <p class="text-xs text-muted-foreground">会按自定义请求头发送</p>
                   </div>
                   <div class="w-[32rem] relative">
-                    <Input :type="mcpShowAuthSecret[idx] ? 'text' : 'password'" v-model="server.headerValue" placeholder="输入 Header 值" class="pr-10" />
-                    <Button variant="ghost" size="icon" class="absolute right-1 top-1 h-7 w-7"
+                    <Input :type="mcpShowAuthSecret[idx] ? 'text' : 'password'" v-model="server.headerValue"
+                      placeholder="输入 Header 值" class="pr-10 rounded-xl" />
+                    <Button variant="ghost" size="icon" class="absolute right-1 top-1 h-7 w-7 rounded-xl"
                       @click="mcpShowAuthSecret[idx] = !mcpShowAuthSecret[idx]">
                       <Icon
                         :icon="mcpShowAuthSecret[idx] ? 'material-symbols:visibility-off-outline' : 'material-symbols:visibility-outline'"
@@ -1973,12 +1976,11 @@ async function fetchAddFormModels() {
                   </div>
                 </div>
                 <div class="flex items-center gap-2">
-                  <Button variant="outline" class="flex items-center gap-1 text-red-600"
-                    @click="removeMcpServer(idx)">
+                  <Button variant="outline" class="flex items-center gap-1 text-red-600 rounded-xl" @click="removeMcpServer(idx)">
                     <Icon :icon="iconOfAction('delete')" width="16" /> 删除
                   </Button>
                   <div class="w-full"></div>
-                  <Button class="bg-primary text-primary-foreground flex items-center gap-1" @click="saveMcpSettings()">
+                  <Button class="bg-primary text-primary-foreground flex items-center gap-1 rounded-xl" @click="saveMcpSettings()">
                     <Icon :icon="iconOfAction('save')" width="16" /> 保存
                   </Button>
                 </div>
@@ -2000,7 +2002,7 @@ async function fetchAddFormModels() {
                 </div>
                 <div class="w-60">
                   <ModelSelect :current-model-name="defaultModelCurrentName" :grouped-models="settingsGroupedModels"
-                    :selected-pair-key="defaultModelValue" buttonClass="w-full h-9 justify-between"
+                    :selected-pair-key="defaultModelValue" buttonClass="w-full h-9 justify-between rounded-xl"
                     @selectModel="handleDefaultModelSelect" />
                 </div>
               </div>
@@ -2011,7 +2013,7 @@ async function fetchAddFormModels() {
                 </div>
                 <div class="w-60">
                   <Select v-model="mtDefaultChannelId">
-                    <SelectTrigger class="w-full">
+                    <SelectTrigger class="w-full rounded-xl">
                       <SelectValue placeholder="选择机器翻译渠道" />
                     </SelectTrigger>
                     <SelectContent>
@@ -2031,13 +2033,13 @@ async function fetchAddFormModels() {
                 </div>
                 <div class="w-60">
                   <Select v-model="config.translateTargetLang">
-                    <SelectTrigger class="w-full">
+                    <SelectTrigger class="w-full rounded-xl">
                       <SelectValue placeholder="语言" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem v-for="lang in SUPPORTED_LANGUAGES" :key="lang.value" :value="lang.value">{{
                         lang.label
-                      }}</SelectItem>
+                        }}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -2050,7 +2052,7 @@ async function fetchAddFormModels() {
                 </div>
                 <div class="w-60">
                   <Select :model-value="defaultAssistantId" @update:modelValue="saveDefaultAssistant(String($event))">
-                    <SelectTrigger class="w-full">
+                    <SelectTrigger class="w-full rounded-xl">
                       <SelectValue placeholder="选择助手" />
                     </SelectTrigger>
                     <SelectContent>
@@ -2068,7 +2070,7 @@ async function fetchAddFormModels() {
                 </div>
                 <div class="w-60">
                   <Select v-model="config.maxSessionsCount">
-                    <SelectTrigger class="w-full">
+                    <SelectTrigger class="w-full rounded-xl">
                       <SelectValue placeholder="选择数量" />
                     </SelectTrigger>
                     <SelectContent>
@@ -2086,7 +2088,7 @@ async function fetchAddFormModels() {
                 </div>
                 <div class="w-60">
                   <Select v-model="config.contextMessagesCount">
-                    <SelectTrigger class="w-full">
+                    <SelectTrigger class="w-full rounded-xl">
                       <SelectValue placeholder="选择数量" />
                     </SelectTrigger>
                     <SelectContent>
@@ -2105,7 +2107,7 @@ async function fetchAddFormModels() {
                   <p class="text-xs text-muted-foreground">关闭毛玻璃效果以提升性能</p>
                 </div>
                 <div>
-                  <Switch v-model="config.reduceVisualEffects" />
+                  <Switch v-model="config.reduceVisualEffects" size="sm" class="!rounded-xl" />
                 </div>
               </div>
             </div>
@@ -2128,7 +2130,7 @@ async function fetchAddFormModels() {
               </div>
               <div class="w-60">
                 <Select v-model="config.selectionTranslationMode">
-                  <SelectTrigger class="w-full">
+                  <SelectTrigger class="w-full rounded-xl">
                     <SelectValue placeholder="选择翻译方法" />
                   </SelectTrigger>
                   <SelectContent>
@@ -2144,7 +2146,7 @@ async function fetchAddFormModels() {
                 <p class="text-xs text-muted-foreground">设置触发键（如 Alt）</p>
               </div>
               <div class="w-60">
-                <Input v-model="config.actionKey" placeholder="如 Alt" />
+                <Input v-model="config.actionKey" placeholder="如 Alt" class="rounded-xl" />
               </div>
             </div>
             <div class="flex items-center justify-between gap-4">
@@ -2154,7 +2156,7 @@ async function fetchAddFormModels() {
               </div>
               <div class="w-60">
                 <Select v-model="config.hoverTranslationMode">
-                  <SelectTrigger class="w-full">
+                  <SelectTrigger class="w-full rounded-xl">
                     <SelectValue placeholder="选择翻译方法" />
                   </SelectTrigger>
                   <SelectContent>
@@ -2172,7 +2174,7 @@ async function fetchAddFormModels() {
               </div>
               <div class="w-60">
                 <Select v-model="config.hoverDisplayMode">
-                  <SelectTrigger class="w-full">
+                  <SelectTrigger class="w-full rounded-xl">
                     <SelectValue placeholder="显示方式" />
                   </SelectTrigger>
                   <SelectContent>
@@ -2190,7 +2192,7 @@ async function fetchAddFormModels() {
               </div>
               <div class="w-60">
                 <Select v-model="config.fullPageDisplayMode">
-                  <SelectTrigger class="w-full">
+                  <SelectTrigger class="w-full rounded-xl">
                     <SelectValue placeholder="显示方式" />
                   </SelectTrigger>
                   <SelectContent>
@@ -2207,7 +2209,7 @@ async function fetchAddFormModels() {
               </div>
               <div class="w-60">
                 <Select v-model="config.fullPageScopeMode">
-                  <SelectTrigger class="w-full">
+                  <SelectTrigger class="w-full rounded-xl">
                     <SelectValue placeholder="翻译范围" />
                   </SelectTrigger>
                   <SelectContent>
@@ -2287,7 +2289,7 @@ async function fetchAddFormModels() {
                 </div>
                 <div class="w-60">
                   <Select v-model="styleSelection">
-                    <SelectTrigger class="w-full">
+                    <SelectTrigger class="w-full rounded-xl">
                       <SelectValue placeholder="选择样式" />
                     </SelectTrigger>
                     <SelectContent>
@@ -2302,14 +2304,14 @@ async function fetchAddFormModels() {
                 </div>
               </div>
               <div v-if="styleSelection === '__custom__'" class="space-y-2">
-                <Textarea v-model="customCss" class="min-h-36"
+                <Textarea v-model="customCss" class="min-h-36 rounded-xl"
                   placeholder=".ifocal-target-inline-wrapper.ifocal-target-style-custom .ifocal-target-inner,&#10;.ifocal-target-block-wrapper.ifocal-target-style-custom .ifocal-target-inner{ /* 自定义样式 */ }" />
                 <div class="flex items-center gap-2">
-                  <Button class="bg-primary text-primary-foreground flex items-center gap-1"
+                  <Button class="bg-primary text-primary-foreground flex items-center gap-1 rounded-xl"
                     @click="saveStyleOnly">保存样式</Button>
                 </div>
               </div>
-              <div class=" border p-3">
+              <div class=" border p-3 rounded-xl">
                 <div class="text-base">
                   <div>I wasted time, and now doth time waste me.</div>
                   <div>
@@ -2324,7 +2326,7 @@ async function fetchAddFormModels() {
             </div>
             <div class="space-y-4"></div>
             <div>
-              <Button class="bg-primary text-primary-foreground flex items-center gap-1"
+              <Button class="bg-primary text-primary-foreground flex items-center gap-1 rounded-xl"
                 @click="() => { saveModels(); saveBasics(); }">
                 <Icon :icon="iconOfAction('save')" width="16" /> 保存设置
               </Button>
@@ -2347,7 +2349,7 @@ async function fetchAddFormModels() {
               <div class="w-40 space-y-1">
                 <Label class="block">任务</Label>
                 <Select v-model="assistantTask">
-                  <SelectTrigger class="w-full">
+                  <SelectTrigger class="w-full rounded-xl">
                     <SelectValue placeholder="助手" />
                   </SelectTrigger>
                   <SelectContent>
@@ -2360,7 +2362,7 @@ async function fetchAddFormModels() {
               <div class="w-36 space-y-1">
                 <Label class="block">语言</Label>
                 <Select v-model="config.translateTargetLang" @update:modelValue="onLangChange">
-                  <SelectTrigger class="w-full">
+                  <SelectTrigger class="w-full rounded-xl">
                     <SelectValue placeholder="语言" />
                   </SelectTrigger>
                   <SelectContent>
@@ -2372,9 +2374,10 @@ async function fetchAddFormModels() {
               </div>
             </div>
             <div class="flex space-x-3">
-              <Textarea v-model="assistantDraft" class="min-h-28 w-[50%]" placeholder="在此粘贴需要处理的文本..." />
-              <div class="w-[50%] border bg-secondary/40 p-3 text-sm whitespace-pre-wrap min-h-12 relative">
-                <div v-if="assistantLoading && !assistantResult" class="absolute inset-0 flex items-center justify-center bg-white/60">
+              <Textarea v-model="assistantDraft" class="min-h-28 w-[50%] rounded-xl" placeholder="在此粘贴需要处理的文本..." />
+              <div class="w-[50%] border bg-secondary/40 p-3 text-sm whitespace-pre-wrap min-h-12 relative rounded-xl">
+                <div v-if="assistantLoading && !assistantResult"
+                  class="absolute inset-0 flex items-center justify-center bg-white/60">
                   <Icon icon="line-md:loading-twotone-loop" width="20" class="animate-spin" />
                 </div>
                 <div v-else-if="assistantLoading" class="absolute right-2 top-2 text-muted-foreground">
@@ -2384,7 +2387,7 @@ async function fetchAddFormModels() {
               </div>
             </div>
             <div class="flex items-center gap-2">
-              <Button class="bg-primary text-primary-foreground flex items-center gap-1" :disabled="assistantLoading"
+              <Button class="bg-primary text-primary-foreground flex items-center gap-1 rounded-xl" :disabled="assistantLoading"
                 @click="startAssistantStream">
                 <Icon v-if="!assistantLoading" icon="proicons:bolt" width="16" />
                 <Icon v-else icon="line-md:loading-twotone-loop" width="16" class="animate-spin" />
@@ -2400,10 +2403,10 @@ async function fetchAddFormModels() {
           <header class="flex items-center h-10 text-base font-semibold">术语库</header>
           <div class="space-y-3 text-sm">
             <p class="text-xs text-muted-foreground">支持混合输入：不译词（单行）与术语映射（key=value）。可用 # 开头写注释。</p>
-            <Textarea v-model="glossaryAllText" class="min-h-40"
+            <Textarea v-model="glossaryAllText" class="min-h-40 rounded-xl"
               placeholder="# 不译词&#10;GPU&#10;iPhone&#10;# 术语映射&#10;Sign in=登录&#10;Settings=设置" />
             <div>
-              <Button class="bg-primary text-primary-foreground flex items-center gap-1" @click="saveGlossary">
+              <Button class="bg-primary text-primary-foreground flex items-center gap-1 rounded-xl" @click="saveGlossary">
                 <Icon :icon="iconOfAction('save')" width="16" /> 保存术语库
               </Button>
             </div>
@@ -2418,8 +2421,8 @@ async function fetchAddFormModels() {
           <div class="space-y-3 text-sm">
             <div>版本：{{ version }}</div>
             <div class="flex items-center gap-2">
-              <Button class="bg-primary text-primary-foreground" @click="onExport">导出设置</Button>
-              <Button variant="ghost" @click="triggerImport">导入设置</Button>
+              <Button class="bg-primary text-primary-foreground rounded-xl" @click="onExport">导出设置</Button>
+              <Button variant="ghost" class="rounded-xl" @click="triggerImport">导入设置</Button>
               <input ref="importerRef" type="file" accept="application/json" class="hidden" @change="onImportChange" />
             </div>
           </div>
@@ -2441,7 +2444,7 @@ async function fetchAddFormModels() {
             </div>
             <div class="w-64">
               <Select v-model="addForm.type">
-                <SelectTrigger class="w-full">
+                <SelectTrigger class="w-full rounded-xl">
                   <SelectValue placeholder="选择类型" />
                 </SelectTrigger>
                 <SelectContent>
@@ -2458,7 +2461,7 @@ async function fetchAddFormModels() {
               <p class="text-xs text-muted-foreground">用于区分不同渠道</p>
             </div>
             <div class="w-64">
-              <Input v-model="addForm.name" placeholder="如 my-openai" />
+              <Input v-model="addForm.name" placeholder="如 my-openai" class="rounded-xl" />
             </div>
           </div>
           <div class="flex items-center justify-between gap-4">
@@ -2467,7 +2470,7 @@ async function fetchAddFormModels() {
               <p class="text-xs text-muted-foreground">可留空以使用默认地址</p>
             </div>
             <div class="w-[32rem]">
-              <Input v-model="addForm.apiUrl" placeholder="留空使用默认" />
+              <Input v-model="addForm.apiUrl" placeholder="留空使用默认" class="rounded-xl" />
             </div>
           </div>
           <div class="flex items-center justify-between gap-4">
@@ -2476,7 +2479,7 @@ async function fetchAddFormModels() {
               <p class="text-xs text-muted-foreground">可留空</p>
             </div>
             <div class="w-[32rem]">
-              <Input v-model="addForm.apiKey" placeholder="可留空" />
+              <Input v-model="addForm.apiKey" placeholder="可留空" class="rounded-xl" />
             </div>
           </div>
           <div class="flex items-center justify-between gap-4">
@@ -2495,8 +2498,8 @@ async function fetchAddFormModels() {
             <p class="text-xs text-muted-foreground">每行一个，支持 id#name 格式自定义显示名称</p>
           </div>
           <div class="w-[32rem] space-y-2 shrink-0">
-            <Textarea v-model="addForm.modelsText" class="h-40" placeholder="gpt-4o&#10;gpt-4o-mini#GPT-4o Mini" />
-            <Button variant="outline" size="sm" class="flex items-center gap-1" @click="fetchAddFormModels"
+            <Textarea v-model="addForm.modelsText" class="h-40 rounded-xl" placeholder="gpt-4o&#10;gpt-4o-mini#GPT-4o Mini" />
+            <Button variant="outline" size="sm" class="flex items-center gap-1 rounded-xl" @click="fetchAddFormModels"
               :disabled="fetchingAddFormModels">
               <Icon v-if="!fetchingAddFormModels" icon="lucide:download" width="14" />
               <Icon v-else icon="line-md:loading-twotone-loop" width="14" class="animate-spin" />
@@ -2506,9 +2509,9 @@ async function fetchAddFormModels() {
         </div>
         <div class="flex items-center gap-2">
           <div class="w-full"></div>
-          <Button class="bg-primary text-primary-foreground" @click="handleAddChannelDialog">添加</Button>
+          <Button class="bg-primary text-primary-foreground rounded-xl" @click="handleAddChannelDialog">添加</Button>
           <!-- 取消保留为关闭 Dialog 操作 -->
-          <Button variant="outline" @click="closeAddChannel">取消</Button>
+          <Button variant="outline" class="rounded-xl" @click="closeAddChannel">取消</Button>
         </div>
       </div>
     </DialogScrollContent>
