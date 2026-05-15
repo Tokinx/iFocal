@@ -82,7 +82,7 @@
       <div class="space-y-2">
         <Button variant="outline"
           class="w-full rounded-1xl justify-center gap-2 bg-white hover:bg-white/60 border-olive-300/60 shadow-xs"
-          :class="activeRouteName === 'settings' ? '!bg-amber-800/90 !text-olive-100' : ''"
+          :class="activeRouteName === 'settings' ? '!bg-amber-700 !text-olive-100' : ''"
           @click="$emit('navigate', 'settings')">
           <Icon icon="ri:settings-4-line" class="h-4 w-4" />
           设置中心

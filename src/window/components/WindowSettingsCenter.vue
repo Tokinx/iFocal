@@ -2107,7 +2107,7 @@ async function fetchAddFormModels() {
                   <p class="text-xs text-muted-foreground">关闭毛玻璃效果以提升性能</p>
                 </div>
                 <div>
-                  <Switch v-model="config.reduceVisualEffects" size="sm" class="!rounded-xl" />
+                  <Switch v-model="config.reduceVisualEffects" />
                 </div>
               </div>
             </div>

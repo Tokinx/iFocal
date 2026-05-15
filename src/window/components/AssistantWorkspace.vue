@@ -39,7 +39,7 @@
               </div>
 
               <div v-if="message.content" v-html="ctx.renderMarkdownSafe(message.content)"
-                class="bg-olive-100 px-4 py-3 !text-olive-700 prose prose-sm max-w-none" />
+                class="rounded-lg rounded-tr-none bg-olive-100 px-4 py-3 !text-olive-700 prose prose-sm max-w-none" />
 
               <Button variant="ghost" size="icon"
                 class="absolute -left-7 bottom-0 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400"
@@ -136,9 +136,9 @@
                 </template>
                 <template v-else>
                   <div class="space-y-3">
-                    <div class="h-3 w-2/3 bg-olive-100 animate-pulse" />
-                    <div class="h-3 w-full bg-olive-100 animate-pulse" />
-                    <div class="h-3 w-5/6 bg-olive-100 animate-pulse" />
+                    <div class="rounded h-3 w-2/3 bg-olive-300 animate-pulse" />
+                    <div class="rounded h-3 w-full bg-olive-300 animate-pulse" />
+                    <div class="rounded h-3 w-5/6 bg-olive-300 animate-pulse" />
                   </div>
                 </template>
               </div>
@@ -157,9 +157,9 @@
             </template>
             <template v-else>
               <div class="space-y-3">
-                <div class="h-3 w-2/3 bg-olive-100 animate-pulse" />
-                <div class="h-3 w-full bg-olive-100 animate-pulse" />
-                <div class="h-3 w-5/6 bg-olive-100 animate-pulse" />
+                <div class="rounded h-3 w-2/3 bg-olive-300 animate-pulse" />
+                <div class="rounded h-3 w-full bg-olive-300 animate-pulse" />
+                <div class="rounded h-3 w-5/6 bg-olive-300 animate-pulse" />
               </div>
             </template>
           </div>

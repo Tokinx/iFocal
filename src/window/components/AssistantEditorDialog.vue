@@ -17,20 +17,20 @@
             <div class="flex items-center gap-2">
               <DropdownMenu v-model:open="iconPickerOpen">
                 <DropdownMenuTrigger as-child>
-                  <Button variant="outline" class="h-9 w-9 shrink-0 px-0" :title="currentIconTitle">
+                  <Button variant="outline" class="h-9 w-9 shrink-0 px-0 rounded-xl" :title="currentIconTitle">
                     <Icon :icon="draft.icon" class="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" class="p-2 grid grid-cols-4 gap-2 w-42 min-w-none">
                   <Button v-for="iconOption in ASSISTANT_ICON_OPTIONS" :key="iconOption.value" variant="outline"
-                    class="h-8 w-8 p-0"
+                    class="h-8 w-8 p-0 rounded-lg"
                     :class="draft.icon === iconOption.value ? '!bg-amber-800/90 !text-olive-100 border-amber-800/90' : ''"
                     :title="iconOption.label" @click="updateIcon(iconOption.value)">
                     <Icon :icon="iconOption.value" class="h-4 w-4" />
                   </Button>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <Input v-model="draft.name" placeholder="例如：论文润色助手" />
+              <Input v-model="draft.name" placeholder="例如：论文润色助手" class="rounded-xl" />
             </div>
           </div>
           <div class="space-y-1">
@@ -51,11 +51,11 @@
             </div>
             <span class="text-xs text-muted-foreground">{{ draft.prompt.length }} 字</span>
           </div>
-          <Textarea v-model="draft.prompt" class="resize-none h-40" placeholder="输入助手提示词" />
+          <Textarea v-model="draft.prompt" class="resize-none h-40 rounded-xl" placeholder="输入助手提示词" />
           <div class="flex">
             <DropdownMenu>
               <DropdownMenuTrigger as-child>
-                <Button variant="outline" size="sm" class="gap-1">
+                <Button variant="outline" size="sm" class="gap-1 rounded-xl">
                   <Icon icon="ri:sparkling-2-line" class="h-4 w-4" />
                   预设提示词
                 </Button>
@@ -74,13 +74,13 @@
         <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
 
         <DialogFooter class="items-center justify-between gap-2">
-          <Button v-if="assistant?.deletable" variant="destructive" class="mr-auto"
+          <Button v-if="assistant?.deletable" variant="destructive" class="mr-auto rounded-xl"
             @click="emit('delete', assistant.id)">
             <Icon icon="ri:delete-bin-line" class="h-4 w-4" />
             删除助手
           </Button>
-          <Button variant="outline" @click="emit('update:open', false)">取消</Button>
-          <Button class="bg-primary text-primary-foreground" @click="submit">保存</Button>
+          <Button variant="outline" @click="emit('update:open', false)" class="rounded-xl">取消</Button>
+          <Button class="bg-primary text-primary-foreground rounded-xl" @click="submit">保存</Button>
         </DialogFooter>
       </div>
     </DialogScrollContent>

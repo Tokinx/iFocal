@@ -1,7 +1,7 @@
 <template>
   <div class="mx-auto max-w-[52rem] space-y-2">
     <!-- 顶部操作按钮 -->
-    <div class="flex items-center gap-2">
+    <div class="relative flex min-h-8 items-center gap-2">
       <!-- 模型选择 Dropdown -->
       <ModelSelect :current-model-name="currentModelName" :grouped-models="groupedModels"
         :selected-pair-key="selectedPairKey" :bg-class="bgClass" :blur-class="blurClass" @selectModel="selectModel" />
@@ -94,8 +94,14 @@
 
       <div class="flex-1"></div>
 
-      <Button v-show="showScrollToBottomButton" variant="outline" size="icon"
-        :class="['h-8 w-8 shrink-0 rounded-xl', bgClass, blurClass]" title="滚动到底部" @click="$emit('scrollToBottom')">
+      <Button variant="outline" size="icon"
+        :class="[
+          'absolute right-0 top-0 h-8 w-8 shrink-0 rounded-xl transition-opacity duration-150',
+          bgClass,
+          blurClass,
+          showScrollToBottomButton ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
+        ]"
+        title="滚动到底部" @click="$emit('scrollToBottom')">
         <Icon icon="ri:arrow-down-line" class="h-4 w-4" />
       </Button>
     </div>

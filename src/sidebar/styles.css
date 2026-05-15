@@ -171,8 +171,4 @@
     backdrop-filter: blur(12px);
     padding: 4px;
   }
-  [data-slot="switch"],
-  [data-slot="switch-thumb"] {
-    border-radius: var(--radius) !important;
-  }
 }

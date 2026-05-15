@@ -1,7 +1,7 @@
 <template>
   <DropdownMenu>
     <DropdownMenuTrigger as-child>
-      <Button variant="outline" :class="[' h-8 shrink-0 px-3', bgClass, blurClass]">
+      <Button variant="outline" :class="[' h-8 shrink-0 px-3 rounded-xl', bgClass, blurClass]">
         <span class="truncate text-sm">{{ currentLangLabel }}</span>
         <Icon icon="ri:arrow-down-s-line" class="h-8 w-8 shrink-0" />
       </Button>

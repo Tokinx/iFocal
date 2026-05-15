@@ -139,6 +139,8 @@ let isProgrammaticScroll = false;
 let scrollToBottomScheduleToken = 0;
 let scheduledScrollResizeObserver: ResizeObserver | null = null;
 let scheduledScrollResizeTimer: ReturnType<typeof setTimeout> | null = null;
+let autoFollowScrollFrame: number | null = null;
+let autoFollowScrollQueued = false;
 let onInAppCopy: ((e: ClipboardEvent) => void) | null = null;
 
 const SCROLL_BOTTOM_THRESHOLD = 48;
@@ -382,7 +384,7 @@ function scheduleRevealFlush(message: Message) {
     }
     if (changed) {
       sessions.value = [...sessions.value];
-      scrollToBottom();
+      scheduleAutoFollowScrollToBottom();
     }
   }, STREAM_REVEAL_INTERVAL_MS);
   revealFlushTimers.set(message, timer);
@@ -691,12 +693,39 @@ function clearScheduledScrollResizeObserver() {
   }
 }
 
+function clearAutoFollowScrollFrame() {
+  if (autoFollowScrollFrame !== null) {
+    cancelAnimationFrame(autoFollowScrollFrame);
+    autoFollowScrollFrame = null;
+  }
+  autoFollowScrollQueued = false;
+}
+
 function applyScrollToBottom(scrollableEl: HTMLElement) {
   isProgrammaticScroll = true;
   scrollableEl.scrollTop = scrollableEl.scrollHeight;
   requestAnimationFrame(() => {
     isProgrammaticScroll = false;
     syncScrollAutoState(scrollableEl);
+  });
+}
+
+function scheduleAutoFollowScrollToBottom() {
+  if (autoFollowScrollQueued) return;
+  autoFollowScrollQueued = true;
+  nextTick(() => {
+    if (!autoFollowScrollQueued) return;
+    autoFollowScrollFrame = requestAnimationFrame(() => {
+      autoFollowScrollFrame = null;
+      autoFollowScrollQueued = false;
+      const scrollableEl = getScrollableElement();
+      if (!scrollableEl) return;
+      if (!autoScrollEnabled.value) {
+        showScrollToBottomButton.value = true;
+        return;
+      }
+      applyScrollToBottom(scrollableEl);
+    });
   });
 }
 
@@ -2138,6 +2167,7 @@ async function handleStreamingSend(
         sending.value = false; // 确保关闭骨架屏
         saveSessions();
         sessions.value = [...sessions.value];
+        scheduleAutoFollowScrollToBottom();
         try { port.disconnect(); } catch { }
         if (currentStreamingPort === port) currentStreamingPort = null;
       } else if (response.type === 'error') {
@@ -2171,6 +2201,7 @@ async function handleStreamingSend(
         sending.value = false;
         saveSessions();
         sessions.value = [...sessions.value];
+        scheduleAutoFollowScrollToBottom();
         try { port.disconnect(); } catch { }
         if (currentStreamingPort === port) currentStreamingPort = null;
       }
@@ -2193,6 +2224,7 @@ async function handleStreamingSend(
           }
           saveSessions();
           sessions.value = [...sessions.value];
+          scheduleAutoFollowScrollToBottom();
         }
       }
       if (sending.value) sending.value = false;
@@ -2828,6 +2860,7 @@ onBeforeUnmount(() => {
   unbindScrollableListener();
   if (footerResizeObserver) footerResizeObserver.disconnect();
   clearScheduledScrollResizeObserver();
+  clearAutoFollowScrollFrame();
   window.removeEventListener('resize', updateBottomGap);
   // 停止“思考用时”心跳
   try { if (nowTickTimer) clearInterval(nowTickTimer); } catch { }
@@ -2941,12 +2974,11 @@ onBeforeUnmount(() => {
 }
 
 .stream-reveal {
-  transition: opacity 160ms ease, transform 160ms ease, filter 160ms ease;
+  transition: opacity 160ms ease, filter 160ms ease;
 }
 
 .stream-reveal.is-revealing {
-  opacity: 0.94;
-  transform: translateY(1px);
+  opacity: 0.98;
   filter: saturate(0.96);
 }
 
