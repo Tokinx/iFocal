@@ -21,6 +21,11 @@ iFocal 是一个 Chrome/Edge Manifest V3 浏览器扩展，核心是“网页内
 - `mcp.ts`：MCP Server 默认配置、名称与传输类型归一化
 - `model-utils.ts`：模型 ID / 展示名解析约定
 - `app-config.ts`：限流默认值、system role 兼容规则
+- 其他文件按职责拆分：`assistants.ts`（助手定义）、`machine-translation.ts`（机器翻译渠道）、`style-presets.ts`（译文样式预设）、`prompt-templates.ts`、`settings-import-export.ts`、`glossary.ts`、`tx-dom.ts`、`types.ts`、`icons.ts`
+
+辅助目录：
+- `src/sidebar/`：shadcn-vue 组件全局注册与共享样式（`plugins/ui.ts`、`styles.css`），被窗口页复用，并非独立的 sidebar 页面。
+- `src/lib/utils.ts`：shadcn 标配的 `cn` 工具，不要在新代码里另写一份。
 
 ## 常用命令
 
@@ -28,6 +33,7 @@ iFocal 是一个 Chrome/Edge Manifest V3 浏览器扩展，核心是“网页内
 npm install
 npm run dev
 npm run build
+npm run build:watch
 npm run preview
 npm run check:encoding
 npm run fix:encoding
@@ -37,9 +43,11 @@ npm run ui:add:more
 ```
 
 补充说明：
+- Node 版本要求：`^20.19.0` 或 `>=22.12.0`（Vite 8 / `@vitejs/plugin-vue` 限制）。
 - 项目当前没有 lint 脚本。
 - 项目当前没有测试脚本，也没有单测框架配置；因此不存在“运行单个测试”的命令。
-- 构建产物输出到 `dist/`，扩展调试时需要在 `chrome://extensions` 加载项目根目录，并在改动后重新加载扩展。
+- 构建产物输出到 `dist/`，但 `manifest.json` 位于项目根目录。**在 `chrome://extensions` 中加载扩展时选择项目根目录，不是 `dist/`**。
+- 修改 background / content 后必须重新构建并在扩展页重新加载；`npm run build:watch` 比 `npm run dev` 更适合扩展调试，因为 `dev` 不会重建 background/content。
 
 ## 构建与入口结构
 
@@ -47,6 +55,8 @@ Vite 当前使用三个构建入口，定义在 `vite.config.ts`：
 - `window.html` → 全局助手窗口
 - `src/background/index.ts` → background service worker
 - `src/content/index.ts` → content script
+
+构建后端是 rolldown，`vite.config.ts` 中使用的是 `rolldownOptions` 而非 `rollupOptions`；改构建配置时不要照搬 Rollup 文档。
 
 `manifest.json` 直接引用构建后的 `dist/background.js` 和 `dist/content.js`。这意味着：
 - `npm run dev` 主要帮助 Vue 页面开发
@@ -118,6 +128,12 @@ background 负责：
 
 不要轻易改模型字符串格式或 pair 序列化方式；设置页和窗口页存在历史兼容逻辑，随意调整容易造成模型丢失或无法回显。
 
+### 6. 全文翻译走机器翻译路径，与划词 / 悬浮翻译不同
+
+全文翻译由右键菜单或 `Ctrl+Shift+Y` 快捷键触发，由内容脚本按可视区域和队列分批调用机器翻译渠道（Microsoft / Google / Azure / DeepL / DeepLX / 百度等），不走 AI 模型流式链路。
+
+划词翻译、悬浮翻译可以配置 AI 翻译或机器翻译；只有全文翻译是机器翻译专属路径。修改“翻译”相关代码时要先确认目标场景是哪一条路径，不要把全文翻译的批处理逻辑套到划词上，反之亦然。
+
 ## 关键实现约束
 
 ### 内容脚本禁止使用顶层 import
@@ -166,6 +182,10 @@ background 负责：
 - `chrome://extensions` → 打开 Service Worker 控制台，看 background 日志
 - 目标网页 DevTools → 看内容脚本与 Shadow DOM 注入效果
 
+manifest 提供两个内置快捷键，调试功能时一般直接使用：
+- `Ctrl+Shift+O`：打开全局助手窗口（单例）。
+- `Ctrl+Shift+Y`：对当前页触发全文翻译。
+
 如果页面内翻译 UI 有问题，优先检查：
 - 内容脚本是否已重新注入
 - Shadow DOM 是否创建成功
@@ -179,3 +199,10 @@ background 负责：
 - 仓库里已经有一套较完整的任务级配置体系（context / streaming / reasoning / file upload / reasoning effort），不要在局部页面重复发明同类配置。
 - MCP 目前已有设置入口和按 Server 名称保存的助手级开关，默认 duckduckgo/time 服务在 `src/shared/mcp.ts`；OpenAI-compatible 链路已在 background 注入 `tools` 并执行单轮工具调用，Gemini 链路暂未接入。
 - 代码中仍保留少量兼容旧配置/旧格式的逻辑；改配置结构时应优先做兼容迁移，而不是只改单点读写。
+
+## 延伸阅读
+
+仓库内还有更细的开发文档，作为参考使用（部分内容可能滞后于代码，最终以代码为准）：
+- [开发指南.md](./开发指南.md)：环境要求、加载步骤、技术栈版本表、权限说明。
+- [README.md](./README.md)：能力清单与路线图。
+- [.docs/](./.docs/)：早期设计稿（`MCP_INTEGRATION_GUIDE.md`、`MCP_USER_GUIDE.md`、`HISTORY_FEATURE.md`、`UI_REDESIGN.md`、`roadmap_v0.4.md` 等）。
