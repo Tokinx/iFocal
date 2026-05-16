@@ -7,40 +7,27 @@ const DOC_STYLE = `
 .ifocal-tx{display:inline;overflow-wrap:anywhere;word-break:break-word;hyphens:auto}
 .ifocal-fullpage-translation-replace{display:inline;margin-top:0}
 @keyframes ifocal-shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
-.ifocal-inline-source.ifocal-inline-loading{
+.ifocal-inline-source.ifocal-inline-loading,
+.ifocal-fullpage-source.ifocal-fullpage-loading{
   display:inline !important;
   color:transparent !important;
   -webkit-background-clip: text !important;
   background-clip: text !important;
-  background:linear-gradient(90deg, rgba(15,23,42,0.6), transparent, rgba(15,23,42,0.6));
-  background-size:400% 100%;
-  animation:ifocal-shimmer 1.6s ease-in-out infinite;
-  border-radius:4px;
+  background:linear-gradient(90deg, var(--ifocal-loading-color, rgba(15,23,42,0.6)), transparent, var(--ifocal-loading-color, rgba(15,23,42,0.6)));
+  background-size:200%;
+  animation:ifocal-shimmer 0.8s linear infinite;
 }
-.ifocal-inline-source.ifocal-inline-loading *{
-  color: transparent !important;
-}
-.ifocal-inline-translation.ifocal-inline-loading{
-  display:none !important;
-}
-.ifocal-fullpage-source.ifocal-fullpage-loading{
-  display:inline !important;
+.ifocal-inline-source.ifocal-inline-loading *:not(br),
+.ifocal-fullpage-source.ifocal-fullpage-loading *:not(br){
+  display: contents !important;
   color:transparent !important;
-  -webkit-background-clip:text !important;
-  background-clip:text !important;
-  background:linear-gradient(90deg, rgba(15,23,42,0.6), transparent, rgba(15,23,42,0.6));
-  background-size:400% 100%;
-  animation:ifocal-shimmer 1.6s ease-in-out infinite;
-  border-radius:4px;
 }
-.ifocal-fullpage-source.ifocal-fullpage-loading *{
-  color: transparent !important;
-}
+.ifocal-inline-translation.ifocal-inline-loading,
 .ifocal-target-wrapper.ifocal-fullpage-loading{
   display:none !important;
 }
 @keyframes ifocal-spin{to{transform:rotate(360deg)}}
-.ifocal-loading{width:12px;height:12px;border:2px solid rgba(15,23,42,0.18);border-top-color:#0f172a;border-radius:50%;animation:ifocal-spin .8s linear infinite;display:inline-block;vertical-align:middle;line-height:1;flex:0 0 auto}
+.ifocal-loading{width:var(--ifocal-loading-size,10px);height:var(--ifocal-loading-size,10px);border:var(--ifocal-loading-stroke,2px) solid var(--ifocal-loading-track,#ddd);border-top-color:var(--ifocal-loading-color,#333);border-radius:50%;animation:ifocal-spin .8s linear infinite;display:inline-block;vertical-align:middle;line-height:1;flex:0 0 auto}
 .ifocal-loading-wrap{display:flex;align-items:center;justify-content:center;min-height:56px}
 .ifocal-target-error{color:#b91c1c}
 .ifocal-target-retry{margin-left:8px;border:none;background:transparent;color:#2563eb;cursor:pointer;padding:0;font:inherit;text-decoration:underline}
@@ -106,6 +93,26 @@ function sharedCreateWrapper(id: string, targetLang: string): HTMLElement {
   if (targetLang) wrapper.setAttribute('lang', targetLang);
   return wrapper as unknown as HTMLElement;
 }
+function isVisibleTextColor(color: string): boolean {
+  const value = String(color || '').trim().toLowerCase();
+  return !!value && value !== 'transparent' && value !== 'rgba(0, 0, 0, 0)' && value !== 'rgba(0,0,0,0)';
+}
+function readTextColor(element: HTMLElement | null | undefined): string {
+  if (!element) return '';
+  try {
+    const color = window.getComputedStyle(element).color;
+    return isVisibleTextColor(color) ? color : '';
+  } catch {}
+  return '';
+}
+function syncLoadingColorVar(target: HTMLElement | null | undefined, sample: HTMLElement | null | undefined) {
+  if (!target) return;
+  const color = readTextColor(sample) || readTextColor(sample?.parentElement || null);
+  try {
+    if (color) target.style.setProperty('--ifocal-loading-color', color);
+    else target.style.removeProperty('--ifocal-loading-color');
+  } catch {}
+}
 function sharedApplyWrapperLoading(wrapper: HTMLElement, sourceText?: string) {
   try {
     try { wrapper.setAttribute('data-tx-done', '0'); } catch {}
@@ -133,6 +140,7 @@ function sharedApplyWrapperLoading(wrapper: HTMLElement, sourceText?: string) {
     const spin = document.createElement('span');
     spin.className = 'ifocal-loading';
     spin.setAttribute('aria-label', 'Loading translation');
+    syncLoadingColorVar(spin, wrapper);
     loadingWrapper.appendChild(spin);
     wrapper.appendChild(loadingWrapper);
     if (block) {
@@ -314,6 +322,7 @@ function setInlineHoverLoadingState(blockEl: HTMLElement, mode: InlineHoverTrans
   const sourceHost = blockEl.querySelector<HTMLElement>('[data-ifocal-inline-source="1"]');
   const translationHost = blockEl.querySelector<HTMLElement>('[data-ifocal-inline-translation="1"]');
   if (!sourceHost || !translationHost) return;
+  if (isLoading) syncLoadingColorVar(sourceHost, sourceHost);
   sourceHost.classList.toggle('ifocal-inline-loading', isLoading);
   translationHost.classList.toggle('ifocal-inline-loading', isLoading);
   if (isLoading) {
@@ -334,6 +343,7 @@ function setFullPageReplaceLoadingState(target: FullPageTranslationTarget, isLoa
   const sourceHost = target.sourceHost;
   const translationHost = target.translationHost;
   if (!sourceHost || !translationHost) return;
+  if (isLoading) syncLoadingColorVar(sourceHost, sourceHost);
   sourceHost.classList.toggle('ifocal-fullpage-loading', isLoading);
   translationHost.classList.toggle('ifocal-fullpage-loading', isLoading);
   if (isLoading) {
