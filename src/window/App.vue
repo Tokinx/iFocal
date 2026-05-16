@@ -65,7 +65,7 @@ import {
   type AssistantPreset,
 } from '@/shared/assistants';
 import { modelIdFromSpec, parseModelSpec } from '@/shared/model-utils';
-import { useToast } from '@/options/composables/useToast';
+import { useToast } from '@/window/composables/useToast';
 import { loadPromptTemplates } from '@/shared/prompt-templates';
 import { mcpServersToEntries, type McpServerEntry } from '@/shared/mcp';
 import WindowSidebar from './components/WindowSidebar.vue';

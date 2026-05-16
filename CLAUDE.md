@@ -13,7 +13,7 @@ iFocal 是一个 Chrome/Edge Manifest V3 浏览器扩展，核心是“网页内
 - `src/background/index.ts`：MV3 Service Worker，负责模型调用、流式传输、限流/退避、全局窗口单例管理
 - `src/window/`：全局助手窗口，负责多轮对话、历史记录、流式输出、思考模式、文件附件以及完整设置中心
 
-另外，`src/options/` 目前只保留兼容壳层和少量被窗口设置中心复用的 composables，不再是主设置入口。
+另外，`src/options/` 目前只保留一个跳转壳层（点击"打开助手窗口设置中心"按钮），所有设置 UI 都在 `src/window/` 的助手窗口中。
 
 共享逻辑集中在 `src/shared/`，尤其是：
 - `config.ts`：默认配置、任务设置、Chrome storage 读写与兼容迁移
@@ -151,7 +151,7 @@ background 负责：
 调试时通常需要：
 - 改 `src/background/index.ts` 后去 `chrome://extensions` 重新加载扩展
 - 改 `src/content/index.ts` 后重新加载扩展，并刷新目标网页
-- 改 `src/window/` 或仍被复用的 `src/options/` composables 时，可优先使用 `npm run dev`
+- 改 `src/window/` 时可优先使用 `npm run dev`
 
 ### system prompt 兼容是跨文件行为
 
@@ -170,8 +170,8 @@ background 负责：
 渠道配置包含 API Key，当前由设置页直接写入 `chrome.storage.sync`。
 
 这不是文档建议，而是当前实现事实。涉及渠道结构、迁移、安全策略或存储位置的修改时，要同时检查：
-- `src/options/composables/useChannels.ts`
-- `src/options/App.vue`
+- `src/window/composables/useChannels.ts`
+- `src/window/composables/useSettingsStore.ts`
 - `src/background/index.ts`
 - `src/shared/config.ts`
 
