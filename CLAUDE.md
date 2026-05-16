@@ -11,9 +11,7 @@ iFocal 是一个 Chrome/Edge Manifest V3 浏览器扩展，核心是“网页内
 当前代码主要围绕三个核心运行面展开：
 - `src/content/index.ts`：内容脚本，负责划词翻译、悬浮翻译、Shadow DOM UI、页面内插入译文
 - `src/background/index.ts`：MV3 Service Worker，负责模型调用、流式传输、限流/退避、全局窗口单例管理
-- `src/window/`：全局助手窗口，负责多轮对话、历史记录、流式输出、思考模式、文件附件以及完整设置中心
-
-另外，`src/options/` 目前只保留一个跳转壳层（点击"打开助手窗口设置中心"按钮），所有设置 UI 都在 `src/window/` 的助手窗口中。
+- `src/window/`：全局助手窗口，负责多轮对话、历史记录、流式输出、思考模式、文件附件以及完整设置中心；所有设置 UI 都集中在这里。
 
 共享逻辑集中在 `src/shared/`，尤其是：
 - `config.ts`：默认配置、任务设置、Chrome storage 读写与兼容迁移
