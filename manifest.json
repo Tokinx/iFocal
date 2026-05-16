@@ -1,9 +1,14 @@
 {
   "manifest_version": 3,
   "name": "iFocal",
-  "version": "0.4.1",
+  "version": "0.4.2605.16",
   "description": "iFocal assistant with selection/overlay translate and a global window, built with Vue + shadcn-vue.",
-  "permissions": ["storage", "clipboardRead", "contextMenus", "tabs"],
+  "permissions": [
+    "storage",
+    "clipboardRead",
+    "contextMenus",
+    "tabs"
+  ],
   "host_permissions": [
     "<all_urls>"
   ],
