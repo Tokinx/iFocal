@@ -1,4 +1,4 @@
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onScopeDispose, reactive, ref, watch } from 'vue'
 import {
   SUPPORTED_LANGUAGES,
   loadConfig,
@@ -41,6 +41,8 @@ interface PersistedState {
   cards?: TranslateCardItem[]
   sourceLang?: string
   targetLang?: string
+  watchClipboard?: boolean
+  autoTranslate?: boolean
 }
 
 type AiChannel = {
@@ -96,8 +98,13 @@ export function useTranslatePage() {
   const mtDefaultChannelId = ref<string>(DEFAULT_MACHINE_TRANSLATE_CHANNEL_ID)
   const defaultAiPairKey = ref<string>('')
 
+  const watchClipboard = ref<boolean>(false)
+  const autoTranslate = ref<boolean>(false)
+
   const initializing = ref(true)
   let saveTimer: ReturnType<typeof setTimeout> | null = null
+  let autoTranslateTimer: ReturnType<typeof setTimeout> | null = null
+  let lastClipboardText = ''
 
   const sourceLangOptions = computed<TranslateLanguageOption[]>(() => {
     return [{ value: 'auto', label: '自动检测' }, ...SUPPORTED_LANGUAGES]
@@ -233,6 +240,8 @@ export function useTranslatePage() {
 
       if (typeof persisted.sourceLang === 'string' && persisted.sourceLang) sourceLang.value = persisted.sourceLang
       if (typeof persisted.targetLang === 'string' && persisted.targetLang) targetLang.value = persisted.targetLang
+      if (typeof persisted.watchClipboard === 'boolean') watchClipboard.value = persisted.watchClipboard
+      if (typeof persisted.autoTranslate === 'boolean') autoTranslate.value = persisted.autoTranslate
     } finally {
       initializing.value = false
     }
@@ -261,6 +270,8 @@ export function useTranslatePage() {
         cards: cards.value.map((c) => ({ id: c.id, kind: c.kind, ref: c.ref, collapsed: c.collapsed })),
         sourceLang: sourceLang.value,
         targetLang: targetLang.value,
+        watchClipboard: watchClipboard.value,
+        autoTranslate: autoTranslate.value,
       }
       void localSet({ [STORAGE_KEY]: payload })
     }, 300)
@@ -268,6 +279,7 @@ export function useTranslatePage() {
 
   watch(cards, schedulePersist, { deep: true })
   watch([sourceLang, targetLang], schedulePersist)
+  watch([watchClipboard, autoTranslate], schedulePersist)
 
   function addCard(kind: TranslateCardKind, ref: string) {
     const trimmed = ref.trim()
@@ -425,6 +437,67 @@ export function useTranslatePage() {
     targetLang.value = next
   }
 
+  async function readClipboardIntoSource() {
+    if (!watchClipboard.value) return
+    if (typeof document !== 'undefined' && !document.hasFocus()) return
+    try {
+      const text = await navigator.clipboard.readText()
+      if (!text) return
+      if (text === lastClipboardText) return
+      lastClipboardText = text
+      if (text === sourceText.value) return
+      sourceText.value = text
+    } catch {
+      // 用户未授权 / 不在焦点 / 浏览器不支持，忽略
+    }
+  }
+
+  function onWindowFocus() {
+    void readClipboardIntoSource()
+  }
+
+  watch(
+    watchClipboard,
+    (enabled) => {
+      if (typeof window === 'undefined') return
+      window.removeEventListener('focus', onWindowFocus)
+      if (enabled) {
+        window.addEventListener('focus', onWindowFocus)
+        // 开启时立即读一次当前剪贴板
+        void readClipboardIntoSource()
+      } else {
+        lastClipboardText = ''
+      }
+    },
+    { immediate: true },
+  )
+
+  watch([sourceText, sourceLang, targetLang], () => {
+    if (initializing.value) return
+    if (!autoTranslate.value) return
+    if (autoTranslateTimer) clearTimeout(autoTranslateTimer)
+    autoTranslateTimer = setTimeout(() => {
+      autoTranslateTimer = null
+      if (!autoTranslate.value) return
+      if (!sourceText.value.trim()) return
+      translateAll()
+    }, 600)
+  })
+
+  onScopeDispose(() => {
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('focus', onWindowFocus)
+    }
+    if (autoTranslateTimer) {
+      clearTimeout(autoTranslateTimer)
+      autoTranslateTimer = null
+    }
+    if (saveTimer) {
+      clearTimeout(saveTimer)
+      saveTimer = null
+    }
+  })
+
   return {
     sourceLang,
     targetLang,
@@ -441,6 +514,8 @@ export function useTranslatePage() {
     initializing,
     defaultAiPairKey,
     mtDefaultChannelId,
+    watchClipboard,
+    autoTranslate,
     ensureRuntime,
     loadAll,
     addCard,

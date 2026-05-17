@@ -1,18 +1,21 @@
 <template>
+
   <DropdownMenu v-model:open="open">
     <DropdownMenuTrigger as-child>
-      <Button variant="outline" class="w-full h-9 rounded-lg border-dashed border-olive-300 text-olive-500 hover:bg-olive-50">
-        <Icon icon="ri:add-line" class="h-4 w-4 mr-1" />
-        添加翻译渠道
-      </Button>
+      <slot name="trigger">
+        <Button variant="outline"
+          class="w-full h-9 rounded-lg border-dashed border-olive-300 text-olive-500 hover:bg-olive-50">
+          <Icon icon="ri:add-line" class="h-4 w-4 mr-1" />
+          添加翻译渠道
+        </Button>
+      </slot>
     </DropdownMenuTrigger>
     <DropdownMenuContent align="end" class="min-w-72 p-1">
       <Input v-model="keyword" placeholder="搜索渠道/模型" class="h-9 mb-1 rounded-xl" @keydown.stop />
       <ScrollArea class="h-72">
         <template v-if="machineList.length">
           <DropdownMenuLabel class="text-olive-500 text-xs">机器翻译</DropdownMenuLabel>
-          <DropdownMenuItem v-for="channel in machineList" :key="channel.id"
-            :disabled="usedMachineRefs.has(channel.id)"
+          <DropdownMenuItem v-for="channel in machineList" :key="channel.id" :disabled="usedMachineRefs.has(channel.id)"
             :class="['cursor-pointer', usedMachineRefs.has(channel.id) ? 'opacity-50' : '']"
             @click="!usedMachineRefs.has(channel.id) && handleAdd('machine', channel.id)">
             <Icon icon="ri:translate-2" class="h-4 w-4 text-emerald-600" />
@@ -24,8 +27,7 @@
         <template v-for="(group, channelName, groupIndex) in filteredGroupedAiModels" :key="channelName">
           <DropdownMenuSeparator v-if="groupIndex || machineList.length" />
           <DropdownMenuLabel class="text-olive-500 text-xs">{{ channelName }}</DropdownMenuLabel>
-          <DropdownMenuItem v-for="model in group" :key="model.key"
-            :disabled="usedAiRefs.has(model.key)"
+          <DropdownMenuItem v-for="model in group" :key="model.key" :disabled="usedAiRefs.has(model.key)"
             :class="['cursor-pointer', usedAiRefs.has(model.key) ? 'opacity-50' : '']"
             @click="!usedAiRefs.has(model.key) && handleAdd('ai', model.key)">
             <Icon icon="proicons:sparkle-2" class="h-4 w-4 text-amber-700" />

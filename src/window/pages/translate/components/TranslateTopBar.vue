@@ -1,6 +1,6 @@
 <template>
-  <header class="flex items-center justify-between gap-2 p-2 border-b border-olive-200">
-    <div class="flex items-center gap-1">
+  <header class="flex flex-wrap items-center justify-between gap-2 p-2 border-b border-olive-200">
+    <div class="flex items-center gap-2">
       <DropdownMenu>
         <DropdownMenuTrigger as-child>
           <Button variant="outline" class="h-8 rounded-xl px-3 bg-white hover:bg-olive-50">
@@ -9,8 +9,7 @@
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" class="min-w-36 max-h-80 overflow-auto">
-          <DropdownMenuItem v-for="lang in sourceLangOptions" :key="lang.value"
-            class="cursor-pointer"
+          <DropdownMenuItem v-for="lang in sourceLangOptions" :key="lang.value" class="cursor-pointer"
             @click="$emit('update:sourceLang', lang.value)">
             <span class="truncate">{{ lang.label }}</span>
             <Icon v-if="sourceLang === lang.value" icon="ri:check-line" class="ml-auto h-4 w-4" />
@@ -20,13 +19,12 @@
 
       <Tooltip>
         <TooltipTrigger as-child>
-          <Button variant="ghost" size="icon" class="h-8 w-8 rounded-xl text-olive-600 hover:bg-olive-100"
-            :disabled="sourceLang === 'auto'"
-            @click="$emit('swapLanguages')">
+          <Button variant="ghost" size="icon" class="h-6 w-6 rounded-lg text-olive-600 hover:bg-olive-100 -mx-1"
+            :disabled="sourceLang === 'auto'" @click="$emit('swapLanguages')">
             <Icon icon="ri:arrow-left-right-line" class="h-4 w-4" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent>互换语言</TooltipContent>
+        <TooltipContent>转换语言</TooltipContent>
       </Tooltip>
 
       <DropdownMenu>
@@ -37,22 +35,75 @@
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" class="min-w-36 max-h-80 overflow-auto">
-          <DropdownMenuItem v-for="lang in targetLangOptions" :key="lang.value"
-            class="cursor-pointer"
+          <DropdownMenuItem v-for="lang in targetLangOptions" :key="lang.value" class="cursor-pointer"
             @click="$emit('update:targetLang', lang.value)">
             <span class="truncate">{{ lang.label }}</span>
             <Icon v-if="targetLang === lang.value" icon="ri:check-line" class="ml-auto h-4 w-4" />
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <Button class="h-8 rounded-xl bg-amber-700 text-white hover:bg-amber-800" :disabled="disabled"
+        @click="$emit('translate')">
+        <Icon icon="ri:translate-2" class="h-4 w-4" />
+        翻译
+      </Button>
     </div>
 
-    <Button class="h-8 rounded-xl bg-amber-700 text-white hover:bg-amber-800"
-      :disabled="disabled"
-      @click="$emit('translate')">
-      <Icon icon="ri:translate-2" class="h-4 w-4" />
-      翻译
-    </Button>
+    <div class="flex items-center gap-1">
+      <Tooltip>
+        <TooltipTrigger as-child>
+          <Button
+            variant="ghost"
+            size="icon"
+            :aria-pressed="watchClipboard"
+            :class="[
+              'h-8 w-8 rounded-lg',
+              watchClipboard ? 'bg-amber-100 text-amber-700 hover:bg-amber-100' : 'text-olive-600 hover:bg-olive-100',
+            ]"
+            @click="$emit('update:watchClipboard', !watchClipboard)">
+            <Icon icon="ri:clipboard-line" class="h-4 w-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          {{ watchClipboard ? '已开启剪贴板监听' : '监听剪贴板（窗口聚焦时自动填入）' }}
+        </TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger as-child>
+          <Button
+            variant="ghost"
+            size="icon"
+            :aria-pressed="autoTranslate"
+            :class="[
+              'h-8 w-8 rounded-lg',
+              autoTranslate ? 'bg-amber-100 text-amber-700 hover:bg-amber-100' : 'text-olive-600 hover:bg-olive-100',
+            ]"
+            @click="$emit('update:autoTranslate', !autoTranslate)">
+            <Icon icon="proicons:bolt" class="h-4 w-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          {{ autoTranslate ? '已开启自动翻译' : '自动翻译（输入停顿后自动触发）' }}
+        </TooltipContent>
+      </Tooltip>
+
+      <div class="h-5 w-px bg-olive-200 mx-1" />
+
+      <AddChannelDropdown
+        :machine-channels="machineChannels"
+        :grouped-ai-models="groupedAiModels"
+        :cards="cards"
+        @add="(kind, ref) => $emit('addChannel', kind, ref)">
+        <template #trigger>
+          <Button variant="ghost" size="icon" title="添加翻译渠道"
+            class="h-8 w-8 rounded-lg text-olive-600 hover:bg-olive-100">
+            <Icon icon="ri:add-line" class="h-4 w-4" />
+          </Button>
+        </template>
+      </AddChannelDropdown>
+    </div>
   </header>
 </template>
 
@@ -67,7 +118,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import type { TranslateLanguageOption } from '../useTranslatePage'
+import AddChannelDropdown from './AddChannelDropdown.vue'
+import type { MachineTranslateChannel } from '@/shared/machine-translation'
+import type { TranslateCardItem, TranslateCardKind, TranslateLanguageOption } from '../useTranslatePage'
 
 const props = defineProps<{
   sourceLang: string
@@ -75,13 +128,21 @@ const props = defineProps<{
   sourceLangOptions: TranslateLanguageOption[]
   targetLangOptions: TranslateLanguageOption[]
   disabled?: boolean
+  watchClipboard: boolean
+  autoTranslate: boolean
+  machineChannels: MachineTranslateChannel[]
+  groupedAiModels: Record<string, Array<{ key: string; channel: string; model: string }>>
+  cards: TranslateCardItem[]
 }>()
 
 defineEmits<{
   (e: 'update:sourceLang', value: string): void
   (e: 'update:targetLang', value: string): void
+  (e: 'update:watchClipboard', value: boolean): void
+  (e: 'update:autoTranslate', value: boolean): void
   (e: 'swapLanguages'): void
   (e: 'translate'): void
+  (e: 'addChannel', kind: TranslateCardKind, ref: string): void
 }>()
 
 const sourceLangLabel = computed(() => {

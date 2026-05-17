@@ -7,10 +7,18 @@
         :source-lang-options="store.sourceLangOptions.value"
         :target-lang-options="store.targetLangOptions.value"
         :disabled="!store.sourceText.value.trim()"
+        :watch-clipboard="store.watchClipboard.value"
+        :auto-translate="store.autoTranslate.value"
+        :machine-channels="store.machineChannels.value"
+        :grouped-ai-models="store.groupedAiModels.value"
+        :cards="store.cards.value"
         @update:sourceLang="(v) => (store.sourceLang.value = v)"
         @update:targetLang="(v) => (store.targetLang.value = v)"
+        @update:watchClipboard="(v) => (store.watchClipboard.value = v)"
+        @update:autoTranslate="(v) => (store.autoTranslate.value = v)"
         @swapLanguages="store.swapLanguages"
-        @translate="store.translateAll" />
+        @translate="store.translateAll"
+        @addChannel="store.addCard" />
 
       <div ref="bodyEl" class="flex flex-1 min-h-0 gap-3 p-2"
         :class="isCompact ? 'flex-col' : 'flex-row'">
@@ -26,11 +34,8 @@
             :cards="store.cards.value"
             :titles="store.cardTitleMap.value"
             :subtitles="store.cardSubtitleMap.value"
-            :machine-channels="store.machineChannels.value"
-            :grouped-ai-models="store.groupedAiModels.value"
             :ensure-runtime="store.ensureRuntime"
             @reorder="store.reorderCards"
-            @add="store.addCard"
             @refresh="store.refreshCard"
             @toggleCollapsed="store.toggleCardCollapsed"
             @remove="store.removeCard" />

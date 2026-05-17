@@ -22,17 +22,9 @@
       </draggable>
 
       <div v-if="modelValueLocal.length === 0" class="text-center text-sm text-olive-400 py-12">
-        请添加一个翻译渠道开始
+        请通过顶部「添加翻译渠道」按钮添加一个渠道开始
       </div>
     </ScrollArea>
-
-    <div class="shrink-0">
-      <AddChannelDropdown
-        :machine-channels="machineChannels"
-        :grouped-ai-models="groupedAiModels"
-        :cards="modelValueLocal"
-        @add="(kind, ref) => $emit('add', kind, ref)" />
-    </div>
   </div>
 </template>
 
@@ -41,22 +33,17 @@ import { computed } from 'vue'
 import draggable from 'vuedraggable'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import TranslateChannelCard from './TranslateChannelCard.vue'
-import AddChannelDropdown from './AddChannelDropdown.vue'
-import type { MachineTranslateChannel } from '@/shared/machine-translation'
-import type { TranslateCardItem, TranslateCardKind, TranslateCardRuntime } from '../useTranslatePage'
+import type { TranslateCardItem, TranslateCardRuntime } from '../useTranslatePage'
 
 const props = defineProps<{
   cards: TranslateCardItem[]
   titles: Record<string, string>
   subtitles?: Record<string, string>
-  machineChannels: MachineTranslateChannel[]
-  groupedAiModels: Record<string, Array<{ key: string; channel: string; model: string }>>
   ensureRuntime: (id: string) => TranslateCardRuntime
 }>()
 
 const emit = defineEmits<{
   (e: 'reorder', next: TranslateCardItem[]): void
-  (e: 'add', kind: TranslateCardKind, ref: string): void
   (e: 'refresh', id: string): void
   (e: 'toggleCollapsed', id: string): void
   (e: 'remove', id: string): void
