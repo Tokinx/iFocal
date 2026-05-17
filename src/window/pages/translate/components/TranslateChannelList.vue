@@ -1,6 +1,6 @@
 <template>
-  <div class="flex h-full min-h-0 flex-col gap-3">
-    <ScrollArea class="flex-1 min-h-0">
+  <div class="flex h-full min-h-0 flex-col gap-3 -mr-2.5">
+    <ScrollArea class="flex-1 min-h-0 pr-2.5">
       <draggable
         v-model="modelValueLocal"
         item-key="id"

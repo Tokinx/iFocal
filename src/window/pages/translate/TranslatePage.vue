@@ -20,7 +20,7 @@
         @translate="store.translateAll"
         @addChannel="store.addCard" />
 
-      <div ref="bodyEl" class="flex flex-1 min-h-0 gap-3 p-2"
+      <div ref="bodyEl" class="flex flex-1 min-h-0 gap-3 p-3"
         :class="isCompact ? 'flex-col' : 'flex-row'">
         <div :class="isCompact ? 'shrink-0 w-full' : 'w-1/2 min-w-0'">
           <TranslateSourcePanel

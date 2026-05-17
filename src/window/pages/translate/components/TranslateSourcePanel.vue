@@ -13,24 +13,15 @@
     <div class="absolute bottom-2 right-3 flex items-center gap-1 text-[11px] text-olive-400 pointer-events-none">
       <span>{{ charCount }} 字符</span>
     </div>
-    <div class="absolute top-2 right-2 flex items-center gap-1">
+    <div class="absolute top-1 right-1 flex items-center gap-1">
       <Tooltip v-if="modelValue">
         <TooltipTrigger as-child>
-          <Button variant="ghost" size="icon" class="h-7 w-7 rounded-lg text-olive-500 hover:bg-olive-100"
+          <Button variant="ghost" size="icon" class="h-5 w-5 rounded-lg text-olive-500 hover:bg-olive-100"
             @click="$emit('update:modelValue', '')">
             <Icon icon="ri:close-line" class="h-4 w-4" />
           </Button>
         </TooltipTrigger>
         <TooltipContent>清空</TooltipContent>
-      </Tooltip>
-      <Tooltip>
-        <TooltipTrigger as-child>
-          <Button variant="ghost" size="icon" class="h-7 w-7 rounded-lg text-olive-500 hover:bg-olive-100"
-            @click="pasteFromClipboard">
-            <Icon icon="ri:clipboard-line" class="h-4 w-4" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>从剪贴板粘贴</TooltipContent>
       </Tooltip>
     </div>
   </div>
@@ -57,12 +48,5 @@ const charCount = computed(() => props.modelValue.length)
 function onInput(event: Event) {
   const value = (event.target as HTMLTextAreaElement).value
   emit('update:modelValue', value)
-}
-
-async function pasteFromClipboard() {
-  try {
-    const text = await navigator.clipboard.readText()
-    if (text) emit('update:modelValue', text)
-  } catch { /* ignore */ }
 }
 </script>
