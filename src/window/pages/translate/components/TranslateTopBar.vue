@@ -47,10 +47,10 @@
       </DropdownMenu>
     </div>
 
-    <Button class="h-8 rounded-xl px-4 bg-amber-700 text-white hover:bg-amber-800"
+    <Button class="h-8 rounded-xl bg-amber-700 text-white hover:bg-amber-800"
       :disabled="disabled"
       @click="$emit('translate')">
-      <Icon icon="ri:translate-2" class="h-4 w-4 mr-1" />
+      <Icon icon="ri:translate-2" class="h-4 w-4" />
       翻译
     </Button>
   </header>

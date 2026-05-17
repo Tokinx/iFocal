@@ -1,23 +1,21 @@
 <template>
   <div ref="rootEl" class="relative flex h-full w-full text-foreground gap-2" @click.capture="handleExternalLinkClick"
     @auxclick.capture="handleExternalLinkClick">
-    <WindowSidebar :tasks="sidebarTasks" :sessions="sidebarSessions" :current-session-id="currentSessionId"
-      :active-assistant-id="activeAssistantId" :active-route-name="currentRoute.name" :format-date="formatDate"
-      @navigate="navigateTo" @newChat="startNewChatFromAside" @selectAssistant="switchAssistant"
-      @addAssistant="openAssistantEditor(null)" @editAssistant="openAssistantEditor"
-      @deleteAssistant="deleteAssistantWithHistory" @switchSession="switchSession" @deleteSession="deleteSession" />
+    <Sidebar :active-route-name="currentRoute.name" @navigate="navigateTo" />
 
     <main class="relative min-h-0 flex-1">
-      <AssistantPage v-if="isAssistantRoute" :key="assistantPageKey" ref="activePageRef" :ctx="assistantCtx" />
+      <AssistantPage v-if="isAssistantRoute" :key="assistantPageKey" ref="activePageRef" :ctx="assistantCtx"
+        :tasks="sidebarTasks" :sessions="sidebarSessions" :current-session-id="currentSessionId"
+        :active-assistant-id="activeAssistantId" :assistant-configs="assistantConfigs" :model-pairs="modelPairs"
+        :format-date="formatDate"
+        @selectAssistant="switchAssistant" @deleteAssistant="deleteAssistantWithHistory"
+        @switchSession="switchSession" @deleteSession="deleteSession"
+        @saveAssistant="saveAssistantFromEditor" />
       <TranslatePage v-else-if="currentRoute.name === 'translate'" key="translate" />
       <SettingsPage v-else key="settings" />
       <!-- <Transition name="ifocal-route" mode="out-in" @after-enter="handleRouteAfterEnter">
       </Transition> -->
     </main>
-
-    <AssistantEditorDialog v-if="assistantEditorOpen" :open="assistantEditorOpen" :assistant="editingAssistant"
-      :model-pairs="modelPairs" @update:open="handleAssistantEditorOpen" @save="saveAssistantFromEditor"
-      @delete="deleteAssistantWithHistory" />
   </div>
 </template>
 
@@ -43,7 +41,7 @@ import { modelIdFromSpec, parseModelSpec } from '@/shared/model-utils';
 import { useToast } from '@/window/composables/useToast';
 import { loadPromptTemplates } from '@/shared/prompt-templates';
 import { mcpServersToEntries, type McpServerEntry } from '@/shared/mcp';
-import WindowSidebar from './components/WindowSidebar.vue';
+import Sidebar from './components/Sidebar.vue';
 import AssistantPage from './pages/assistant/AssistantPage.vue';
 import SettingsPage from './pages/settings/SettingsPage.vue';
 import TranslatePage from './pages/translate/TranslatePage.vue';
@@ -70,8 +68,6 @@ const modelPairs = ref<{ key: string; channel: string; model: string }[]>([]);
 const assistantConfigs = ref<AssistantConfig[]>([]);
 const activeAssistantId = ref(DEFAULT_ASSISTANT_ID);
 const defaultAssistantId = ref(DEFAULT_ASSISTANT_ID);
-const assistantEditorOpen = ref(false);
-const editingAssistantId = ref<string | null>(null);
 // 为每个任务类型独立存储模型选择
 const selectedModelByTask = ref<Record<string, string>>({
   translate: '',
@@ -126,16 +122,10 @@ const STREAM_REVEAL_ANIMATION_MS = 160;
 const COPY_COOLDOWN_MS = 1500;
 const autoScrollEnabled = ref(true);
 const showScrollToBottomButton = ref(false);
-const AssistantEditorDialog = defineAsyncComponent(() => import('./pages/assistant/components/AssistantEditorDialog.vue'));
 const toast = useToast();
 
 const activeAssistant = computed(() => {
   return assistantConfigs.value.find((assistant) => assistant.id === activeAssistantId.value) || assistantConfigs.value[0] || null;
-});
-
-const editingAssistant = computed(() => {
-  if (!editingAssistantId.value) return null;
-  return assistantConfigs.value.find((assistant) => assistant.id === editingAssistantId.value) || null;
 });
 
 const sidebarTasks = computed<SidebarTask[]>(() => assistantConfigs.value.map((assistant) => ({
@@ -1408,23 +1398,6 @@ function createSessionForActiveAssistant(save = true): Session {
   return newSession;
 }
 
-function startNewChat(autoRun = false) {
-  createSessionForActiveAssistant(true);
-  state.text = '';
-  lastAutoFilledClipboard = '';
-
-  // 如果需要自动运行，读取剪贴板到输入框（不自动发送）
-  if (autoRun) {
-    readClipboardToInput();
-  }
-}
-
-function startNewChatFromAside() {
-  startNewChat(false);
-  navigateTo('assistant');
-  scheduleScrollToBottomAfterRender(true);
-}
-
 function switchSession(sessionId: string) {
   const session = sessions.value.find(s => s.id === sessionId && s.assistantId === activeAssistantId.value);
   if (!session) return;
@@ -2376,16 +2349,6 @@ async function switchAssistant(assistantId: string, options: { navigate?: boolea
   scheduleScrollToBottomAfterRender(true);
 }
 
-function openAssistantEditor(assistantId: string | null) {
-  editingAssistantId.value = assistantId;
-  assistantEditorOpen.value = true;
-}
-
-function handleAssistantEditorOpen(open: boolean) {
-  assistantEditorOpen.value = open;
-  if (!open) editingAssistantId.value = null;
-}
-
 async function saveAssistantFromEditor(input: AssistantConfig) {
   const now = Date.now();
   const existingIndex = assistantConfigs.value.findIndex((assistant) => assistant.id === input.id);
@@ -2414,8 +2377,6 @@ async function saveAssistantFromEditor(input: AssistantConfig) {
   }
   assistantConfigs.value = nextConfigs;
   await persistAssistantConfigs(nextConfigs);
-  assistantEditorOpen.value = false;
-  editingAssistantId.value = null;
 
   if (!existing) {
     await switchAssistant(nextAssistant.id);
@@ -2452,8 +2413,6 @@ async function deleteAssistantWithHistory(assistantId: string) {
 
   await persistAssistantConfigs(nextConfigs);
   saveSessions();
-  assistantEditorOpen.value = false;
-  editingAssistantId.value = null;
 }
 
 function selectModel(key: string) {
