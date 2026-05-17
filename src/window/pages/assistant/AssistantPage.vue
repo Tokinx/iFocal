@@ -12,6 +12,7 @@
       @deleteAssistant="(id) => $emit('deleteAssistant', id)"
       @switchSession="(id) => $emit('switchSession', id)"
       @deleteSession="(id) => $emit('deleteSession', id)"
+      @newSession="$emit('newSession')"
       @save="(assistant) => $emit('saveAssistant', assistant)" />
     <AssistantWorkspace ref="workspaceRef" :ctx="ctx" class="min-w-0" />
   </div>
@@ -46,6 +47,7 @@ defineEmits<{
   (e: 'deleteAssistant', assistantId: string): void
   (e: 'switchSession', sessionId: string): void
   (e: 'deleteSession', sessionId: string): void
+  (e: 'newSession'): void
   (e: 'saveAssistant', assistant: AssistantConfig): void
 }>()
 

@@ -10,6 +10,7 @@
         :format-date="formatDate"
         @selectAssistant="switchAssistant" @deleteAssistant="deleteAssistantWithHistory"
         @switchSession="switchSession" @deleteSession="deleteSession"
+        @newSession="handleNewSession"
         @saveAssistant="saveAssistantFromEditor" />
       <TranslatePage v-else-if="currentRoute.name === 'translate'" key="translate" />
       <SettingsPage v-else key="settings" />
@@ -520,6 +521,7 @@ const assistantCtx = computed<AssistantWorkspaceContext>(() => ({
   toggleMcpServer,
   openSettings: openSettingsCenter,
   handleScrollToBottomClick,
+  clearMessages: clearCurrentSessionMessages,
   retryMessage,
   copyMessage,
   copyCodeBlock,
@@ -1409,6 +1411,25 @@ function switchSession(sessionId: string) {
 
   // 切换会话后滚动到底部
   scheduleScrollToBottomAfterRender(true);
+}
+
+function handleNewSession() {
+  createSessionForActiveAssistant(true);
+  navigateTo('assistant');
+  state.text = '';
+  lastAutoFilledClipboard = '';
+  scheduleScrollToBottomAfterRender(true);
+}
+
+function clearCurrentSessionMessages() {
+  if (isBusy.value) return;
+  const sessionId = currentSessionId.value;
+  if (!sessionId) return;
+  const session = sessions.value.find(s => s.id === sessionId);
+  if (!session || !session.messages.length) return;
+  session.messages = [];
+  session.updatedAt = Date.now();
+  saveSessions();
 }
 
 function deleteSession(sessionId: string) {

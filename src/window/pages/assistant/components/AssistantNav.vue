@@ -1,5 +1,11 @@
 <template>
   <div class="flex h-full min-h-0 flex-col gap-2">
+    <Button variant="outline"
+      class="w-full rounded-1xl justify-center gap-2 bg-white hover:bg-white/60 border-olive-300/60 shadow-xs"
+      @click="$emit('newSession')">
+      <Icon icon="ri:pencil-ai-line" class="h-4 w-4" />
+      新会话
+    </Button>
     <div class="p-2 rounded-1xl space-y-1 bg-white border border-olive-300/60 shadow-xs">
       <div v-for="item in tasks" :key="item.id" role="button" tabindex="0"
         class="group rounded-lg flex min-h-9 w-full cursor-pointer items-center gap-2 pl-3 pr-1.5 text-sm transition-colors hover:bg-olive-100 hover:text-amber-800"
@@ -11,8 +17,8 @@
         <DropdownMenu>
           <DropdownMenuTrigger as-child>
             <Button variant="ghost" size="icon-xs"
-              class="h-6 w-6 rounded-md shrink-0 opacity-0 transition-opacity hover:bg-white/20 group-hover:opacity-100"
-              title="更多操作" @click.stop>
+              class="h-6 w-6 rounded-md shrink-0 opacity-0 hover:bg-white/20 group-hover:opacity-100" title="更多操作"
+              @click.stop>
               <Icon icon="ri:more-2-fill" class="h-3 w-3" />
             </Button>
           </DropdownMenuTrigger>
@@ -71,9 +77,8 @@
       </div>
     </ScrollArea>
 
-    <AssistantEditorDialog v-if="editorOpen" :open="editorOpen" :assistant="editingAssistant"
-      :model-pairs="modelPairs" @update:open="handleEditorOpenChange" @save="onSave"
-      @delete="onDeleteFromDialog" />
+    <AssistantEditorDialog v-if="editorOpen" :open="editorOpen" :assistant="editingAssistant" :model-pairs="modelPairs"
+      @update:open="handleEditorOpenChange" @save="onSave" @delete="onDeleteFromDialog" />
   </div>
 </template>
 
@@ -108,6 +113,7 @@ const emit = defineEmits<{
   (e: 'deleteAssistant', assistantId: string): void
   (e: 'switchSession', sessionId: string): void
   (e: 'deleteSession', sessionId: string): void
+  (e: 'newSession'): void
   (e: 'save', assistant: AssistantConfig): void
 }>()
 

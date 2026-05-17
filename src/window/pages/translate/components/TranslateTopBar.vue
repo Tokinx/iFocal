@@ -1,5 +1,5 @@
 <template>
-  <header class="flex items-center justify-between gap-2 p-3 border-b border-olive-200">
+  <header class="flex items-center justify-between gap-2 p-2 border-b border-olive-200">
     <div class="flex items-center gap-1">
       <DropdownMenu>
         <DropdownMenuTrigger as-child>

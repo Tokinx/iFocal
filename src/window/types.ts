@@ -109,6 +109,7 @@ export interface AssistantWorkspaceContext {
   toggleMcpServer: (name: string, checked: boolean) => void
   openSettings: () => void
   handleScrollToBottomClick: () => void
+  clearMessages: () => void
   retryMessage: (messageIndex: number) => void
   copyMessage: (content: string) => void
   copyCodeBlock: (content: string) => void

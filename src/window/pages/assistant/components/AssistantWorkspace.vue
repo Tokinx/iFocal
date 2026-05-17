@@ -136,9 +136,9 @@
                 </template>
                 <template v-else>
                   <div class="space-y-3">
-                    <div class="rounded h-3 w-2/3 bg-olive-300 animate-pulse" />
-                    <div class="rounded h-3 w-full bg-olive-300 animate-pulse" />
-                    <div class="rounded h-3 w-5/6 bg-olive-300 animate-pulse" />
+                    <div class="rounded-xs h-3 w-2/3 bg-olive-300 animate-pulse" />
+                    <div class="rounded-xs h-3 w-full bg-olive-300 animate-pulse" />
+                    <div class="rounded-xs h-3 w-5/6 bg-olive-300 animate-pulse" />
                   </div>
                 </template>
               </div>
@@ -157,9 +157,9 @@
             </template>
             <template v-else>
               <div class="space-y-3">
-                <div class="rounded h-3 w-2/3 bg-olive-300 animate-pulse" />
-                <div class="rounded h-3 w-full bg-olive-300 animate-pulse" />
-                <div class="rounded h-3 w-5/6 bg-olive-300 animate-pulse" />
+                <div class="rounded-xs h-3 w-2/3 bg-olive-300 animate-pulse" />
+                <div class="rounded-xs h-3 w-full bg-olive-300 animate-pulse" />
+                <div class="rounded-xs h-3 w-5/6 bg-olive-300 animate-pulse" />
               </div>
             </template>
           </div>
@@ -180,7 +180,7 @@
           @changeReasoningEffort="ctx.changeReasoningEffort" @toggleContext="ctx.toggleContext"
           @toggleClipboardListening="ctx.toggleClipboardListening" @toggleFileUpload="ctx.toggleFileUpload"
           @toggleMcpServer="ctx.toggleMcpServer" @openSettings="ctx.openSettings"
-          @scrollToBottom="ctx.handleScrollToBottomClick" />
+          @scrollToBottom="ctx.handleScrollToBottomClick" @clearMessages="ctx.clearMessages" />
       </footer>
     </ScrollArea>
   </div>

@@ -79,7 +79,9 @@
                 </div>
                 <div class="space-y-2 pl-6">
                   <div v-for="server in mcpServers" :key="server.name" class="flex items-center justify-between gap-3">
-                    <span :class="['min-w-0 truncate text-xs', mcpServerToggles[server.name] ? 'text-foreground':'text-muted-foreground']" :title="server.name">
+                    <span
+                      :class="['min-w-0 truncate text-xs', mcpServerToggles[server.name] ? 'text-foreground' : 'text-muted-foreground']"
+                      :title="server.name">
                       {{ server.name }}
                     </span>
                     <Switch :model-value="!!mcpServerToggles[server.name]" size="sm"
@@ -92,16 +94,29 @@
         </DropdownMenuContent>
       </DropdownMenu>
 
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <Button variant="outline" size="icon"
+              :class="['h-8 w-8 shrink-0 rounded-xl hover:bg-red-500/10 hover:text-red-600 hover:border-red-500/20', bgClass, blurClass]"
+              :disabled="sending" @click="$emit('clearMessages')">
+              <Icon icon="ri:eraser-line" class="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>清空消息</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+
       <div class="flex-1"></div>
 
-      <Button variant="outline" size="icon"
-        :class="[
-          'absolute right-0 top-0 h-8 w-8 shrink-0 rounded-xl transition-opacity duration-150',
-          bgClass,
-          blurClass,
-          showScrollToBottomButton ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
-        ]"
-        title="滚动到底部" @click="$emit('scrollToBottom')">
+      <Button variant="outline" size="icon" :class="[
+        'absolute right-0 top-0 h-8 w-8 shrink-0 rounded-xl transition-opacity duration-150',
+        bgClass,
+        blurClass,
+        showScrollToBottomButton ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
+      ]" title="滚动到底部" @click="$emit('scrollToBottom')">
         <Icon icon="ri:arrow-down-line" class="h-4 w-4" />
       </Button>
     </div>
@@ -109,7 +124,8 @@
     <!-- 输入框容器 -->
     <div :class="['relative rounded-xl', bgClass, blurClass]">
       <Textarea v-model="innerValue" v-autosize="8" :rows="2" placeholder="输入你想了解到内容"
-        class="resize-none pb-11 bg-transparent rounded-xl" @keydown.enter.exact.prevent="trySend" @paste="handlePaste" />
+        class="resize-none pb-11 bg-transparent rounded-xl" @keydown.enter.exact.prevent="trySend"
+        @paste="handlePaste" />
       <div class="absolute bottom-2 left-2 right-2 flex items-center justify-between pointer-events-none">
         <!-- 输入框功能区 -->
         <div class="flex items-center pointer-events-auto">
@@ -160,14 +176,12 @@
           </Button>
           <!-- 停止按钮 -->
           <Button variant="ghost" size="icon"
-            class="group rounded-lg h-7 w-7 bg-amber-800 hover:!bg-amber-800/80 !text-white"
-            @click="$emit('stop')" v-show="sending" title="停止生成">
+            class="group rounded-lg h-7 w-7 bg-amber-800 hover:!bg-amber-800/80 !text-white" @click="$emit('stop')"
+            v-show="sending" title="停止生成">
             <span class="relative flex h-3.5 w-3.5 items-center justify-center">
-              <span
-                class="ifocal-loading absolute opacity-100 duration-800 group-hover:opacity-0"
+              <span class="ifocal-loading absolute opacity-100 duration-800 group-hover:opacity-0"
                 style="--ifocal-loading-size: 14px; --ifocal-loading-stroke: 2px; --ifocal-loading-color: currentColor;" />
-              <Icon icon="ri:stop-fill"
-                class="absolute h-3 w-3 opacity-0 duration-150 group-hover:opacity-100" />
+              <Icon icon="ri:stop-fill" class="absolute h-3 w-3 opacity-0 duration-150 group-hover:opacity-100" />
             </span>
           </Button>
         </div>
@@ -235,6 +249,7 @@ const emit = defineEmits<{
   (e: 'toggleMcpServer', name: string, checked: boolean): void
   (e: 'selectModel', key: string): void
   (e: 'scrollToBottom'): void
+  (e: 'clearMessages'): void
   (e: 'attachmentsChange', files: FileAttachment[]): void
 }>()
 
