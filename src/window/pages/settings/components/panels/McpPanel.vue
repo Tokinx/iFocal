@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import Icon from '@/components/ui/icon/Icon.vue';
 import { iconOfAction } from '@/shared/icons';
-import { useSettingsStore } from '@/window/composables/useSettingsStore';
-import { useMcpServers } from '@/window/composables/useMcpServers';
+import { useSettingsStore } from '@/window/pages/settings/composables/useSettingsStore';
+import { useMcpServers } from '@/window/pages/settings/composables/useMcpServers';
 
 const store = useSettingsStore();
 const { mcpServers } = store;

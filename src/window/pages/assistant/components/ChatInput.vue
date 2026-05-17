@@ -186,7 +186,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Switch } from '@/components/ui/switch'
 import type { ReasoningEffort } from '@/shared/config'
 import type { McpServerEntry } from '@/shared/mcp'
-import ModelSelect from './ModelSelect.vue'
+import ModelSelect from '@/window/components/ModelSelect.vue'
 import {
   DropdownMenu,
   DropdownMenuContent,

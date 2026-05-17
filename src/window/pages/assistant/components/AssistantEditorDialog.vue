@@ -96,7 +96,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import ModelSelect from './ModelSelect.vue';
+import ModelSelect from '@/window/components/ModelSelect.vue';
 import {
   ASSISTANT_ICON_OPTIONS,
   ASSISTANT_PRESET_OPTIONS,

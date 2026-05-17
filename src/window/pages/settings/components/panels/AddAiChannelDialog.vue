@@ -2,7 +2,7 @@
 import { ref } from 'vue';
 import Icon from '@/components/ui/icon/Icon.vue';
 import { Dialog, DialogScrollContent } from '@/components/ui/dialog';
-import { useSettingsStore } from '@/window/composables/useSettingsStore';
+import { useSettingsStore } from '@/window/pages/settings/composables/useSettingsStore';
 import { useToast } from '@/window/composables/useToast';
 
 defineProps<{ open: boolean }>();

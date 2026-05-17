@@ -192,7 +192,7 @@ import Icon from '@/components/ui/icon/Icon.vue'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import type ChatInputComponent from './ChatInput.vue'
-import type { AssistantWorkspaceContext, FileAttachment } from '../types'
+import type { AssistantWorkspaceContext, FileAttachment } from '../../../types'
 
 const LanguageSelect = defineAsyncComponent(() => import('./LanguageSelect.vue'))
 const ChatInput = defineAsyncComponent(() => import('./ChatInput.vue'))

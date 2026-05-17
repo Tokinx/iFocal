@@ -282,6 +282,10 @@ chrome.commands.onCommand.addListener((command) => {
   }
   if (command === 'translate-full-page') {
     void triggerFullPageTranslateInActiveTab();
+    return;
+  }
+  if (command === 'open-translate-page') {
+    void openOrFocusGlobalWindow({ openTranslate: true });
   }
 });
 
@@ -2527,12 +2531,14 @@ async function callGemini(
   });
 }
 
-async function openOrFocusGlobalWindow(options?: { openSettings?: boolean }) {
+async function openOrFocusGlobalWindow(options?: { openSettings?: boolean; openTranslate?: boolean }) {
   if (isOpeningGlobalWindow) return;
   isOpeningGlobalWindow = true;
   try {
     if (options?.openSettings) {
       try { await chrome.storage.local.set({ [GLOBAL_WIN_VIEW_KEY]: 'settings' }); } catch { }
+    } else if (options?.openTranslate) {
+      try { await chrome.storage.local.set({ [GLOBAL_WIN_VIEW_KEY]: 'translate' }); } catch { }
     }
     const distUrl = chrome.runtime.getURL('dist/window.html');
     const altDistUrl = chrome.runtime.getURL('dist/src/window/index.html');

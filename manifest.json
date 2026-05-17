@@ -43,6 +43,12 @@
         "default": "Ctrl+Shift+Y"
       },
       "description": "Translate current page with machine translation"
+    },
+    "open-translate-page": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+T"
+      },
+      "description": "Open iFocal translate page"
     }
   },
   "web_accessible_resources": [

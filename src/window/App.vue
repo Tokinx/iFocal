@@ -1,48 +1,23 @@
 <template>
-  <div
-    ref="rootEl"
-    class="relative flex h-full w-full text-foreground gap-2"
-    @click.capture="handleExternalLinkClick"
-    @auxclick.capture="handleExternalLinkClick"
-  >
-    <WindowSidebar
-      :tasks="sidebarTasks"
-      :sessions="sidebarSessions"
-      :current-session-id="currentSessionId"
-      :active-assistant-id="activeAssistantId"
-      :active-route-name="currentRoute.name"
-      :format-date="formatDate"
-      @navigate="navigateTo"
-      @newChat="startNewChatFromAside"
-      @selectAssistant="switchAssistant"
-      @addAssistant="openAssistantEditor(null)"
-      @editAssistant="openAssistantEditor"
-      @deleteAssistant="deleteAssistantWithHistory"
-      @switchSession="switchSession"
-      @deleteSession="deleteSession"
-    />
+  <div ref="rootEl" class="relative flex h-full w-full text-foreground gap-2" @click.capture="handleExternalLinkClick"
+    @auxclick.capture="handleExternalLinkClick">
+    <WindowSidebar :tasks="sidebarTasks" :sessions="sidebarSessions" :current-session-id="currentSessionId"
+      :active-assistant-id="activeAssistantId" :active-route-name="currentRoute.name" :format-date="formatDate"
+      @navigate="navigateTo" @newChat="startNewChatFromAside" @selectAssistant="switchAssistant"
+      @addAssistant="openAssistantEditor(null)" @editAssistant="openAssistantEditor"
+      @deleteAssistant="deleteAssistantWithHistory" @switchSession="switchSession" @deleteSession="deleteSession" />
 
     <main class="relative min-h-0 flex-1">
-      <Transition name="ifocal-route" mode="out-in" @after-enter="handleRouteAfterEnter">
-        <AssistantPage
-          v-if="isAssistantRoute"
-          :key="assistantPageKey"
-          ref="activePageRef"
-          :ctx="assistantCtx"
-        />
-        <SettingsPage v-else key="settings" />
-      </Transition>
+      <AssistantPage v-if="isAssistantRoute" :key="assistantPageKey" ref="activePageRef" :ctx="assistantCtx" />
+      <TranslatePage v-else-if="currentRoute.name === 'translate'" key="translate" />
+      <SettingsPage v-else key="settings" />
+      <!-- <Transition name="ifocal-route" mode="out-in" @after-enter="handleRouteAfterEnter">
+      </Transition> -->
     </main>
 
-    <AssistantEditorDialog
-      v-if="assistantEditorOpen"
-      :open="assistantEditorOpen"
-      :assistant="editingAssistant"
-      :model-pairs="modelPairs"
-      @update:open="handleAssistantEditorOpen"
-      @save="saveAssistantFromEditor"
-      @delete="deleteAssistantWithHistory"
-    />
+    <AssistantEditorDialog v-if="assistantEditorOpen" :open="assistantEditorOpen" :assistant="editingAssistant"
+      :model-pairs="modelPairs" @update:open="handleAssistantEditorOpen" @save="saveAssistantFromEditor"
+      @delete="deleteAssistantWithHistory" />
   </div>
 </template>
 
@@ -69,9 +44,10 @@ import { useToast } from '@/window/composables/useToast';
 import { loadPromptTemplates } from '@/shared/prompt-templates';
 import { mcpServersToEntries, type McpServerEntry } from '@/shared/mcp';
 import WindowSidebar from './components/WindowSidebar.vue';
-import AssistantPage from './pages/AssistantPage.vue';
-import SettingsPage from './pages/SettingsPage.vue';
-import { currentRoute, hasInitialRoute, navigateTo, routeNameToTask, taskToRouteName } from './router';
+import AssistantPage from './pages/assistant/AssistantPage.vue';
+import SettingsPage from './pages/settings/SettingsPage.vue';
+import TranslatePage from './pages/translate/TranslatePage.vue';
+import { currentRoute, hasInitialRoute, navigateTo } from './router';
 import type { AssistantPageExpose, AssistantTask, AssistantWorkspaceContext, SidebarTask, WindowMessage, WindowSession } from './types';
 
 const GLOBAL_WIN_VIEW_KEY = 'globalAssistantWindowRequestedView';
@@ -150,7 +126,7 @@ const STREAM_REVEAL_ANIMATION_MS = 160;
 const COPY_COOLDOWN_MS = 1500;
 const autoScrollEnabled = ref(true);
 const showScrollToBottomButton = ref(false);
-const AssistantEditorDialog = defineAsyncComponent(() => import('./components/AssistantEditorDialog.vue'));
+const AssistantEditorDialog = defineAsyncComponent(() => import('./pages/assistant/components/AssistantEditorDialog.vue'));
 const toast = useToast();
 
 const activeAssistant = computed(() => {
@@ -170,26 +146,16 @@ const sidebarTasks = computed<SidebarTask[]>(() => assistantConfigs.value.map((a
   deletable: assistant.deletable,
 })));
 
-const isAssistantRoute = computed(() => !!routeNameToTask(currentRoute.value.name));
+const isAssistantRoute = computed(() => currentRoute.value.name === 'assistant');
 
 watch(
   () => currentRoute.value.name,
   async (routeName) => {
-    const task = routeNameToTask(routeName);
-    if (!task) {
+    if (routeName !== 'assistant') {
       showScrollToBottomButton.value = false;
       unbindScrollableListener();
       footerResizeObserver?.disconnect();
       return;
-    }
-    if (routesReady.value) {
-      const currentPreset = activeAssistant.value?.preset;
-      if (currentPreset && currentPreset !== assistantPresetForTask(task)) {
-        const routeAssistantId = assistantIdForPreset(assistantPresetForTask(task));
-        if (assistantConfigs.value.some((assistant) => assistant.id === routeAssistantId)) {
-          await switchAssistant(routeAssistantId, { navigate: false });
-        }
-      }
     }
     await nextTick();
     syncFooterObserver();
@@ -1455,7 +1421,7 @@ function startNewChat(autoRun = false) {
 
 function startNewChatFromAside() {
   startNewChat(false);
-  navigateTo(taskToRouteName(state.task));
+  navigateTo('assistant');
   scheduleScrollToBottomAfterRender(true);
 }
 
@@ -1464,7 +1430,7 @@ function switchSession(sessionId: string) {
   if (!session) return;
   currentSessionId.value = session.id;
   state.task = session.task;
-  navigateTo(taskToRouteName(session.task));
+  navigateTo('assistant');
   state.text = '';
   lastAutoFilledClipboard = '';
 
@@ -2356,8 +2322,13 @@ function retryMessage(messageIndex: number) {
 }
 
 async function consumeRequestedWindowView(requestedView?: unknown) {
-  if (requestedView !== 'settings') return;
-  navigateTo('settings');
+  if (requestedView === 'settings') {
+    navigateTo('settings');
+  } else if (requestedView === 'translate') {
+    navigateTo('translate');
+  } else {
+    return;
+  }
   try { await chrome.storage.local.remove([GLOBAL_WIN_VIEW_KEY]); } catch { }
 }
 
@@ -2388,7 +2359,7 @@ async function switchAssistant(assistantId: string, options: { navigate?: boolea
   }
 
   if (options.navigate !== false) {
-    navigateTo(taskToRouteName(state.task));
+    navigateTo('assistant');
   }
 
   try {
@@ -2450,7 +2421,7 @@ async function saveAssistantFromEditor(input: AssistantConfig) {
     await switchAssistant(nextAssistant.id);
   } else if (activeAssistantId.value === nextAssistant.id) {
     applyAssistantRuntime(nextAssistant);
-    navigateTo(taskToRouteName(state.task));
+    navigateTo('assistant');
   }
 }
 
@@ -2475,7 +2446,7 @@ async function deleteAssistantWithHistory(assistantId: string) {
     state.text = '';
     activePageRef.value?.clearAttachments();
     applyAssistantRuntime(activeAssistant.value);
-    navigateTo(taskToRouteName(state.task));
+    navigateTo('assistant');
     await persistActiveAssistantId();
   }
 
@@ -2709,17 +2680,8 @@ onMounted(async () => {
   reduceVisualEffects.value = globalConfig.reduceVisualEffects || false;
   mcpServers.value = mcpServersToEntries((globalConfig as any).mcpServers);
   applyAssistantRuntime(activeAssistant.value);
-  const activeRouteTask = routeNameToTask(currentRoute.value.name);
   if (!hasInitialRoute) {
-    navigateTo(taskToRouteName(state.task), { replace: true });
-  } else if (activeRouteTask) {
-    const preset = assistantPresetForTask(activeRouteTask);
-    if (activeAssistant.value?.preset !== preset) {
-      const assistantId = assistantIdForPreset(preset);
-      if (assistantConfigs.value.some((assistant) => assistant.id === assistantId)) {
-        await switchAssistant(assistantId, { navigate: false });
-      }
-    }
+    navigateTo('assistant', { replace: true });
   }
   routesReady.value = true;
   if (clampSessionsByMaxCount()) {

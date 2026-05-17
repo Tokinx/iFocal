@@ -13,8 +13,8 @@ import {
   upsertCustomStylePreset,
 } from '@/shared/style-presets';
 import { normalizeMachineTranslateDefaultChannelId } from '@/shared/machine-translation';
-import ModelSelect from '../../ModelSelect.vue';
-import { useSettingsStore } from '@/window/composables/useSettingsStore';
+import ModelSelect from '@/window/components/ModelSelect.vue';
+import { useSettingsStore } from '@/window/pages/settings/composables/useSettingsStore';
 import { useToast } from '@/window/composables/useToast';
 
 const store = useSettingsStore();

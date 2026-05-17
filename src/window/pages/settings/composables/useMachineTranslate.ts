@@ -9,7 +9,7 @@ import {
   type MachineTranslateChannel,
   type MachineTranslateProvider,
 } from '@/shared/machine-translation';
-import { useToast } from './useToast';
+import { useToast } from '@/window/composables/useToast';
 import type { SettingsStore } from './useSettingsStore';
 
 function machineProviderShowsApiKey(provider: MachineTranslateProvider) {

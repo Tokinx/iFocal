@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import Icon from '@/components/ui/icon/Icon.vue';
 import { iconOfAction } from '@/shared/icons';
-import { useSettingsStore } from '@/window/composables/useSettingsStore';
-import { useChannelExtras } from '@/window/composables/useChannelExtras';
+import { useSettingsStore } from '@/window/pages/settings/composables/useSettingsStore';
+import { useChannelExtras } from '@/window/pages/settings/composables/useChannelExtras';
 import AddAiChannelDialog from './AddAiChannelDialog.vue';
 
 const store = useSettingsStore();

@@ -8,7 +8,7 @@ import {
   type McpAuthType,
   type McpServerType,
 } from '@/shared/mcp';
-import { useToast } from './useToast';
+import { useToast } from '@/window/composables/useToast';
 import type { SettingsStore } from './useSettingsStore';
 
 export const MCP_AUTH_TYPE_OPTIONS: Array<{ value: McpAuthType; label: string }> = [

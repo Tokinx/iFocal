@@ -1,6 +1,6 @@
 import { onMounted, ref } from 'vue';
 import { downloadSettingsSnapshot, loadSettingsSnapshot, parseSettingsImportFile, saveSettingsSnapshot } from '@/shared/settings-import-export';
-import { useToast } from './useToast';
+import { useToast } from '@/window/composables/useToast';
 
 export function useSettingsImport() {
   const toast = useToast();

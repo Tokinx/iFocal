@@ -2,14 +2,14 @@
 import { onMounted, ref, provide } from 'vue';
 import { buildStylePresetsCss } from '@/shared/style-presets';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import SettingsNav, { type SettingsNavId } from './settings/SettingsNav.vue';
-import AboutPanel from './settings/panels/AboutPanel.vue';
-import McpPanel from './settings/panels/McpPanel.vue';
-import MachineTranslatePanel from './settings/panels/MachineTranslatePanel.vue';
-import AiChannelsPanel from './settings/panels/AiChannelsPanel.vue';
-import OtherSettingsPanel from './settings/panels/OtherSettingsPanel.vue';
-import GeneralPanel from './settings/panels/GeneralPanel.vue';
-import { createSettingsStore, SETTINGS_STORE_KEY } from '@/window/composables/useSettingsStore';
+import SettingsNav, { type SettingsNavId } from './components/SettingsNav.vue';
+import AboutPanel from './components/panels/AboutPanel.vue';
+import McpPanel from './components/panels/McpPanel.vue';
+import MachineTranslatePanel from './components/panels/MachineTranslatePanel.vue';
+import AiChannelsPanel from './components/panels/AiChannelsPanel.vue';
+import OtherSettingsPanel from './components/panels/OtherSettingsPanel.vue';
+import GeneralPanel from './components/panels/GeneralPanel.vue';
+import { createSettingsStore, SETTINGS_STORE_KEY } from '@/window/pages/settings/composables/useSettingsStore';
 
 withDefaults(defineProps<{
   embedded?: boolean

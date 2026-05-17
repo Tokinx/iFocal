@@ -1,6 +1,6 @@
 import { reactive, ref, watch } from 'vue';
 import { modelIdFromSpec } from '@/shared/model-utils';
-import { useToast } from './useToast';
+import { useToast } from '@/window/composables/useToast';
 import type { SettingsStore } from './useSettingsStore';
 
 async function fetchModelsFromApi(type: string, apiUrl: string, apiKey: string): Promise<string[]> {

@@ -1,6 +1,6 @@
 import { onMounted, ref, computed } from 'vue';
 import { loadGlossary, parseGlossaryMixedText, parseGlossaryTermsText, serializeGlossaryTerms, stringifyGlossaryMixedText, saveGlossary as persistGlossary } from '@/shared/glossary';
-import { useToast } from './useToast';
+import { useToast } from '@/window/composables/useToast';
 
 export function useGlossary() {
   const toast = useToast();

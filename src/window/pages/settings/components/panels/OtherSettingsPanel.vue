@@ -2,10 +2,10 @@
 import Icon from '@/components/ui/icon/Icon.vue';
 import { iconOfAction } from '@/shared/icons';
 import { SUPPORTED_LANGUAGES, saveConfig } from '@/shared/config';
-import ModelSelect from '../../ModelSelect.vue';
-import { useSettingsStore } from '@/window/composables/useSettingsStore';
-import { useAssistantDebug } from '@/window/composables/useAssistantDebug';
-import { useGlossary } from '@/window/composables/useGlossary';
+import ModelSelect from '@/window/components/ModelSelect.vue';
+import { useSettingsStore } from '@/window/pages/settings/composables/useSettingsStore';
+import { useAssistantDebug } from '@/window/pages/settings/composables/useAssistantDebug';
+import { useGlossary } from '@/window/pages/settings/composables/useGlossary';
 
 const store = useSettingsStore();
 const { config, assistantConfigs } = store;

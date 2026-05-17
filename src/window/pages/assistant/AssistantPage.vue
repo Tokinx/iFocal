@@ -4,8 +4,8 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import AssistantWorkspace from '../components/AssistantWorkspace.vue'
-import type { AssistantPageExpose, AssistantWorkspaceContext, FileAttachment } from '../types'
+import AssistantWorkspace from './components/AssistantWorkspace.vue'
+import type { AssistantPageExpose, AssistantWorkspaceContext, FileAttachment } from '../../types'
 
 defineProps<{
   ctx: AssistantWorkspaceContext

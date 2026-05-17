@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import Icon from '@/components/ui/icon/Icon.vue';
 import { iconOfAction } from '@/shared/icons';
-import { useSettingsStore } from '@/window/composables/useSettingsStore';
-import { useMachineTranslate } from '@/window/composables/useMachineTranslate';
+import { useSettingsStore } from '@/window/pages/settings/composables/useSettingsStore';
+import { useMachineTranslate } from '@/window/pages/settings/composables/useMachineTranslate';
 
 const store = useSettingsStore();
 const { machineChannels } = store;

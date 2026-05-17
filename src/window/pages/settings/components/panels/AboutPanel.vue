@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useSettingsImport } from '@/window/composables/useSettingsImport';
+import { useSettingsImport } from '@/window/pages/settings/composables/useSettingsImport';
 
 const { importerRef, version, onExport, triggerImport, onImportChange } = useSettingsImport();
 </script>

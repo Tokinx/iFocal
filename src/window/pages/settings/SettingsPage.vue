@@ -7,5 +7,5 @@
 <script setup lang="ts">
 import { defineAsyncComponent } from 'vue'
 
-const WindowSettingsCenter = defineAsyncComponent(() => import('../components/WindowSettingsCenter.vue'))
+const WindowSettingsCenter = defineAsyncComponent(() => import('./WindowSettingsCenter.vue'))
 </script>
