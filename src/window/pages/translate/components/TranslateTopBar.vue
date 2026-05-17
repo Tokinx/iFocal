@@ -1,6 +1,6 @@
 <template>
-  <header class="flex items-center justify-between gap-2 px-4 py-3 border-b border-olive-200">
-    <div class="flex items-center gap-2">
+  <header class="flex items-center justify-between gap-2 p-3 border-b border-olive-200">
+    <div class="flex items-center gap-1">
       <DropdownMenu>
         <DropdownMenuTrigger as-child>
           <Button variant="outline" class="h-8 rounded-xl px-3 bg-white hover:bg-olive-50">
@@ -18,12 +18,16 @@
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <Button variant="ghost" size="icon" class="h-8 w-8 rounded-xl text-olive-600 hover:bg-olive-100"
-        :disabled="sourceLang === 'auto'"
-        title="互换语言"
-        @click="$emit('swapLanguages')">
-        <Icon icon="ri:arrow-left-right-line" class="h-4 w-4" />
-      </Button>
+      <Tooltip>
+        <TooltipTrigger as-child>
+          <Button variant="ghost" size="icon" class="h-8 w-8 rounded-xl text-olive-600 hover:bg-olive-100"
+            :disabled="sourceLang === 'auto'"
+            @click="$emit('swapLanguages')">
+            <Icon icon="ri:arrow-left-right-line" class="h-4 w-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>互换语言</TooltipContent>
+      </Tooltip>
 
       <DropdownMenu>
         <DropdownMenuTrigger as-child>
@@ -62,7 +66,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import type { TranslateLanguageOption } from './useTranslatePage'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import type { TranslateLanguageOption } from '../useTranslatePage'
 
 const props = defineProps<{
   sourceLang: string

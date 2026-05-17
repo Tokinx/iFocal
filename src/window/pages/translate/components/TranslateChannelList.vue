@@ -1,5 +1,5 @@
 <template>
-  <div class="flex h-full min-h-0 flex-col gap-2">
+  <div class="flex h-full min-h-0 flex-col gap-3">
     <ScrollArea class="flex-1 min-h-0">
       <draggable
         v-model="modelValueLocal"
@@ -7,13 +7,14 @@
         handle=".ifocal-drag-handle"
         :animation="180"
         ghost-class="ifocal-drag-ghost"
-        class="space-y-2 pr-1"
+        class="space-y-3"
         @end="onDragEnd">
         <template #item="{ element }">
           <TranslateChannelCard
             :card="element"
             :runtime="ensureRuntime(element.id)"
             :title="titles[element.id] || ''"
+            :subtitle="subtitles?.[element.id] || ''"
             @refresh="(id) => $emit('refresh', id)"
             @toggleCollapsed="(id) => $emit('toggleCollapsed', id)"
             @remove="(id) => $emit('remove', id)" />
@@ -47,6 +48,7 @@ import type { TranslateCardItem, TranslateCardKind, TranslateCardRuntime } from 
 const props = defineProps<{
   cards: TranslateCardItem[]
   titles: Record<string, string>
+  subtitles?: Record<string, string>
   machineChannels: MachineTranslateChannel[]
   groupedAiModels: Record<string, Array<{ key: string; channel: string; model: string }>>
   ensureRuntime: (id: string) => TranslateCardRuntime

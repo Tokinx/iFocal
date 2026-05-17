@@ -29,6 +29,7 @@ export interface TranslateCardRuntime {
   error: string
   durationMs: number
   startedAt: number
+  lastText: string
 }
 
 export interface TranslateLanguageOption {
@@ -140,19 +141,35 @@ export function useTranslatePage() {
     return map
   })
 
+  const cardSubtitleMap = computed(() => {
+    const map: Record<string, string> = {}
+    for (const card of cards.value) {
+      map[card.id] = resolveCardSubtitle(card)
+    }
+    return map
+  })
+
   function resolveCardTitle(card: TranslateCardItem): string {
     if (card.kind === 'machine') {
       const channel = machineChannels.value.find((c) => c.id === card.ref)
-      return channel ? `机器翻译 · ${channel.name}` : '机器翻译 · 未配置'
+      return channel ? `${channel.name}` : '未配置'
     }
     const pair = aiPairOptions.value.find((p) => p.key === card.ref)
-    if (pair) return `AI · ${pair.modelLabel}（${pair.channel}）`
-    return 'AI · 未配置'
+    if (pair) return pair.modelLabel
+    return '未配置'
+  }
+
+  function resolveCardSubtitle(card: TranslateCardItem): string {
+    if (card.kind === 'ai') {
+      const pair = aiPairOptions.value.find((p) => p.key === card.ref)
+      return pair ? pair.channel : ''
+    }
+    return ''
   }
 
   function ensureRuntime(id: string): TranslateCardRuntime {
     if (!runtime[id]) {
-      runtime[id] = { loading: false, result: '', error: '', durationMs: 0, startedAt: 0 }
+      runtime[id] = { loading: false, result: '', error: '', durationMs: 0, startedAt: 0, lastText: '' }
     }
     return runtime[id]
   }
@@ -269,7 +286,12 @@ export function useTranslatePage() {
     if (!card) return
     card.collapsed = !card.collapsed
     if (!card.collapsed) {
-      void runCard(card)
+      const rt = ensureRuntime(card.id)
+      const text = sourceText.value.trim()
+      const hasFreshResult = !!rt.result && rt.lastText === text && text.length > 0
+      if (!hasFreshResult) {
+        void runCard(card)
+      }
     }
   }
 
@@ -284,6 +306,7 @@ export function useTranslatePage() {
       rt.result = ''
       rt.error = ''
       rt.loading = false
+      rt.lastText = ''
       return
     }
     if (card.collapsed) return
@@ -298,6 +321,7 @@ export function useTranslatePage() {
       } else {
         await runAiCard(card, rt, text)
       }
+      if (!rt.error) rt.lastText = text
     } catch (e: any) {
       rt.error = String(e?.message || e || '调用失败')
     } finally {
@@ -413,6 +437,7 @@ export function useTranslatePage() {
     sourceLangOptions,
     targetLangOptions,
     cardTitleMap,
+    cardSubtitleMap,
     initializing,
     defaultAiPairKey,
     mtDefaultChannelId,

@@ -1,7 +1,7 @@
 <template>
   <DropdownMenu v-model:open="open">
     <DropdownMenuTrigger as-child>
-      <Button variant="outline" class="w-full h-9 rounded-xl border-dashed border-olive-300 text-olive-500 hover:bg-olive-50">
+      <Button variant="outline" class="w-full h-9 rounded-lg border-dashed border-olive-300 text-olive-500 hover:bg-olive-50">
         <Icon icon="ri:add-line" class="h-4 w-4 mr-1" />
         添加翻译渠道
       </Button>
