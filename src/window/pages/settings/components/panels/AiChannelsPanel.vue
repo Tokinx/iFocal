@@ -3,10 +3,9 @@ import Icon from '@/components/ui/icon/Icon.vue';
 import { iconOfAction } from '@/shared/icons';
 import { useSettingsStore } from '@/window/pages/settings/composables/useSettingsStore';
 import { useChannelExtras } from '@/window/pages/settings/composables/useChannelExtras';
-import AddAiChannelDialog from './AddAiChannelDialog.vue';
 
 const store = useSettingsStore();
-const { channels, testModel, modelOptionsOf } = store;
+const { channels, addForm, testModel, modelOptionsOf } = store;
 const {
   showApiKeyByIndex,
   modelsTextByIndex,
@@ -15,6 +14,7 @@ const {
   dragOverIndex,
   isDraggable,
   fetchingModels,
+  fetchingAddFormModels,
   showAddChannel,
   editStatus,
   openAddChannel,
@@ -30,6 +30,7 @@ const {
   handleDragEnd,
   handleDragLeave,
   fetchModels,
+  fetchAddFormModels,
 } = useChannelExtras(store);
 </script>
 
@@ -38,14 +39,99 @@ const {
     <header class="flex items-center h-10 text-base font-semibold">
       <div class="shrink-0">渠道管理</div>
       <div class="w-full"></div>
-      <Button size="sm" @click="openAddChannel" class="rounded-xl">
+      <Button size="sm" @click="openAddChannel" class="rounded-xl" :disabled="showAddChannel">
         <Icon icon="proicons:box-add" width="16" />
         添加渠道
       </Button>
     </header>
 
-    <div v-if="!channels.length" class="text-sm text-muted-foreground">暂无渠道，请先添加。</div>
-    <div v-else class="space-y-3">
+    <div v-if="showAddChannel" class="border p-4 space-y-3 rounded-2xl">
+      <div class="flex items-center justify-between gap-4">
+        <div>
+          <label class="text-sm font-medium leading-none block mb-1">新增 AI 渠道</label>
+          <p class="text-xs text-muted-foreground">填写后点击添加即可保存</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <Button class="bg-primary text-primary-foreground rounded-xl" @click="handleAddChannelDialog">添加</Button>
+          <Button variant="outline" @click="closeAddChannel" class="rounded-xl">取消</Button>
+        </div>
+      </div>
+      <div class="space-y-3">
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <label class="text-sm font-medium leading-none block mb-1">类型</label>
+            <p class="text-xs text-muted-foreground">渠道提供方</p>
+          </div>
+          <div class="w-64">
+            <Select v-model="addForm.type">
+              <SelectTrigger class="w-full rounded-xl">
+                <SelectValue placeholder="选择类型" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="openai">OpenAI</SelectItem>
+                <SelectItem value="gemini">Google Gemini</SelectItem>
+                <SelectItem value="openai-compatible">OpenAI 兼容</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <label class="text-sm font-medium leading-none block mb-1">名称</label>
+            <p class="text-xs text-muted-foreground">用于区分不同渠道</p>
+          </div>
+          <div class="w-64">
+            <Input v-model="addForm.name" placeholder="如 my-openai" class="rounded-xl" />
+          </div>
+        </div>
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <label class="text-sm font-medium leading-none block mb-1">API URL</label>
+            <p class="text-xs text-muted-foreground">可留空以使用默认地址</p>
+          </div>
+          <div class="w-[32rem]">
+            <Input v-model="addForm.apiUrl" placeholder="留空使用默认" class="rounded-xl" />
+          </div>
+        </div>
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <label class="text-sm font-medium leading-none block mb-1">API KEY</label>
+            <p class="text-xs text-muted-foreground">可留空</p>
+          </div>
+          <div class="w-[32rem]">
+            <Input v-model="addForm.apiKey" placeholder="可留空" class="rounded-xl" />
+          </div>
+        </div>
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <label class="text-sm font-medium leading-none block mb-1">兼容模式</label>
+            <p class="text-xs text-muted-foreground">开启后将 SystemPrompt 与 UserPrompt 合并，以 User 角色发送</p>
+          </div>
+          <div>
+            <Switch v-model="addForm.systemPromptCompatMode" />
+          </div>
+        </div>
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <label class="text-sm font-medium leading-none block mb-1">Models</label>
+            <p class="text-xs text-muted-foreground">每行一个，支持 id#name 格式自定义显示名称</p>
+          </div>
+          <div class="w-[32rem] space-y-2 shrink-0">
+            <Textarea v-model="addForm.modelsText" class="h-40 rounded-xl"
+              placeholder="gpt-4o&#10;gpt-4o-mini#GPT-4o Mini" />
+            <Button variant="outline" size="sm" class="flex items-center gap-1 rounded-xl"
+              @click="fetchAddFormModels" :disabled="fetchingAddFormModels">
+              <Icon v-if="!fetchingAddFormModels" icon="lucide:download" width="14" />
+              <Icon v-else icon="line-md:loading-twotone-loop" width="14" class="animate-spin" />
+              {{ fetchingAddFormModels ? '获取中...' : '获取模型列表' }}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="!channels.length && !showAddChannel" class="text-sm text-muted-foreground">暂无渠道，请先添加。</div>
+    <div v-else-if="channels.length" class="space-y-3">
       <div v-for="(ch, idx) in channels" :key="idx" class="border p-4 space-y-3 transition-all rounded-2xl"
         :class="{ 'opacity-50': draggedIndex === idx, 'border-primary border-2': dragOverIndex === idx }"
         :draggable="isDraggable[idx]" @dragstart="handleDragStart(idx)" @dragover="handleDragOver($event, idx)"
@@ -66,7 +152,7 @@ const {
             </div>
           </div>
           <div class="flex items-center gap-2 w-64">
-            <div class="w-full">
+            <div class="flex-1 w-0">
               <Select v-model="testModel[idx]">
                 <SelectTrigger class="w-full rounded-xl">
                   <SelectValue placeholder="选择模型" />
@@ -179,8 +265,5 @@ const {
         </div>
       </div>
     </div>
-
-    <AddAiChannelDialog :open="showAddChannel" @update:open="(v: boolean) => showAddChannel = v"
-      @confirm="handleAddChannelDialog" @cancel="closeAddChannel" />
   </section>
 </template>
