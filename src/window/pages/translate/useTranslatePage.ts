@@ -336,7 +336,19 @@ export function useTranslatePage() {
     const trimmed = ref.trim()
     if (!trimmed) return
     if (cardForRef(kind, trimmed)) return
-    cards.value.push({ id: randomId(), kind, ref: trimmed, collapsed: false })
+    const newCard: TranslateCardItem = { id: randomId(), kind, ref: trimmed, collapsed: false }
+    cards.value.push(newCard)
+
+    const text = sourceText.value.trim()
+    if (!text) return
+    const hasOtherResult = cards.value.some((c) => {
+      if (c.id === newCard.id) return false
+      const rt = runtime[c.id]
+      return !!(rt && (rt.result || rt.error || rt.loading))
+    })
+    if (hasOtherResult) {
+      void runCard(newCard)
+    }
   }
 
   function removeCard(id: string) {
