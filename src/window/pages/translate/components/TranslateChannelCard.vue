@@ -23,7 +23,7 @@
           <span v-else class="truncate text-sm font-medium text-olive-700">{{ title }}</span>
         </div>
         <div class="flex items-center gap-0.5">
-          <Tooltip v-if="!card.collapsed && runtime.result">
+          <Tooltip v-if="!card.collapsed && (runtime.result || runtime.error)">
             <TooltipTrigger as-child>
               <Button variant="ghost" size="icon" class="h-6 w-6 rounded-lg text-olive-500 hover:bg-olive-100"
                 :disabled="runtime.loading" @click="$emit('refresh', card.id)">
@@ -32,7 +32,7 @@
             </TooltipTrigger>
             <TooltipContent>刷新</TooltipContent>
           </Tooltip>
-          <Tooltip v-if="!card.collapsed && runtime.result">
+          <Tooltip v-if="!card.collapsed && (runtime.result || runtime.error)">
             <TooltipTrigger as-child>
               <Button variant="ghost" size="icon" class="h-6 w-6 rounded-lg text-olive-500 hover:bg-olive-100"
                 @click="copyResult">
@@ -69,7 +69,7 @@
       <div v-if="runtime.loading" class="flex items-center text-xs gap-2 text-olive-400">
         <span class="shimmer-text">正在翻译...</span>
       </div>
-      <div v-else-if="runtime.error" class="text-red-500 whitespace-pre-wrap">
+      <div v-else-if="runtime.error" class="text-xs text-red-500 whitespace-pre-wrap">
         {{ runtime.error }}
       </div>
       <div v-else-if="runtime.result" class="whitespace-pre-wrap text-olive-800">

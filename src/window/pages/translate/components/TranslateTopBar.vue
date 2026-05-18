@@ -50,37 +50,13 @@
       </Button>
     </div>
 
-    <div class="flex items-center gap-1">
+    <div class="flex items-center gap-2 mr-1">
       <Tooltip>
         <TooltipTrigger as-child>
-          <Button
-            variant="ghost"
-            size="icon"
-            :aria-pressed="watchClipboard"
-            :class="[
-              'h-8 w-8 rounded-lg',
-              watchClipboard ? 'bg-amber-100 text-amber-700 hover:bg-amber-100' : 'text-olive-600 hover:bg-olive-100',
-            ]"
-            @click="$emit('update:watchClipboard', !watchClipboard)">
-            <Icon icon="ri:clipboard-line" class="h-4 w-4" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>
-          {{ watchClipboard ? '已开启剪贴板监听' : '监听剪贴板（窗口聚焦时自动填入）' }}
-        </TooltipContent>
-      </Tooltip>
-
-      <Tooltip>
-        <TooltipTrigger as-child>
-          <Button
-            variant="ghost"
-            size="icon"
-            :aria-pressed="autoTranslate"
-            :class="[
-              'h-8 w-8 rounded-lg',
-              autoTranslate ? 'bg-amber-100 text-amber-700 hover:bg-amber-100' : 'text-olive-600 hover:bg-olive-100',
-            ]"
-            @click="$emit('update:autoTranslate', !autoTranslate)">
+          <Button variant="ghost" size="icon" :aria-pressed="autoTranslate" :class="[
+            'h-7 w-7 rounded-lg border border-olive-200',
+            autoTranslate ? 'bg-amber-100 text-amber-700 hover:bg-amber-100 border-amber-200' : 'text-olive-600 hover:bg-olive-100',
+          ]" @click="$emit('update:autoTranslate', !autoTranslate)">
             <Icon icon="proicons:bolt" class="h-4 w-4" />
           </Button>
         </TooltipTrigger>
@@ -89,16 +65,27 @@
         </TooltipContent>
       </Tooltip>
 
-      <div class="h-5 w-px bg-olive-200 mx-1" />
+      <Tooltip>
+        <TooltipTrigger as-child>
+          <Button variant="ghost" size="icon" :aria-pressed="watchClipboard" :class="[
+            'h-7 w-7 rounded-lg border border-olive-200',
+            watchClipboard ? 'bg-amber-100 text-amber-700 hover:bg-amber-100 border-amber-200' : 'text-olive-600 hover:bg-olive-100',
+          ]" @click="$emit('update:watchClipboard', !watchClipboard)">
+            <Icon icon="ri:clipboard-line" class="h-4 w-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          {{ watchClipboard ? '已开启剪贴板监听' : '监听剪贴板（窗口聚焦时自动填入）' }}
+        </TooltipContent>
+      </Tooltip>
 
-      <AddChannelDropdown
-        :machine-channels="machineChannels"
-        :grouped-ai-models="groupedAiModels"
-        :cards="cards"
+      <div class="h-5 w-px bg-olive-200" />
+
+      <AddChannelDropdown :machine-channels="machineChannels" :grouped-ai-models="groupedAiModels" :cards="cards"
         @add="(kind, ref) => $emit('addChannel', kind, ref)">
         <template #trigger>
           <Button variant="ghost" size="icon" title="添加翻译渠道"
-            class="h-8 w-8 rounded-lg text-olive-600 hover:bg-olive-100">
+            class="h-7 w-7 rounded-lg text-olive-600 hover:bg-olive-100 border border-olive-200">
             <Icon icon="ri:add-line" class="h-4 w-4" />
           </Button>
         </template>

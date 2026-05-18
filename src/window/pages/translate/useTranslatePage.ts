@@ -85,6 +85,57 @@ function syncGet<T = any>(keys: string[]): Promise<T> {
   })
 }
 
+type LangGroup = 'zh' | 'ja' | 'ko' | 'latin' | ''
+
+function detectLangGroup(text: string): LangGroup {
+  const sample = text.slice(0, 400)
+  if (!sample) return ''
+  const hiragana = (sample.match(/[぀-ゟ]/g) || []).length
+  const katakana = (sample.match(/[゠-ヿ]/g) || []).length
+  if (hiragana + katakana > 0) return 'ja'
+  const hangul = (sample.match(/[가-힯]/g) || []).length
+  if (hangul > 0) return 'ko'
+  const cjk = (sample.match(/[一-鿿]/g) || []).length
+  if (cjk > 0) return 'zh'
+  const latin = (sample.match(/[A-Za-z]/g) || []).length
+  if (latin > 0) return 'latin'
+  return ''
+}
+
+function langGroupOf(code: string): LangGroup {
+  const c = String(code || '').toLowerCase()
+  if (!c || c === 'auto') return ''
+  if (c.startsWith('zh')) return 'zh'
+  if (c === 'ja') return 'ja'
+  if (c === 'ko') return 'ko'
+  if (['en', 'fr', 'es', 'de'].includes(c)) return 'latin'
+  return ''
+}
+
+function decideDirection(
+  text: string,
+  srcLang: string,
+  tgtLang: string,
+): { src: string; tgt: string } {
+  const detected = detectLangGroup(text)
+  if (!detected) return { src: srcLang, tgt: tgtLang }
+  const tgtGroup = langGroupOf(tgtLang)
+
+  if (srcLang === 'auto') {
+    if (tgtGroup && detected === tgtGroup) {
+      const fallback = tgtLang === 'en' ? 'zh-CN' : 'en'
+      return { src: tgtLang, tgt: fallback }
+    }
+    return { src: srcLang, tgt: tgtLang }
+  }
+
+  const srcGroup = langGroupOf(srcLang)
+  if (tgtGroup && detected === tgtGroup && detected !== srcGroup) {
+    return { src: tgtLang, tgt: srcLang }
+  }
+  return { src: srcLang, tgt: tgtLang }
+}
+
 export function useTranslatePage() {
   const sourceLang = ref<string>('auto')
   const targetLang = ref<string>('zh-CN')
@@ -327,11 +378,13 @@ export function useTranslatePage() {
     rt.error = ''
     rt.startedAt = Date.now()
 
+    const { src: effSrc, tgt: effTgt } = decideDirection(text, sourceLang.value, targetLang.value)
+
     try {
       if (card.kind === 'machine') {
-        await runMachineCard(card, rt, text)
+        await runMachineCard(card, rt, text, effSrc, effTgt)
       } else {
-        await runAiCard(card, rt, text)
+        await runAiCard(card, rt, text, effSrc, effTgt)
       }
       if (!rt.error) rt.lastText = text
     } catch (e: any) {
@@ -342,7 +395,13 @@ export function useTranslatePage() {
     }
   }
 
-  function runMachineCard(card: TranslateCardItem, rt: TranslateCardRuntime, text: string) {
+  function runMachineCard(
+    card: TranslateCardItem,
+    rt: TranslateCardRuntime,
+    text: string,
+    effSrc: string,
+    effTgt: string,
+  ) {
     return new Promise<void>((resolve) => {
       try {
         chrome.runtime.sendMessage(
@@ -350,8 +409,8 @@ export function useTranslatePage() {
             action: 'machineTranslateBatch',
             channelId: card.ref,
             texts: [text],
-            sourceLang: sourceLang.value === 'auto' ? '' : sourceLang.value,
-            targetLang: targetLang.value,
+            sourceLang: effSrc === 'auto' ? '' : effSrc,
+            targetLang: effTgt,
             format: 'plain',
           },
           (resp: any) => {
@@ -380,7 +439,13 @@ export function useTranslatePage() {
     })
   }
 
-  function runAiCard(card: TranslateCardItem, rt: TranslateCardRuntime, text: string) {
+  function runAiCard(
+    card: TranslateCardItem,
+    rt: TranslateCardRuntime,
+    text: string,
+    effSrc: string,
+    effTgt: string,
+  ) {
     return new Promise<void>((resolve) => {
       const [channel, modelId] = card.ref.split('|')
       try {
@@ -389,8 +454,8 @@ export function useTranslatePage() {
             action: 'performAiAction',
             task: 'translate',
             text,
-            targetLang: targetLang.value,
-            prevLang: sourceLang.value === 'auto' ? 'en' : sourceLang.value,
+            targetLang: effTgt,
+            prevLang: effSrc === 'auto' ? 'en' : effSrc,
             channel,
             model: modelId,
             requestId: `translate-${card.id}-${Date.now()}`,
