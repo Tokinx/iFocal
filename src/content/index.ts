@@ -44,11 +44,14 @@ function shouldInsertBreakFromSource(text: string): boolean {
 function shouldUseTranslatedBreak(wrapper: HTMLElement, blockEl: HTMLElement | null, sourceText?: string): boolean {
   if (!blockEl || !sourceText) return false;
   if (wrapper.getAttribute('data-ifocal-inline-mode') === 'replace') return false;
+  if (wrapper.classList.contains('ifocal-fullpage-translation-replace')) return false;
   const tag = (blockEl.tagName || 'div').toLowerCase();
   return needsLineBreak(tag) && shouldInsertBreakFromSource(sourceText);
 }
 function shouldInsertTranslatedSpacer(wrapper: HTMLElement): boolean {
-  return wrapper.getAttribute('data-ifocal-inline-mode') !== 'replace';
+  if (wrapper.getAttribute('data-ifocal-inline-mode') === 'replace') return false;
+  if (wrapper.classList.contains('ifocal-fullpage-translation-replace')) return false;
+  return true;
 }
 function updateBreakForTranslated(blockEl: HTMLElement, source: string) {
   const tag = (blockEl.tagName || 'div').toLowerCase();
@@ -547,8 +550,13 @@ type FullPageTranslationTarget = {
   priority: number;
   observed: boolean;
 };
+type SessionTranslator = (
+  texts: string[],
+  format: 'html' | 'plain',
+) => Promise<{ translations: (string | null)[]; errors: (string | null)[]; error?: string; ok?: boolean }>;
 type FullPageTranslationSession = {
   id: string;
+  source: 'fullpage' | 'hover';
   targetLang: string;
   channelId?: string;
   styleName: string;
@@ -556,6 +564,7 @@ type FullPageTranslationSession = {
   scopeMode: FullPageScopeMode;
   visibleMode: FullPageVisibleMode;
   channelSupportsHtml: boolean;
+  translator?: SessionTranslator;
   targets: Map<string, FullPageTranslationTarget>;
   queue: string[];
   observer: IntersectionObserver | null;
@@ -858,10 +867,16 @@ function getDeepActiveElement(): Element | null {
   }
 }
 
-function findTextBlockElement(target: EventTarget | null): HTMLElement | null {
+function findTextBlockElement(
+  target: EventTarget | null,
+  point?: { x: number; y: number } | null,
+): HTMLElement | null {
   const element = target instanceof HTMLElement ? target : null;
   if (!element) return null;
   if (isInputArea(element)) return null;
+  if (hoverDisplayMode !== 'overlay') {
+    return findHoverInlineTarget(target, point);
+  }
   const inlineTranslation = element.closest('[data-ifocal-inline-translation="1"]') as HTMLElement | null;
   if (inlineTranslation) {
     const owner = inlineTranslation.parentElement;
@@ -885,7 +900,11 @@ document.addEventListener('mouseover', (event) => {
     hoveredElement = null;
     return;
   }
-  hoveredElement = findTextBlockElement(event.target);
+  const me = event as MouseEvent;
+  const point = Number.isFinite(me.clientX) && Number.isFinite(me.clientY)
+    ? { x: me.clientX, y: me.clientY }
+    : null;
+  hoveredElement = findTextBlockElement(event.target, point);
 });
 
 document.addEventListener('mouseout', (event) => {
@@ -1532,6 +1551,7 @@ async function translateStructuredTargetsWithPlainFallback<T extends StructuredT
   targets: T[],
   targetLang: string,
   channelId?: string,
+  translator?: SessionTranslator,
 ): Promise<Array<{ target: T; html?: string; error?: string }>> {
   const prepared = targets.map((target) => {
     const container = document.createElement('div');
@@ -1549,9 +1569,12 @@ async function translateStructuredTargetsWithPlainFallback<T extends StructuredT
     item.tasks.forEach((task) => allTasks.push({ owner: item, task }));
   });
 
-  let resp: { ok?: boolean; translations?: string[]; errors?: string[]; error?: string } = { ok: true, translations: [], errors: [] };
+  let resp: { ok?: boolean; translations?: (string | null)[]; errors?: (string | null)[]; error?: string } = { ok: true, translations: [], errors: [] };
   if (allTasks.length) {
-    resp = await machineTranslateTexts(allTasks.map((item) => item.task.source), targetLang, channelId, 'plain');
+    const texts = allTasks.map((item) => item.task.source);
+    resp = translator
+      ? await translator(texts, 'plain')
+      : await machineTranslateTexts(texts, targetLang, channelId, 'plain');
   }
 
   allTasks.forEach((item, index) => {
@@ -1828,15 +1851,22 @@ function observeFullPageTarget(session: FullPageTranslationSession, target: Full
   } catch {}
 }
 
-function createFullPageTarget(element: HTMLElement, session: FullPageTranslationSession): FullPageTranslationTarget | null {
-  if (!isVisibleForFullPageTranslate(element)) return null;
+function createFullPageTarget(
+  element: HTMLElement,
+  session: FullPageTranslationSession,
+  options?: { relaxFilters?: boolean },
+): FullPageTranslationTarget | null {
+  const relax = !!options?.relaxFilters;
+  if (!relax && !isVisibleForFullPageTranslate(element)) return null;
   if (element.dataset.ifocalFullPageTargetId) {
     const existing = session.targets.get(element.dataset.ifocalFullPageTargetId);
     if (existing) return existing;
   }
 
   const extracted = extractTranslatableHtml(element);
-  if (!extracted.text || extracted.text.length < 2 || extracted.text.length > FULL_PAGE_MAX_TEXT_LENGTH) return null;
+  if (!extracted.text) return null;
+  if (!relax && extracted.text.length < 2) return null;
+  if (extracted.text.length > FULL_PAGE_MAX_TEXT_LENGTH) return null;
   if (!extracted.html) return null;
 
   const id = nextFullPageTargetId();
@@ -2003,9 +2033,9 @@ function resolveTargetTranslationError(error: unknown): string {
 
 function applyFullPageBatchResult(session: FullPageTranslationSession, target: FullPageTranslationTarget, html: string, error = '') {
   if (html) {
-    renderFullPageTargetTranslation(target, session, html);
     target.status = 'done';
     target.error = '';
+    renderFullPageTargetTranslation(target, session, html);
   } else {
     target.status = 'failed';
     target.error = error || '翻译返回空结果';
@@ -2024,7 +2054,9 @@ async function processFullPageQueue(session: FullPageTranslationSession) {
       if (!batch.length) break;
       try {
         if (session.channelSupportsHtml) {
-          const resp = await machineTranslateTexts(batch.map((item) => item.html), session.targetLang, session.channelId, 'html');
+          const resp = session.translator
+            ? await session.translator(batch.map((item) => item.html), 'html')
+            : await machineTranslateTexts(batch.map((item) => item.html), session.targetLang, session.channelId, 'html');
           batch.forEach((target, index) => {
             const translated = String(resp.translations?.[index] || '').trim();
             const error = String(resp.errors?.[index] || resp.error || '').trim();
@@ -2032,7 +2064,7 @@ async function processFullPageQueue(session: FullPageTranslationSession) {
             applyFullPageBatchResult(session, target, html, error);
           });
         } else {
-          const results = await translateStructuredTargetsWithPlainFallback(batch, session.targetLang, session.channelId);
+          const results = await translateStructuredTargetsWithPlainFallback(batch, session.targetLang, session.channelId, session.translator);
           results.forEach((item) => {
             applyFullPageBatchResult(session, item.target, String(item.html || '').trim(), item.error || '');
           });
@@ -2157,6 +2189,10 @@ function disposeFullPageSession(session: FullPageTranslationSession) {
 }
 
 async function translateFullPage() {
+  if (fullPageSession && fullPageSession.source === 'hover') {
+    disposeFullPageSession(fullPageSession);
+    fullPageSession = null;
+  }
   if (fullPageSession) {
     if (fullPageSession.visibleMode === 'original') {
       return showFullPageTranslation();
@@ -2186,6 +2222,7 @@ async function translateFullPage() {
 
     const session: FullPageTranslationSession = {
       id: `session_${Date.now().toString(36)}`,
+      source: 'fullpage',
       targetLang,
       channelId,
       styleName,
@@ -2193,6 +2230,7 @@ async function translateFullPage() {
       scopeMode,
       visibleMode: 'translation',
       channelSupportsHtml: machineChannelSupportsHtml(channel),
+      translator: undefined,
       targets: new Map(),
       queue: [],
       observer: null,
@@ -2361,6 +2399,260 @@ function hideSelectionDot() {
 
 // updateBreakForTranslated 已抽取到共享模块
 
+function findHoverInlineTarget(
+  target: EventTarget | null,
+  point?: { x: number; y: number } | null,
+): HTMLElement | null {
+  const element = target instanceof HTMLElement ? target : null;
+  if (!element) return null;
+  if (isInputArea(element)) return null;
+  const inlineTranslation = element.closest('[data-ifocal-inline-translation="1"]') as HTMLElement | null;
+  if (inlineTranslation) {
+    const owner = inlineTranslation.parentElement;
+    if (owner && !isIfocalElement(owner) && !isExcludedTranslateElement(owner)) return owner;
+  }
+  const fullPageHost = element.closest('[data-ifocal-full-page="1"]') as HTMLElement | null;
+  if (fullPageHost) {
+    const owner = fullPageHost.parentElement;
+    if (owner && !isIfocalElement(owner) && !isExcludedTranslateElement(owner)) return owner;
+  }
+
+  const matchCoreFromAncestors = (start: HTMLElement | null): HTMLElement | null => {
+    let current: HTMLElement | null = start;
+    while (current && current !== document.body) {
+      if (isIfocalElement(current)) return null;
+      if (isExcludedTranslateElement(current)) return null;
+      if (current.tagName === 'A') {
+        current = current.parentElement;
+        continue;
+      }
+      try {
+        if (current.matches(FULL_PAGE_CORE_SELECTOR) && (current.innerText || '').trim()) return current;
+      } catch {}
+      current = current.parentElement;
+    }
+    return null;
+  };
+
+  const direct = matchCoreFromAncestors(element);
+  if (direct) return direct;
+
+  if (point) {
+    try {
+      const stack = document.elementsFromPoint(point.x, point.y);
+      for (const node of stack) {
+        if (!(node instanceof HTMLElement)) continue;
+        if (node === element) continue;
+        if (isIfocalElement(node) || isExcludedTranslateElement(node)) continue;
+        const hit = matchCoreFromAncestors(node);
+        if (hit) return hit;
+      }
+    } catch {}
+  }
+
+  let container: HTMLElement | null = null;
+  let cursor: HTMLElement | null = element;
+  while (cursor && cursor !== document.body) {
+    if (isIfocalElement(cursor)) return null;
+    if (isExcludedTranslateElement(cursor)) return null;
+    try {
+      if (
+        cursor.tagName !== 'A'
+        && cursor.matches(FULL_PAGE_FALLBACK_SELECTOR)
+        && (cursor.innerText || '').trim()
+      ) {
+        container = cursor;
+        break;
+      }
+    } catch {}
+    cursor = cursor.parentElement;
+  }
+  if (!container) return null;
+  if (!container.querySelector(FULL_PAGE_CORE_SELECTOR)) return container;
+  if (!point) return null;
+
+  let best: HTMLElement | null = null;
+  let bestDist = Infinity;
+  container.querySelectorAll(FULL_PAGE_CORE_SELECTOR).forEach((raw) => {
+    const node = raw as HTMLElement;
+    if (!(node instanceof HTMLElement)) return;
+    if (isIfocalElement(node) || isExcludedTranslateElement(node)) return;
+    if (!(node.innerText || '').trim()) return;
+    let rect: DOMRect;
+    try {
+      rect = node.getBoundingClientRect();
+    } catch {
+      return;
+    }
+    if (rect.width === 0 || rect.height === 0) return;
+    const dx = Math.max(rect.left - point.x, 0, point.x - rect.right);
+    const dy = Math.max(rect.top - point.y, 0, point.y - rect.bottom);
+    const dist = Math.hypot(dx, dy);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = node;
+    }
+  });
+  return best;
+}
+
+function buildHoverSession(opts: {
+  targetLang: string;
+  channelId?: string;
+  styleName: string;
+  displayMode: FullPageDisplayMode;
+  translator?: SessionTranslator;
+  channelSupportsHtml: boolean;
+}): FullPageTranslationSession {
+  return {
+    id: `hover_${Date.now().toString(36)}`,
+    source: 'hover',
+    targetLang: opts.targetLang,
+    channelId: opts.channelId,
+    styleName: opts.styleName,
+    displayMode: opts.displayMode,
+    scopeMode: 'page',
+    visibleMode: 'translation',
+    channelSupportsHtml: opts.channelSupportsHtml,
+    translator: opts.translator,
+    targets: new Map(),
+    queue: [],
+    observer: null,
+    mutationObserver: null,
+    scopeDecision: null,
+    processing: false,
+    translatedCount: 0,
+    failedCount: 0,
+  };
+}
+
+function createHoverAiTranslator(): SessionTranslator {
+  return async (texts: string[]) => {
+    const translations: (string | null)[] = [];
+    const errors: (string | null)[] = [];
+    for (const text of texts) {
+      const result = await new Promise<{ translated: string; error: string }>((resolve) => {
+        try {
+          chrome.runtime.sendMessage(
+            { action: 'performAiAction', task: 'translate', text },
+            (response: { ok?: boolean; result?: string; error?: string } | undefined) => {
+              try { void chrome.runtime.lastError; } catch {}
+              if (response && response.ok && typeof response.result === 'string') {
+                resolve({ translated: response.result, error: '' });
+                return;
+              }
+              resolve({ translated: '', error: String(response?.error || '翻译失败') });
+            },
+          );
+        } catch (err: any) {
+          resolve({ translated: '', error: String(err?.message || err || '翻译失败') });
+        }
+      });
+      translations.push(result.translated || null);
+      errors.push(result.error || null);
+    }
+    return { ok: true, translations, errors };
+  };
+}
+
+async function ensureHoverSession(cfg: StorageConfig & any, useMachineMode: boolean): Promise<FullPageTranslationSession> {
+  const targetLang = String(cfg.translateTargetLang || 'zh-CN').trim() || 'zh-CN';
+  const styleName = String(cfg.wrapperStyleName || 'ifocal-target-style-dotted').trim() || 'ifocal-target-style-dotted';
+  const displayMode: FullPageDisplayMode = hoverDisplayMode === 'replace' ? 'replace' : 'insert';
+
+  let channelId: string | undefined;
+  let channelSupportsHtml = false;
+  let translator: SessionTranslator | undefined;
+  if (useMachineMode) {
+    channelId = String(cfg.mtDefaultChannelId || '').trim() || undefined;
+    const channel = resolveMachineChannel(channelId, cfg.mtChannels);
+    channelSupportsHtml = machineChannelSupportsHtml(channel);
+  } else {
+    translator = createHoverAiTranslator();
+    channelSupportsHtml = false;
+  }
+
+  ensureDocLoadingStyle();
+  ensureTargetStylePresets(cfg.targetStylePresets || null);
+
+  if (fullPageSession && fullPageSession.source === 'fullpage') {
+    return fullPageSession;
+  }
+
+  if (fullPageSession && fullPageSession.source === 'hover') {
+    const same =
+      fullPageSession.targetLang === targetLang
+      && fullPageSession.styleName === styleName
+      && fullPageSession.displayMode === displayMode
+      && fullPageSession.channelId === channelId
+      && fullPageSession.channelSupportsHtml === channelSupportsHtml
+      && !!fullPageSession.translator === !!translator;
+    if (same) return fullPageSession;
+    disposeFullPageSession(fullPageSession);
+    fullPageSession = null;
+  }
+
+  const session = buildHoverSession({
+    targetLang,
+    channelId,
+    styleName,
+    displayMode,
+    translator,
+    channelSupportsHtml,
+  });
+  fullPageSession = session;
+  return session;
+}
+
+function toggleHoverInlineTranslate(blockEl: HTMLElement) {
+  try {
+    const existingId = blockEl.dataset.ifocalFullPageTargetId || '';
+    if (existingId && fullPageSession) {
+      const existing = fullPageSession.targets.get(existingId);
+      if (existing) {
+        removeFullPageTarget(existing, fullPageSession);
+        syncFullPageSessionCounts(fullPageSession);
+        return;
+      }
+    }
+    if (
+      blockEl.dataset.fcTranslated === '1'
+      || blockEl.querySelector<HTMLElement>('font.ifocal-target-wrapper.notranslate')
+      || blockEl.querySelector<HTMLElement>('[data-ifocal-inline-translation="1"]')
+    ) {
+      clearInlineHoverTranslation(blockEl);
+      return;
+    }
+  } catch {}
+
+  chrome.storage.sync.get(
+    [
+      'translateTargetLang',
+      'wrapperStyleName',
+      'targetStylePresets',
+      'selectionTranslationMode',
+      'hoverTranslationMode',
+      'mtChannels',
+      'mtDefaultChannelId',
+    ],
+    async (cfg: StorageConfig & any) => {
+      try {
+        const useMachineMode = shouldUseMachineTranslation(resolveHoverTranslationMode(cfg));
+        clearInlineHoverTranslation(blockEl);
+        const session = await ensureHoverSession(cfg, useMachineMode);
+        const target = createFullPageTarget(blockEl, session, { relaxFilters: true });
+        if (!target) {
+          console.warn('toggleHoverInlineTranslate: no translatable content');
+          return;
+        }
+        enqueueFullPageTarget(session, target, 0);
+      } catch (err) {
+        console.warn('toggleHoverInlineTranslate failed', err);
+      }
+    },
+  );
+}
+
 function toggleHoverTranslate(blockEl: HTMLElement) {
   if (!chrome?.runtime) return;
   try {
@@ -2385,58 +2677,7 @@ function toggleHoverTranslate(blockEl: HTMLElement) {
       return;
     }
 
-    if (blockEl.dataset.fcTranslated === '1' || blockEl.querySelector<HTMLElement>('font.ifocal-target-wrapper.notranslate') || blockEl.querySelector<HTMLElement>('[data-ifocal-inline-translation="1"]')) {
-      clearInlineHoverTranslation(blockEl);
-      return;
-    }
-
-    chrome.storage.sync.get(['translateTargetLang', 'wrapperStyleName', 'targetStylePresets', 'selectionTranslationMode', 'hoverTranslationMode', 'mtChannels', 'mtDefaultChannelId'], (cfg: StorageConfig & any) => {
-      const useMachineMode = shouldUseMachineTranslation(resolveHoverTranslationMode(cfg));
-      const inlineMode: InlineHoverTranslationMode = hoverDisplayMode === 'replace' ? 'replace' : 'insert';
-      const structuredSource = useMachineMode ? extractTranslatableHtml(blockEl) : null;
-      const sourceText = String(structuredSource?.text || blockEl.innerText || '').trim();
-      const langCode = (cfg.translateTargetLang || 'zh-CN').trim();
-      const styleName = (cfg.wrapperStyleName || 'ifocal-target-style-dotted').trim();
-      ensureDocLoadingStyle();
-      ensureTargetStylePresets(cfg.targetStylePresets as any[]);
-      const hosts = ensureInlineHoverHosts(blockEl, inlineMode);
-      // 统一创建 wrapper，并标注样式名供 applyWrapperResult 使用
-      const wrapper = sharedCreateWrapper(`inline_${Date.now()}`, langCode);
-      try { wrapper.setAttribute('data-tx-style', styleName); } catch {}
-      try { wrapper.setAttribute('data-ifocal-inline-mode', inlineMode); } catch {}
-      hosts.wrapperParent.appendChild(wrapper);
-      if (inlineMode === 'replace') {
-        setInlineHoverLoadingState(blockEl, inlineMode, true);
-      } else {
-        sharedApplyWrapperLoading(wrapper, sourceText);
-      }
-      try { blockEl.setAttribute('aria-busy', 'true'); } catch {}
-
-      if (useMachineMode) {
-        const pending = structuredSource?.html
-          ? translateStructuredInputWithMachine(structuredSource, langCode, cfg.mtDefaultChannelId, cfg.mtChannels)
-          : Promise.resolve({ html: '', error: '未找到可翻译内容' });
-        void pending.then((response) => {
-          blockEl.dataset.fcTranslated = '1';
-          setInlineHoverLoadingState(blockEl, inlineMode, false);
-          if (response.html) {
-            sharedApplyWrapperHtmlResult(wrapper, response.html, langCode, sourceText);
-            return;
-          }
-          const resultText = response.error ? `【错误】${response.error}` : '';
-          sharedApplyWrapperResult(wrapper, resultText, langCode, undefined, sourceText);
-        });
-        return;
-      }
-
-      chrome.runtime.sendMessage({ action: 'performAiAction', task: 'translate', text: sourceText }, (response: { ok?: boolean; result?: string; error?: string } | undefined) => {
-        try { void chrome.runtime.lastError; } catch { }
-        blockEl.dataset.fcTranslated = '1';
-        setInlineHoverLoadingState(blockEl, inlineMode, false);
-        const msg = response && response.ok ? response.result : response?.error || '';
-        sharedApplyWrapperResult(wrapper, msg || '', langCode, undefined, sourceText);
-      });
-    });
+    toggleHoverInlineTranslate(blockEl);
   } catch (error) {
     console.warn('toggleHoverTranslate failed', error);
   }
