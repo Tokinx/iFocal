@@ -713,6 +713,7 @@ function observeScrollContentForBottom(scrollableEl: HTMLElement, token: number,
 
 // 滚动到底部
 function scrollToBottom(force = false) {
+  if (!isAssistantRoute.value) return;
   nextTick(() => {
     const scrollableEl = getScrollableElement();
     if (scrollableEl) {
@@ -773,6 +774,7 @@ function handleRouteAfterEnter() {
 
 // 智能滚动：将指定元素滚动到距离顶部指定偏移量的位置
 function scrollToElement(element: HTMLElement, offsetTop = 60) {
+  if (!isAssistantRoute.value) return;
   nextTick(() => {
     const scrollableEl = getScrollableElement();
     if (scrollableEl && element) {

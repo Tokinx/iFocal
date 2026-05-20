@@ -77,6 +77,11 @@ async function createSession(options: SessionOptions): Promise<any> {
     createOpts.temperature = options.temperature;
     createOpts.topK = options.topK;
   }
+  // Chrome 内置 LanguageModel 自 2024 末起要求显式声明 expected I/O 语言，否则会在
+  // 控制台打印 "No output language was specified" 警告。当前 Chrome 官方支持
+  // [en, es, ja]，未声明的语言模型仍可处理，仅不保证质量。声明这三种以消除警告。
+  createOpts.expectedInputs = [{ type: 'text', languages: ['en', 'es', 'ja'] }];
+  createOpts.expectedOutputs = [{ type: 'text', languages: ['en', 'es', 'ja'] }];
   if (options.signal) createOpts.signal = options.signal;
   if (options.onDownloadProgress) {
     createOpts.monitor = (m: any) => {
