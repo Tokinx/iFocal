@@ -10,6 +10,8 @@ import type {
   LocalLlmProbeResult,
   LocalLlmProviderId,
   LocalLlmRequest,
+  LocalLlmMessage,
+  LocalLlmParams,
 } from '@/shared/local-llm-types';
 import { downloadGeminiNano, probeGeminiNano, streamGeminiNano } from './providers/gemini-nano';
 
@@ -92,10 +94,10 @@ async function runRequest(req: LocalLlmRequest, post: StreamPostFn): Promise<voi
 function pickProviderStream(
   providerId: LocalLlmProviderId,
   args: {
-    messages: Array<{ role: string; content: string }>;
-    params?: LocalLlmRequest['params'];
+    messages: LocalLlmMessage[];
+    params?: LocalLlmParams;
     signal: AbortSignal;
-    onDownloadProgress?: (progress: { loaded?: number; total?: number; percent?: number }) => void;
+    onDownloadProgress?: (progress: LocalLlmDownloadProgress) => void;
   },
 ): AsyncIterable<string> {
   if (providerId === 'gemini-nano') {

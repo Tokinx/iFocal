@@ -27,7 +27,10 @@ export async function probeGeminiNano(): Promise<LocalLlmProbeResult> {
   }
   try {
     const LM = (globalThis as any).LanguageModel;
-    const availabilityRaw: string = await LM.availability();
+    const availabilityRaw: string = await LM.availability({
+      expectedInputs: [{ type: 'text', languages: ['en', 'es', 'ja'] }],
+      expectedOutputs: [{ type: 'text', languages: ['en', 'es', 'ja'] }]
+    });
     const availability = normalizeAvailability(availabilityRaw);
 
     let defaultParams: LocalLlmParams | undefined;

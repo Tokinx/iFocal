@@ -323,7 +323,7 @@ try {
 
 chrome.commands.onCommand.addListener((command) => {
   if (command === 'open-global-window') {
-    openOrFocusGlobalWindow();
+    void openOrFocusGlobalWindow({ openAssistant: true });
     return;
   }
   if (command === 'translate-full-page') {
@@ -2623,7 +2623,7 @@ async function callGemini(
   });
 }
 
-async function openOrFocusGlobalWindow(options?: { openSettings?: boolean; openTranslate?: boolean }) {
+async function openOrFocusGlobalWindow(options?: { openSettings?: boolean; openTranslate?: boolean; openAssistant?: boolean }) {
   if (isOpeningGlobalWindow) return;
   isOpeningGlobalWindow = true;
   try {
@@ -2631,6 +2631,8 @@ async function openOrFocusGlobalWindow(options?: { openSettings?: boolean; openT
       try { await chrome.storage.local.set({ [GLOBAL_WIN_VIEW_KEY]: 'settings' }); } catch { }
     } else if (options?.openTranslate) {
       try { await chrome.storage.local.set({ [GLOBAL_WIN_VIEW_KEY]: 'translate' }); } catch { }
+    } else if (options?.openAssistant) {
+      try { await chrome.storage.local.set({ [GLOBAL_WIN_VIEW_KEY]: 'assistant' }); } catch { }
     }
     const distUrl = chrome.runtime.getURL('dist/window.html');
     const altDistUrl = chrome.runtime.getURL('dist/src/window/index.html');

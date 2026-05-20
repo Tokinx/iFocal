@@ -2321,6 +2321,8 @@ async function consumeRequestedWindowView(requestedView?: unknown) {
     navigateTo('settings');
   } else if (requestedView === 'translate') {
     navigateTo('translate');
+  } else if (requestedView === 'assistant') {
+    navigateTo('assistant');
   } else {
     return;
   }

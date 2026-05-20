@@ -471,6 +471,8 @@ export function useTranslatePage() {
             channel,
             model: modelId,
             requestId: `translate-${card.id}-${Date.now()}`,
+            enableReasoning: false,
+            enabledMcpServers: [],
           },
           (resp: any) => {
             try { void chrome.runtime.lastError } catch { }
