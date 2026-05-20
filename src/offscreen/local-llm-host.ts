@@ -18,12 +18,14 @@ import {
   argsHashKey,
   buildToolsSystemSnippet,
   feedToolBuffer,
+  finalizeToolBuffer,
   makeAssistantToolCallMessage,
   makeStatusEvent,
   makeToolBufferState,
   makeToolResultMessage,
   TOOL_LOOP_MAX_STEPS,
   type ParsedToolCall,
+  type ToolBufferChunk,
 } from './tool-loop';
 
 type StreamPostFn = (msg: LocalLlmHostOutbound) => void;
@@ -198,29 +200,35 @@ async function streamOneStep(
     },
   });
 
+  const knownToolNames = new Set((req.tools || []).map((t) => t.functionName));
   const toolBuf = makeToolBufferState();
   let interceptedCall: ParsedToolCall | null = null;
+
+  const handleParsed = (parsed: ToolBufferChunk[]) => {
+    for (const item of parsed) {
+      if (item.kind === 'visible') {
+        if (item.text) post({ kind: 'chunk', reqId: req.reqId, content: item.text });
+      } else if (item.kind === 'tool-call-malformed') {
+        // 静默吞掉调试信息，但把原始文本透传出去，避免内容凭空消失
+        console.warn('[LocalLLM] malformed tool_call payload:', item.error, item.raw);
+        if (item.raw) post({ kind: 'chunk', reqId: req.reqId, content: item.raw });
+      } else if (item.kind === 'tool-call') {
+        if (!interceptedCall) interceptedCall = item.call;
+      }
+    }
+  };
 
   for await (const delta of stream) {
     if (runtime.abortController.signal.aborted) break;
     if (!delta) continue;
 
-    const parsed = feedToolBuffer(toolBuf, delta);
-    for (const item of parsed) {
-      if (item.kind === 'visible') {
-        post({ kind: 'chunk', reqId: req.reqId, content: item.text });
-      } else if (item.kind === 'tool-call-malformed') {
-        post({
-          kind: 'chunk',
-          reqId: req.reqId,
-          content: `\n[malformed tool_call: ${item.error}]\n`,
-        });
-      } else if (item.kind === 'tool-call') {
-        interceptedCall = item.call;
-        break;
-      }
-    }
+    handleParsed(feedToolBuffer(toolBuf, delta));
     if (interceptedCall) break;
+  }
+
+  if (!interceptedCall) {
+    // 流结束兜底：从残余 buffer 中尝试提取 tool call（未闭合标签、裸 JSON、代码块）
+    handleParsed(finalizeToolBuffer(toolBuf, knownToolNames));
   }
 
   if (interceptedCall) {
@@ -233,11 +241,6 @@ async function streamOneStep(
     return { kind: 'tool-call', callId, call: interceptedCall };
   }
 
-  // 把 tool buffer 内的残余作为可见输出冲刷
-  if (toolBuf.buffer && !toolBuf.inToolCall) {
-    post({ kind: 'chunk', reqId: req.reqId, content: toolBuf.buffer });
-    toolBuf.buffer = '';
-  }
   return { kind: 'final' };
 }
 
