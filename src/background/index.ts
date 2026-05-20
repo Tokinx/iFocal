@@ -717,6 +717,8 @@ async function createAiSdkMcpClient(serverName: string, server: McpServerConfig)
       fetch: safeWorkerFetch as any,
     },
     onUncaughtError(error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      if (errorMsg.includes('Unsupported message type')) return;
       console.warn(`[MCP] ${serverName} 未捕获错误：`, error);
     },
   });

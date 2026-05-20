@@ -20,11 +20,7 @@ import {
   type LocalLlmProbeResult,
   type LocalLlmProviderId,
 } from '@/shared/local-llm-types';
-import {
-  callOneLocalMcpTool,
-  prepareLocalMcpTools,
-  releaseLocalMcpTools,
-} from './local-mcp-dispatcher';
+
 
 const OFFSCREEN_URL = 'dist/offscreen.html';
 
@@ -214,8 +210,6 @@ export async function forwardLocalStream(args: ForwardLocalStreamArgs): Promise<
     systemPromptCompatMode: !!args.systemPromptCompatMode,
   });
 
-  const prepared = await prepareLocalMcpTools(args.mcpServers, args.enabledMcpServers);
-
   let fullContent = '';
   let port: chrome.runtime.Port | null = null;
   let disconnected = false;
@@ -225,7 +219,6 @@ export async function forwardLocalStream(args: ForwardLocalStreamArgs): Promise<
       try { port.disconnect(); } catch { /* ignore */ }
       disconnected = true;
     }
-    await releaseLocalMcpTools(prepared);
   };
 
   try {
@@ -258,15 +251,6 @@ export async function forwardLocalStream(args: ForwardLocalStreamArgs): Promise<
             return;
           }
           case 'tool-call-request': {
-            const result = await callOneLocalMcpTool(prepared, msg.functionName, msg.args);
-            safePost({
-              kind: 'tool-result',
-              reqId,
-              callId: msg.callId,
-              ok: result.ok,
-              result: result.ok ? result.result : undefined,
-              error: result.ok ? undefined : result.error,
-            });
             return;
           }
           case 'done':
@@ -302,7 +286,7 @@ export async function forwardLocalStream(args: ForwardLocalStreamArgs): Promise<
         modelId: args.modelId,
         messages,
         params: args.params,
-        tools: prepared.descriptors.length ? prepared.descriptors : undefined,
+        tools: undefined,
       });
 
       const originalResolve = resolve;
