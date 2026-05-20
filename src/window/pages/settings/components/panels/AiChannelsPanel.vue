@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import Icon from '@/components/ui/icon/Icon.vue';
 import { iconOfAction } from '@/shared/icons';
 import { useSettingsStore } from '@/window/pages/settings/composables/useSettingsStore';
 import { useChannelExtras } from '@/window/pages/settings/composables/useChannelExtras';
+import { useLocalChannelAvailability } from '@/window/pages/settings/composables/useLocalChannelAvailability';
+import LocalChannelPanel from '@/window/pages/settings/components/LocalChannelPanel.vue';
 
 const store = useSettingsStore();
 const { channels, addForm, testModel, modelOptionsOf } = store;
@@ -32,6 +35,16 @@ const {
   fetchModels,
   fetchAddFormModels,
 } = useChannelExtras(store);
+
+const { visible: localChannelVisible } = useLocalChannelAvailability();
+
+// 探测未完成（null）或不可用（false） → 隐藏本地渠道；其他渠道始终显示
+function shouldShowChannel(type: string | undefined): boolean {
+  if (type !== 'local') return true;
+  return localChannelVisible.value === true;
+}
+
+const hasVisibleChannel = computed(() => channels.value.some((ch) => shouldShowChannel(ch?.type)));
 </script>
 
 <template>
@@ -130,9 +143,10 @@ const {
       </div>
     </div>
 
-    <div v-if="!channels.length && !showAddChannel" class="text-sm text-muted-foreground">暂无渠道，请先添加。</div>
-    <div v-else-if="channels.length" class="space-y-3">
-      <div v-for="(ch, idx) in channels" :key="idx" class="border p-4 space-y-3 transition-all rounded-2xl"
+    <div v-if="!hasVisibleChannel && !showAddChannel" class="text-sm text-muted-foreground">暂无渠道，请先添加。</div>
+    <div v-else-if="hasVisibleChannel" class="space-y-3">
+      <template v-for="(ch, idx) in channels" :key="idx">
+        <div v-if="shouldShowChannel(ch?.type)" class="border p-4 space-y-3 transition-all rounded-2xl"
         :class="{ 'opacity-50': draggedIndex === idx, 'border-primary border-2': dragOverIndex === idx }"
         :draggable="isDraggable[idx]" @dragstart="handleDragStart(idx)" @dragover="handleDragOver($event, idx)"
         @dragend="handleDragEnd" @dragleave="handleDragLeave">
@@ -148,7 +162,7 @@ const {
               <div class="font-medium inline-flex items-center gap-2">
                 {{ ch.name || '未命名' }}
               </div>
-              <div class="text-muted-foreground truncate" :title="ch.apiUrl">{{ ch.type }} · {{ ch.apiUrl }}</div>
+              <div class="text-muted-foreground truncate" :title="ch.apiUrl">{{ ch.type }}{{ ch.apiUrl ? ` · ${ch.apiUrl}` : '' }}</div>
             </div>
           </div>
           <div class="flex items-center gap-2 w-64">
@@ -170,7 +184,16 @@ const {
           </div>
         </div>
 
-        <div v-if="channelExpanded[idx]" class="space-y-3">
+        <div v-if="channelExpanded[idx] && ch.type === 'local'">
+          <LocalChannelPanel
+            :channel="ch"
+            :index="idx"
+            @save="handleSaveChannelInline(idx)"
+            @remove="confirmRemoveChannel(idx)"
+          />
+        </div>
+
+        <div v-if="channelExpanded[idx] && ch.type !== 'local'" class="space-y-3">
           <div class="flex items-center justify-between gap-4">
             <div>
               <label class="text-sm font-medium leading-none block mb-1">类型</label>
@@ -251,7 +274,7 @@ const {
           </div>
         </div>
 
-        <div v-if="channelExpanded[idx]" class="flex items-center gap-2">
+        <div v-if="channelExpanded[idx] && ch.type !== 'local'" class="flex items-center gap-2">
           <Button variant="outline" class="flex items-center gap-1 text-red-600 rounded-xl"
             @click="confirmRemoveChannel(idx)">
             <Icon :icon="iconOfAction('delete')" width="16" /> 删除
@@ -264,6 +287,7 @@ const {
           <span class="text-xs text-muted-foreground">{{ editStatus }}</span>
         </div>
       </div>
+      </template>
     </div>
   </section>
 </template>

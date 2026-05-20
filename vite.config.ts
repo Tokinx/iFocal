@@ -11,13 +11,14 @@ export default defineConfig({
     }
   },
   build: {
-    target: 'es2020',
+    target: 'esnext',
     outDir: 'dist',
     emptyOutDir: true,
-    chunkSizeWarningLimit: 800,
+    chunkSizeWarningLimit: 6000,
     rolldownOptions: {
       input: {
         window: path.resolve(__dirname, 'window.html'),
+        offscreen: path.resolve(__dirname, 'offscreen.html'),
         background: path.resolve(__dirname, 'src/background/index.ts'),
         content: path.resolve(__dirname, 'src/content/index.ts')
       },
@@ -25,6 +26,7 @@ export default defineConfig({
         entryFileNames: chunk => {
           if (chunk.name === 'background') return 'background.js';
           if (chunk.name === 'content') return 'content.js';
+          if (chunk.name === 'offscreen') return 'offscreen.js';
           return 'assets/[name].js';
         },
         chunkFileNames: 'assets/[name].[hash].js',

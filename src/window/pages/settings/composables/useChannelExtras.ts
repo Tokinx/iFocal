@@ -53,7 +53,7 @@ async function fetchModelsFromApi(type: string, apiUrl: string, apiKey: string):
 export function useChannelExtras(store: SettingsStore) {
   const toast = useToast();
   const {
-    channels, addForm, addChannel, testModel, initTestModels, editForm, saveEdit,
+    channels, addForm, addChannel, testModel, initTestModels, editForm, saveEdit, saveLocalChannel,
     removeChannel, restoreChannelsSnapshot,
   } = store;
 
@@ -75,7 +75,8 @@ export function useChannelExtras(store: SettingsStore) {
     fetchingModels.length = 0;
     isDraggable.value.length = 0;
     channels.value.forEach((c, i) => {
-      modelsTextByIndex[i] = (c.models || []).join('\n');
+      const models = Array.isArray(c?.models) ? c.models.filter((m: any) => typeof m === 'string') : [];
+      modelsTextByIndex[i] = models.join('\n');
       showApiKeyByIndex[i] = false;
       channelExpanded[i] = false;
       fetchingModels[i] = false;
@@ -116,6 +117,14 @@ export function useChannelExtras(store: SettingsStore) {
     try {
       const ch = channels.value[idx];
       if (!ch) return;
+      if (ch.type === 'local') {
+        // 本地渠道走专用持久化：channels.value[idx] 已被 LocalChannelPanel 改写到位
+        saveLocalChannel(idx, () => {
+          initTestModels();
+          toast.success('渠道已保存');
+        });
+        return;
+      }
       editForm.type = ch.type as any;
       editForm.name = ch.name || '';
       editForm.apiUrl = ch.apiUrl || '';

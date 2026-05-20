@@ -20,6 +20,13 @@ import {
   type McpServerConfig,
   type McpServersConfig,
 } from '@/shared/mcp';
+import {
+  normalizeLocalProviderId,
+  ensureLocalChannelInjected,
+  LOCAL_CHANNEL_TYPE,
+  type LocalLlmProviderId,
+} from '@/shared/local-llm-types';
+import { forwardLocalStream, probeLocalProvider } from './offscreen-bridge';
 
 let isOpeningGlobalWindow = false; // 打开全局窗口的重入保护
 // 全局助手窗口单例 ID 存储键
@@ -244,7 +251,46 @@ async function triggerFullPageTranslateInActiveTab() {
 
 chrome.runtime.onInstalled.addListener(async () => {
   ensureContextMenus();
+  await ensureDefaultLocalChannel();
 });
+
+try {
+  chrome.runtime.onStartup?.addListener(() => {
+    void ensureDefaultLocalChannel();
+  });
+} catch { /* ignore */ }
+
+async function ensureDefaultLocalChannel(): Promise<void> {
+  try {
+    await new Promise<void>((resolve) => {
+      try {
+        chrome.storage.sync.get(['channels', 'defaultModel', 'activeModel'], (items: any) => {
+          const raw = Array.isArray(items?.channels) ? items.channels : [];
+          const { list, injected, renames } = ensureLocalChannelInjected(raw);
+          const renameMap = new Map(renames.map((r) => [r.from, r.to]));
+          const remapPair = (pair: any): any => {
+            if (!pair || typeof pair !== 'object') return pair;
+            const next = renameMap.get(pair.channel);
+            return next ? { ...pair, channel: next } : pair;
+          };
+          const remappedDefault = remapPair(items.defaultModel);
+          const remappedActive = remapPair(items.activeModel);
+          const defaultChanged = remappedDefault !== items.defaultModel;
+          const activeChanged = remappedActive !== items.activeModel;
+          if (injected || defaultChanged || activeChanged) {
+            const patch: any = {};
+            if (injected) patch.channels = list;
+            if (defaultChanged) patch.defaultModel = remappedDefault;
+            if (activeChanged) patch.activeModel = remappedActive;
+            chrome.storage.sync.set(patch, () => resolve());
+          } else {
+            resolve();
+          }
+        });
+      } catch { resolve(); }
+    });
+  } catch { /* ignore */ }
+}
 
 try {
   chrome.runtime.onStartup.addListener(() => {
@@ -316,6 +362,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.action === 'testChannel') {
     handleTestChannel(message).then(sendResponse).catch((error) => sendResponse({ ok: false, error: getErrorMessage(error) }));
+    return true;
+  }
+
+  if (message.action === 'probeLocalLlm') {
+    const providerId = (normalizeLocalProviderId(message.providerId) || 'gemini-nano') as LocalLlmProviderId;
+    probeLocalProvider(providerId)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ providerId, availability: 'probe-failed', reason: getErrorMessage(error) }));
     return true;
   }
 
@@ -1949,8 +2003,11 @@ async function invokeModel(
   onChunk?: (chunk: string) => void,
   opts?: ModelInvokeOptions
 ) {
-  if (!channel?.apiKey) throw new Error('Channel is missing API key');
   const systemPromptCompatMode = !!channel?.systemPromptCompatMode;
+  if (channel?.type === LOCAL_CHANNEL_TYPE) {
+    return callLocal(channel, model, prompt, context, stream, onChunk, opts, systemPromptCompatMode);
+  }
+  if (!channel?.apiKey) throw new Error('Channel is missing API key');
   if (channel.type === 'openai' || channel.type === 'openai-compatible') {
     return callOpenAI(channel.apiUrl, channel.apiKey, model, prompt, context, stream, onChunk, opts, systemPromptCompatMode);
   }
@@ -1958,6 +2015,39 @@ async function invokeModel(
     return callGemini(channel.apiUrl, channel.apiKey, model, prompt, context, stream, onChunk, { ...opts, systemPromptCompatMode });
   }
   throw new Error(`Unsupported channel type: ${channel.type}`);
+}
+
+async function callLocal(
+  channel: any,
+  model: string,
+  prompt: string,
+  context: any,
+  stream: boolean,
+  onChunk: ((chunk: string) => void) | undefined,
+  opts: ModelInvokeOptions | undefined,
+  systemPromptCompatMode: boolean,
+): Promise<string> {
+  const providerId = normalizeLocalProviderId(channel?.providerId) as LocalLlmProviderId;
+  if (!providerId) throw new Error('本地渠道缺少 providerId');
+  const { content } = await forwardLocalStream({
+    channelName: String(channel?.name || ''),
+    providerId,
+    modelId: model,
+    systemPrompt: opts?.systemPrompt,
+    systemPromptCompatMode,
+    prompt,
+    context: Array.isArray(context) ? context.map((c: any) => ({ role: String(c?.role || 'user'), content: String(c?.content || '') })) : undefined,
+    params: channel?.params || undefined,
+    mcpServers: opts?.mcpServers,
+    enabledMcpServers: opts?.enabledMcpServers,
+    stream,
+    onChunk: stream ? onChunk : undefined,
+    onToolStatus: opts?.onToolStatus,
+    shouldStop: opts?.shouldStop,
+    signal: opts?.signal,
+  });
+  if (!content) throw new Error('本地模型返回为空');
+  return content;
 }
 
 // 基于模型名和开关注入“思考”相关参数（尽量兼容常见 OpenAI 兼容生态）

@@ -1,13 +1,16 @@
 import { computed, reactive, ref } from 'vue';
 import { firstModelIdFromChannel, modelIdFromSpec, parseModelSpec } from '@/shared/model-utils';
+import type { LocalLlmParams, LocalLlmProviderId } from '@/shared/local-llm-types';
 
 export type Channel = {
   name: string;
-  type: 'openai' | 'gemini' | 'openai-compatible' | string;
+  type: 'openai' | 'gemini' | 'openai-compatible' | 'local' | string;
   apiUrl?: string;
   apiKey?: string;
   systemPromptCompatMode?: boolean;
   models: string[];
+  providerId?: LocalLlmProviderId;
+  params?: LocalLlmParams;
 };
 
 function withDefaultApiUrl(type: string, url?: string) {
@@ -22,14 +25,18 @@ export function useChannels() {
   const channels = ref<Channel[]>([]);
   const modelPairs = computed(() => {
     const pairs: { value: string; label: string }[] = [];
-    channels.value.forEach(ch => (ch.models || []).forEach(m => {
-      const { modelId, displayName } = parseModelSpec(m);
-      if (!modelId) return;
-      pairs.push({
-        value: `${ch.name}|${modelId}`,
-        label: displayName || modelId
+    channels.value.forEach(ch => {
+      const models = Array.isArray(ch?.models) ? ch.models : [];
+      models.forEach(m => {
+        if (typeof m !== 'string') return;
+        const { modelId, displayName } = parseModelSpec(m);
+        if (!modelId) return;
+        pairs.push({
+          value: `${ch.name}|${modelId}`,
+          label: displayName || modelId
+        });
       });
-    }));
+    });
     return pairs;
   });
 
@@ -62,8 +69,9 @@ export function useChannels() {
   const testModel: string[] = reactive([]);
   function initTestModels() {
     channels.value.forEach((ch, idx) => {
+      const models = Array.isArray(ch?.models) ? ch.models : [];
       const selected = String(testModel[idx] || '');
-      const isSelectedValid = !!selected && (ch.models || []).some((m) => modelIdFromSpec(m) === selected);
+      const isSelectedValid = !!selected && models.some((m) => modelIdFromSpec(m) === selected);
       if (!isSelectedValid) {
         testModel[idx] = firstModelIdFromChannel(ch) || '';
       }
@@ -125,6 +133,40 @@ export function useChannels() {
 
   type ChannelsSnapshot = { list: Channel[]; defaultModel: any; activeModel: any };
 
+  // 本地渠道专用保存：直接持久化 channels.value 内当前的本地渠道状态（已被 LocalChannelPanel 改写）。
+  // 不走 editForm 路径，因为 LocalChannelPanel 改的是 providerId / params / models / 名称，editForm 不持有这些字段。
+  function saveLocalChannel(index: number, onSaved?: () => void) {
+    const idx = Number(index);
+    if (!Number.isInteger(idx) || idx < 0 || idx >= channels.value.length) throw new Error('原渠道不存在');
+    const ch = channels.value[idx];
+    if (!ch || ch.type !== 'local') throw new Error('非本地渠道');
+    const name = (ch.name || '').trim();
+    if (!name) throw new Error('名称不能为空');
+    const models = Array.isArray(ch.models) ? ch.models.filter((m) => typeof m === 'string') : [];
+    if (!models.length) throw new Error('请至少配置一个模型');
+
+    chrome.storage.sync.get(['channels', 'defaultModel', 'activeModel'], (items) => {
+      const list: Channel[] = Array.isArray((items as any).channels) ? (items as any).channels : [];
+      const originalName = list[idx]?.name || '';
+      if (name !== originalName && list.some((c, i) => i !== idx && c.name === name)) throw new Error('同名渠道已存在');
+      const merged: Channel = { ...(list[idx] || {}), ...ch, name, models };
+      delete (merged as any).apiKey;
+      delete (merged as any).apiUrl;
+      const nextList = list.slice();
+      nextList[idx] = merged;
+      const next: any = { channels: nextList };
+      ['defaultModel', 'activeModel'].forEach((k) => {
+        const pair = (items as any)[k];
+        if (pair && pair.channel === originalName) next[k] = { channel: name, model: pair.model };
+      });
+      chrome.storage.sync.set(next, () => {
+        channels.value = nextList;
+        initTestModels();
+        onSaved && onSaved();
+      });
+    });
+  }
+
   function removeChannel(index: number, onRemoved?: (snapshot: ChannelsSnapshot) => void) {
     chrome.storage.sync.get(['channels','defaultModel','activeModel'], (items) => {
       const list: Channel[] = Array.isArray((items as any).channels) ? (items as any).channels : [];
@@ -166,6 +208,7 @@ export function useChannels() {
     openEdit,
     cancelEdit,
     saveEdit,
+    saveLocalChannel,
     removeChannel,
     restoreChannelsSnapshot
   };

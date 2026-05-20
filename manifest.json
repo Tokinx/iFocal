@@ -7,7 +7,8 @@
     "storage",
     "clipboardRead",
     "contextMenus",
-    "tabs"
+    "tabs",
+    "offscreen"
   ],
   "host_permissions": [
     "<all_urls>"

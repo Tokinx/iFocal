@@ -16,6 +16,7 @@ import {
 import { mcpServersToEntries, type McpServerEntry } from '@/shared/mcp';
 import { mergeTargetStylePresets } from '@/shared/style-presets';
 import { modelIdFromSpec, parseModelSpec } from '@/shared/model-utils';
+import { ensureLocalChannelInjected } from '@/shared/local-llm-types';
 import { useChannels } from './useChannels';
 
 export type ModelPair = { channel: string; model: string } | null;
@@ -99,10 +100,32 @@ export function createSettingsStore() {
     await new Promise<void>((resolve) => {
       try {
         chrome.storage.sync.get(['channels', 'defaultModel', 'activeModel'], (items: any) => {
-          channelsApi.channels.value = Array.isArray(items.channels) ? items.channels : [];
-          defaultModel.value = parsePair(joinPair(items.defaultModel)) || null;
-          activeModel.value = parsePair(joinPair(items.activeModel)) || null;
+          const rawList = Array.isArray(items.channels) ? items.channels : [];
+          const { list: ensured, injected, renames } = ensureLocalChannelInjected(rawList);
+          channelsApi.channels.value = ensured as any;
+
+          // 把 defaultModel/activeModel 中引用的旧本地渠道名映射到新名（"本地模型" → "Gemini-Nano"）
+          const renameMap = new Map(renames.map((r) => [r.from, r.to]));
+          const remapPair = (pair: any): any => {
+            if (!pair || typeof pair !== 'object') return pair;
+            const next = renameMap.get(pair.channel);
+            return next ? { ...pair, channel: next } : pair;
+          };
+          const remappedDefault = remapPair(items.defaultModel);
+          const remappedActive = remapPair(items.activeModel);
+          const defaultChanged = remappedDefault !== items.defaultModel;
+          const activeChanged = remappedActive !== items.activeModel;
+
+          defaultModel.value = parsePair(joinPair(remappedDefault)) || null;
+          activeModel.value = parsePair(joinPair(remappedActive)) || null;
           channelsApi.initTestModels();
+          if (injected || defaultChanged || activeChanged) {
+            const patch: any = {};
+            if (injected) patch.channels = ensured;
+            if (defaultChanged) patch.defaultModel = remappedDefault;
+            if (activeChanged) patch.activeModel = remappedActive;
+            try { chrome.storage.sync.set(patch); } catch { /* ignore */ }
+          }
           resolve();
         });
       } catch { resolve(); }

@@ -2105,7 +2105,6 @@ async function handleStreamingSend(
             updateReasoningTimingForMessage(message);
           }
         }
-        sessions.value = [...sessions.value]; // 触发响应式更新
       } else if (response.type === 'done') {
         if (messageIndex >= 0) {
           const message = session.messages[messageIndex];
