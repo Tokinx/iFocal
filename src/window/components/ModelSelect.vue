@@ -2,7 +2,7 @@
   <DropdownMenu>
     <DropdownMenuTrigger as-child>
       <Button variant="outline"
-        :class="['justify-start truncate h-8 font-normal gap-1 px-3 rounded-xl', bgClass, blurClass, buttonClass]">
+        :class="['justify-start truncate h-8 font-normal gap-1 px-3 rounded-xl border border-slate-300/50 shadow-xs', bgClass, blurClass, buttonClass]">
         <span class="truncate text-sm">{{ currentModelName || 'GPT-5' }}</span>
         <Icon icon="ri:arrow-down-s-line" class="h-7 w-7 shrink-0" />
       </Button>

@@ -1,8 +1,8 @@
 <template>
-  <div class="relative h-full min-h-0 flex-1" @click="ctx.handleWorkspaceClick">
+  <div class="relative h-full min-h-0 flex-1 " @click="ctx.handleWorkspaceClick">
     <ScrollArea
       ref="messagesContainer"
-      class="ifocal-scroll-style h-full flex-1 px-4 rounded-1xl bg-white border border-olive-300/60 shadow-xs">
+      class="ifocal-scroll-style h-full flex-1 px-4 rounded-1xl bg-white border border-slate-200/75 shadow-xs">
       <header class="flex items-center justify-end absolute top-0 left-0 right-0 p-4 z-10">
         <LanguageSelect :current-lang-label="ctx.currentLangLabel" :current-target-lang="ctx.targetLang"
           :supported-languages="ctx.supportedLanguages" :bg-class="ctx.bgClass" :blur-class="ctx.blurClass"
@@ -39,7 +39,7 @@
               </div>
 
               <div v-if="message.content" v-html="ctx.renderMarkdownSafe(message.content)"
-                class="rounded-lg rounded-tr-none bg-olive-100 px-4 py-3 !text-olive-700 prose prose-sm max-w-none" />
+                class="rounded-lg rounded-tr-none bg-slate-100 px-4 py-3 !text-slate-700 prose prose-sm max-w-none" />
 
               <Button variant="ghost" size="icon"
                 class="absolute -left-7 bottom-0 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400"
@@ -56,16 +56,16 @@
           >
             <div class="flex items-center justify-between">
               <div class="min-w-0">
-                <span class="text-xs font-medium !text-olive-600">{{ message.modelName || 'Assistant' }}</span>
-                <div v-if="message.toolStatuses?.length" class="my-1 space-y-1 text-xs text-olive-500">
+                <span class="text-xs font-medium !text-slate-600">{{ message.modelName || 'Assistant' }}</span>
+                <div v-if="message.toolStatuses?.length" class="my-1 space-y-1 text-xs text-slate-500">
                   <div v-for="status in message.toolStatuses" :key="status.id"
                     class="flex min-w-0 items-center gap-1.5">
                     <span v-if="status.phase === 'preparing' || status.phase === 'running'"
-                      class="ifocal-loading shrink-0 text-olive-400"
+                      class="ifocal-loading shrink-0 text-slate-400"
                       style="--ifocal-loading-size: 12px; --ifocal-loading-stroke: 2px; --ifocal-loading-color: currentColor;" />
                     <Icon v-else-if="status.phase === 'error'" icon="ri:close-circle-line"
                       class="h-3 w-3 shrink-0 text-red-400" />
-                    <Icon v-else icon="ri:check-line" class="h-3 w-3 shrink-0 text-olive-500" />
+                    <Icon v-else icon="ri:check-line" class="h-3 w-3 shrink-0 text-slate-500" />
                     <span class="min-w-0 truncate"
                       :class="status.phase === 'preparing' || status.phase === 'running' ? 'shimmer-text' : ''">
                       {{ status.message }}
@@ -75,7 +75,7 @@
               </div>
               <div class="flex items-center gap-1">
                 <Button variant="ghost" size="icon"
-                  class="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-olive-400" title="复制"
+                  class="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-slate-400" title="复制"
                   @click="ctx.copyMessage(ctx.getDisplayContent(message))">
                   <Icon icon="ri:file-copy-line" class="h-3 w-3" />
                 </Button>
@@ -89,11 +89,11 @@
                   <template v-if="message.isStreaming && ctx.enableReasoning && !ctx.getParsed(message, idx).answer">
                     <div class="flex items-center gap-2">
                       <Button variant="ghost" size="xs" class="h-6 p-0 text-xs gap-1 hover:bg-transparent">
-                        <span class="text-xs text-olive-400 shimmer-text">
+                        <span class="text-xs text-slate-400 shimmer-text">
                           正在思考...
                         </span>
                       </Button>
-                      <span class="text-olive-400" v-if="ctx.getReasoningElapsedSeconds(message) > 0">
+                      <span class="text-slate-400" v-if="ctx.getReasoningElapsedSeconds(message) > 0">
                         {{ ctx.getReasoningElapsedLabel(message) }}s
                       </span>
                     </div>
@@ -102,43 +102,43 @@
                     <div class="flex items-center gap-2">
                       <Button variant="ghost" size="xs" class="h-6 p-0 hover:bg-transparent"
                         @click="message.reasoningCollapsed = !message.reasoningCollapsed">
-                        <span class="text-xs text-olive-400">
+                        <span class="text-xs text-slate-400">
                           思考过程
                         </span>
-                        <div class="relative h-4 w-4 text-olive-400">
+                        <div class="relative h-4 w-4 text-slate-400">
                           <Icon :icon="message.reasoningCollapsed ? 'ri:arrow-down-s-line' : 'ri:arrow-up-s-line'"
                             class="absolute left-0 top-0 !h-4 !w-4 transition-opacity" />
                         </div>
                       </Button>
-                      <span class="text-olive-400" v-if="ctx.getReasoningElapsedSeconds(message) > 0">
+                      <span class="text-slate-400" v-if="ctx.getReasoningElapsedSeconds(message) > 0">
                         {{ ctx.getReasoningElapsedLabel(message) }}s
                       </span>
                     </div>
                     <div v-if="!message.reasoningCollapsed"
-                      class="p-3 bg-olive-50 prose prose-sm max-w-none !text-olive-500 text-xs"
+                      class="p-3 bg-slate-50 prose prose-sm max-w-none !text-slate-500 text-xs"
                       v-html="ctx.renderMarkdown(ctx.getParsed(message, idx).reasoning)" />
                   </template>
                   <div v-if="ctx.getParsed(message, idx).answer" class="h-2" />
-                  <div class="prose prose-sm max-w-none !text-olive-800"
+                  <div class="prose prose-sm max-w-none !text-slate-800"
                     v-html="ctx.renderMarkdown(ctx.getParsed(message, idx).answer)" />
                 </template>
-                <div v-else class="prose prose-sm max-w-none !text-olive-800"
+                <div v-else class="prose prose-sm max-w-none !text-slate-800"
                   v-html="ctx.renderMarkdown(ctx.getDisplayContent(message))" />
               </div>
               <div v-else-if="message.toolStatuses?.length" />
               <div v-else>
                 <template v-if="ctx.enableReasoning">
                   <Button variant="ghost" size="xs" class="h-6 p-0 text-xs gap-1">
-                    <span class="text-xs text-olive-400 shimmer-text">
+                    <span class="text-xs text-slate-400 shimmer-text">
                       正在思考...
                     </span>
                   </Button>
                 </template>
                 <template v-else>
                   <div class="space-y-3">
-                    <div class="rounded-xs h-3 w-2/3 bg-olive-300 animate-pulse" />
-                    <div class="rounded-xs h-3 w-full bg-olive-300 animate-pulse" />
-                    <div class="rounded-xs h-3 w-5/6 bg-olive-300 animate-pulse" />
+                    <div class="rounded-xs h-3 w-2/3 bg-slate-200 animate-pulse" />
+                    <div class="rounded-xs h-3 w-full bg-slate-200 animate-pulse" />
+                    <div class="rounded-xs h-3 w-5/6 bg-slate-200 animate-pulse" />
                   </div>
                 </template>
               </div>
@@ -157,9 +157,9 @@
             </template>
             <template v-else>
               <div class="space-y-3">
-                <div class="rounded-xs h-3 w-2/3 bg-olive-300 animate-pulse" />
-                <div class="rounded-xs h-3 w-full bg-olive-300 animate-pulse" />
-                <div class="rounded-xs h-3 w-5/6 bg-olive-300 animate-pulse" />
+                <div class="rounded-xs h-3 w-2/3 bg-slate-200 animate-pulse" />
+                <div class="rounded-xs h-3 w-full bg-slate-200 animate-pulse" />
+                <div class="rounded-xs h-3 w-5/6 bg-slate-200 animate-pulse" />
               </div>
             </template>
           </div>

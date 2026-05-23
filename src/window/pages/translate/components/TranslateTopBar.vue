@@ -1,9 +1,9 @@
 <template>
-  <header class="flex flex-wrap items-center justify-between gap-2 p-2 border-b border-olive-200">
+  <header class="flex flex-wrap items-center justify-between gap-2">
     <div class="flex items-center gap-2">
       <DropdownMenu>
         <DropdownMenuTrigger as-child>
-          <Button variant="outline" class="h-8 rounded-xl px-3 bg-white hover:bg-olive-50">
+          <Button variant="outline" class="h-8 rounded-xl px-3 bg-white hover:bg-slate-50">
             <span class="truncate text-sm">{{ sourceLangLabel }}</span>
             <Icon icon="ri:arrow-down-s-line" class="h-4 w-4 ml-1" />
           </Button>
@@ -19,7 +19,7 @@
 
       <Tooltip>
         <TooltipTrigger as-child>
-          <Button variant="ghost" size="icon" class="h-6 w-6 rounded-lg text-olive-600 hover:bg-olive-100 -mx-1"
+          <Button variant="ghost" size="icon" class="h-6 w-6 rounded-lg text-slate-600 hover:bg-slate-100 -mx-1"
             :disabled="sourceLang === 'auto'" @click="$emit('swapLanguages')">
             <Icon icon="ri:arrow-left-right-line" class="h-4 w-4" />
           </Button>
@@ -29,7 +29,7 @@
 
       <DropdownMenu>
         <DropdownMenuTrigger as-child>
-          <Button variant="outline" class="h-8 rounded-xl px-3 bg-white hover:bg-olive-50">
+          <Button variant="outline" class="h-8 rounded-xl px-3 bg-white hover:bg-slate-50">
             <span class="truncate text-sm">{{ targetLangLabel }}</span>
             <Icon icon="ri:arrow-down-s-line" class="h-4 w-4 ml-1" />
           </Button>
@@ -43,19 +43,19 @@
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <Button class="h-8 rounded-xl bg-amber-700 text-white hover:bg-amber-800" :disabled="disabled"
+      <Button class="h-8 rounded-xl bg-blue-700 text-white hover:bg-blue-800" :disabled="disabled"
         @click="$emit('translate')">
         <Icon icon="ri:translate-2" class="h-4 w-4" />
         翻译
       </Button>
     </div>
 
-    <div class="flex items-center gap-2 mr-1">
+    <div class="flex items-center gap-2">
       <Tooltip>
         <TooltipTrigger as-child>
           <Button variant="ghost" size="icon" :aria-pressed="autoTranslate" :class="[
-            'h-7 w-7 rounded-lg border border-olive-200',
-            autoTranslate ? 'bg-amber-100 text-amber-700 hover:bg-amber-100 border-amber-200' : 'text-olive-600 hover:bg-olive-100',
+            'h-7 w-7 rounded-lg border border-slate-200',
+            autoTranslate ? 'bg-blue-100 text-blue-700 hover:bg-blue-100 border-blue-200' : 'text-slate-600 hover:bg-slate-100',
           ]" @click="$emit('update:autoTranslate', !autoTranslate)">
             <Icon icon="proicons:bolt" class="h-4 w-4" />
           </Button>
@@ -68,8 +68,8 @@
       <Tooltip>
         <TooltipTrigger as-child>
           <Button variant="ghost" size="icon" :aria-pressed="watchClipboard" :class="[
-            'h-7 w-7 rounded-lg border border-olive-200',
-            watchClipboard ? 'bg-amber-100 text-amber-700 hover:bg-amber-100 border-amber-200' : 'text-olive-600 hover:bg-olive-100',
+            'h-7 w-7 rounded-lg border border-slate-200',
+            watchClipboard ? 'bg-blue-100 text-blue-700 hover:bg-blue-100 border-blue-200' : 'text-slate-600 hover:bg-slate-100',
           ]" @click="$emit('update:watchClipboard', !watchClipboard)">
             <Icon icon="ri:clipboard-line" class="h-4 w-4" />
           </Button>
@@ -79,13 +79,13 @@
         </TooltipContent>
       </Tooltip>
 
-      <div class="h-5 w-px bg-olive-200" />
+      <div class="h-5 w-px bg-slate-200" />
 
       <AddChannelDropdown :machine-channels="machineChannels" :grouped-ai-models="groupedAiModels" :cards="cards"
         @add="(kind, ref) => $emit('addChannel', kind, ref)">
         <template #trigger>
           <Button variant="ghost" size="icon" title="添加翻译渠道"
-            class="h-7 w-7 rounded-lg text-olive-600 hover:bg-olive-100 border border-olive-200">
+            class="h-7 w-7 rounded-lg text-slate-600 hover:bg-slate-100 border border-slate-200">
             <Icon icon="ri:add-line" class="h-4 w-4" />
           </Button>
         </template>

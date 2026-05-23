@@ -1,5 +1,5 @@
 <template>
-  <div ref="rootEl" class="relative flex h-full w-full text-foreground gap-2" @click.capture="handleExternalLinkClick"
+  <div ref="rootEl" class="relative flex h-screen w-full text-foreground" @click.capture="handleExternalLinkClick"
     @auxclick.capture="handleExternalLinkClick">
     <Sidebar :active-route-name="currentRoute.name" @navigate="navigateTo" />
 
@@ -483,7 +483,7 @@ watch(currentSessionId, () => {
 
 // 动态类名：根据 reduceVisualEffects 决定是否应用 backdrop-blur 和背景透明
 const blurClass = computed(() => reduceVisualEffects.value ? '' : 'backdrop-blur-md');
-const bgClass = computed(() => reduceVisualEffects.value ? 'bg-olive-50' : 'bg-olive-50/60');
+const bgClass = computed(() => reduceVisualEffects.value ? 'bg-slate-50' : 'bg-slate-50/60');
 
 const assistantCtx = computed<AssistantWorkspaceContext>(() => ({
   text: state.text,
@@ -2858,7 +2858,7 @@ onBeforeUnmount(() => {
 .prose code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   /* font-size: 0.93rem; */
-  background-color: var(--color-olive-100);
+  background-color: var(--color-slate-100);
   /* slate-950 @ ~6% */
   padding: 0.15em 0.35em;
   border-radius: 0.375rem;

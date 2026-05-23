@@ -45,7 +45,7 @@ const {
       </Button>
     </header>
 
-    <div class="border border-amber-200/50 bg-amber-50/70 p-3 text-xs text-amber-900 rounded-lg">
+    <div class="border border-blue-200/50 bg-blue-50/70 p-3 text-xs text-blue-900 rounded-lg">
       内置 Google 与 Microsoft 翻译为非官方实验接口，免密但可能受网络、限流或上游策略影响，生产稳定性要求高时建议添加官方自备密钥渠道。
     </div>
 
@@ -137,7 +137,7 @@ const {
                   {{ machineProviderModeLabel(ch.provider) }}
                 </span>
                 <span v-if="machineProviderExperimental(ch.provider)"
-                  class="px-1.5 py-0.5 text-[11px] text-amber-600 bg-amber-100">实验</span>
+                  class="px-1.5 py-0.5 text-[11px] text-blue-600 bg-blue-100">实验</span>
               </div>
               <div class="text-xs text-muted-foreground truncate max-w-[80%]" :title="ch.apiUrl">
                 {{ machineProviderLabel(ch.provider) }} · {{ ch.apiUrl }}

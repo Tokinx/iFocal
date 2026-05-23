@@ -1,8 +1,8 @@
 <template>
-  <div class="relative h-full min-h-0 flex-1 rounded-1xl overflow-hidden bg-white border border-olive-300/60 shadow-xs p-2">
-    <div class="flex h-full min-h-0 w-full text-foreground">
+  <div class="relative h-full min-h-0 flex-1 bg-slate-50 p-2 rounded-l-4xl">
+    <div class="flex h-full min-h-0 w-full text-foreground gap-2">
       <SettingsNav v-model="nav" embedded />
-      <ScrollArea class="flex-1 min-h-0">
+      <ScrollArea class="flex-1 min-h-0 rounded-1xl bg-white border border-slate-200/75 shadow-xs">
         <main class="px-4 py-2">
           <AiChannelsPanel v-if="nav === 'channels'" />
           <MachineTranslatePanel v-if="nav === 'machine'" />

@@ -1,15 +1,15 @@
 <template>
   <div class="flex h-full min-h-0 flex-col gap-2">
     <Button variant="outline"
-      class="w-full rounded-1xl justify-center gap-2 bg-white hover:bg-white/60 border-olive-300/60 shadow-xs"
+      class="w-full rounded-1xl justify-center gap-2 bg-white hover:bg-white/60 border-slate-200/75 shadow-xs"
       @click="$emit('newSession')">
       <Icon icon="ri:pencil-ai-line" class="h-4 w-4" />
       新会话
     </Button>
-    <div class="p-2 rounded-1xl space-y-1 bg-white border border-olive-300/60 shadow-xs">
+    <div class="p-2 rounded-1xl space-y-1 bg-white border border-slate-200/75 shadow-xs">
       <div v-for="item in tasks" :key="item.id" role="button" tabindex="0"
-        class="group rounded-lg flex min-h-9 w-full cursor-pointer items-center gap-2 pl-3 pr-1.5 text-sm transition-colors hover:bg-olive-100 hover:text-amber-800"
-        :class="activeAssistantId === item.id ? '!bg-amber-700/90 !text-white' : 'text-foreground'"
+        class="group rounded-lg flex min-h-9 w-full cursor-pointer items-center gap-2 pl-3 pr-1.5 text-sm transition-colors hover:bg-slate-100 hover:text-blue-700"
+        :class="activeAssistantId === item.id ? '!bg-blue-700/90 !text-white' : 'text-foreground'"
         @click="$emit('selectAssistant', item.id)" @keydown.enter.prevent="$emit('selectAssistant', item.id)"
         @keydown.space.prevent="$emit('selectAssistant', item.id)">
         <Icon :icon="item.icon" class="h-4 w-4 shrink-0" />
@@ -37,7 +37,7 @@
       </div>
 
       <Button variant="ghost"
-        class="w-full h-7 rounded-lg justify-center gap-2 border-none text-olive-500 hover:!bg-olive-100 hover:text-amber-800"
+        class="w-full h-7 rounded-lg justify-center gap-2 border-none text-slate-500 hover:!bg-slate-100 hover:text-blue-800"
         title="添加助手" @click="openEditor(null)">
         <Icon icon="ri:add-line" class="h-4 w-4" />
       </Button>
@@ -45,15 +45,15 @@
 
     <ScrollArea class="min-h-30 flex-1">
       <div v-for="session in sessions" :key="session.id" role="button" tabindex="0"
-        class="group rounded-1xl flex cursor-pointer items-start gap-1 px-2 py-1.5 hover:text-amber-800/60"
-        :class="currentSessionId === session.id ? '!text-amber-800 bg-olive-200' : 'text-olive-500'"
+        class="group rounded-1xl flex cursor-pointer items-start gap-1 px-2 py-1.5 hover:text-blue-600"
+        :class="currentSessionId === session.id ? '!text-blue-600 bg-slate-200/50' : 'text-slate-500'"
         @click="$emit('switchSession', session.id)" @keydown.enter.prevent="$emit('switchSession', session.id)"
         @keydown.space.prevent="$emit('switchSession', session.id)">
         <div class="min-w-0 flex-1">
           <div class="truncate font-medium">
             {{ session.title || '新对话' }}
           </div>
-          <div class="flex gap-1 text-[11px] text-olive-400">
+          <div class="flex gap-1 text-[11px] text-slate-400">
             <span class="shrink-0">
               {{ formatDate(session.updatedAt) }}
             </span>

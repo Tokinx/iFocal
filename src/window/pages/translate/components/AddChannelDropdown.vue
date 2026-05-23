@@ -4,7 +4,7 @@
     <DropdownMenuTrigger as-child>
       <slot name="trigger">
         <Button variant="outline"
-          class="w-full h-9 rounded-lg border-dashed border-olive-300 text-olive-500 hover:bg-olive-50">
+          class="w-full h-9 rounded-lg border-dashed border-slate-300 text-slate-500 hover:bg-slate-50">
           <Icon icon="ri:add-line" class="h-4 w-4 mr-1" />
           添加翻译渠道
         </Button>
@@ -14,7 +14,7 @@
       <Input v-model="keyword" placeholder="搜索渠道/模型" class="h-9 mb-1 rounded-xl" @keydown.stop />
       <ScrollArea class="h-72">
         <template v-if="machineList.length">
-          <DropdownMenuLabel class="text-olive-500 text-xs">机器翻译</DropdownMenuLabel>
+          <DropdownMenuLabel class="text-slate-500 text-xs">机器翻译</DropdownMenuLabel>
           <DropdownMenuItem v-for="channel in machineList" :key="channel.id" :disabled="usedMachineRefs.has(channel.id)"
             :class="['cursor-pointer', usedMachineRefs.has(channel.id) ? 'opacity-50' : '']"
             @click="!usedMachineRefs.has(channel.id) && handleAdd('machine', channel.id)">
@@ -26,17 +26,17 @@
 
         <template v-for="(group, channelName, groupIndex) in filteredGroupedAiModels" :key="channelName">
           <DropdownMenuSeparator v-if="groupIndex || machineList.length" />
-          <DropdownMenuLabel class="text-olive-500 text-xs">{{ channelName }}</DropdownMenuLabel>
+          <DropdownMenuLabel class="text-slate-500 text-xs">{{ channelName }}</DropdownMenuLabel>
           <DropdownMenuItem v-for="model in group" :key="model.key" :disabled="usedAiRefs.has(model.key)"
             :class="['cursor-pointer', usedAiRefs.has(model.key) ? 'opacity-50' : '']"
             @click="!usedAiRefs.has(model.key) && handleAdd('ai', model.key)">
-            <Icon icon="proicons:sparkle-2" class="h-4 w-4 text-amber-700" />
+            <Icon icon="proicons:sparkle-2" class="h-4 w-4 text-blue-700" />
             <span class="truncate">{{ model.model }}</span>
             <Icon v-if="usedAiRefs.has(model.key)" icon="ri:check-line" class="ml-auto h-4 w-4" />
           </DropdownMenuItem>
         </template>
 
-        <div v-if="!machineList.length && aiResultCount === 0" class="px-3 py-6 text-center text-xs text-olive-400">
+        <div v-if="!machineList.length && aiResultCount === 0" class="px-3 py-6 text-center text-xs text-slate-400">
           没有匹配的渠道
         </div>
       </ScrollArea>

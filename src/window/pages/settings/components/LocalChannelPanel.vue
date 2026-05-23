@@ -90,10 +90,10 @@ const availabilityLabel = computed(() => {
 });
 
 const availabilityColor = computed(() => {
-  if (downloading.value) return 'text-amber-600';
+  if (downloading.value) return 'text-blue-600';
   const v = probeResult.value?.availability;
   if (v === 'available') return 'text-emerald-600';
-  if (v === 'downloadable' || v === 'downloading') return 'text-amber-600';
+  if (v === 'downloadable' || v === 'downloading') return 'text-blue-600';
   if (v === 'unavailable' || v === 'no-language-model' || v === 'no-offscreen-api') return 'text-red-600';
   if (v === 'probe-failed') return 'text-red-600';
   return 'text-muted-foreground';
@@ -224,7 +224,7 @@ function finishDownload(ok: boolean) {
     </div>
 
     <div v-if="!downloading && canDownload"
-      class="rounded-2xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800 flex items-center justify-between gap-3">
+      class="rounded-2xl bg-blue-50 border border-blue-200 p-3 text-xs text-blue-800 flex items-center justify-between gap-3">
       <span class="leading-relaxed">点击「下载模型」由 Chrome 通过组件更新器拉取 Gemini-Nano（数 GB，需较长时间）。</span>
       <Button variant="outline" size="sm" class="rounded-xl flex items-center gap-1 shrink-0 bg-white"
         @click="startDownload">
@@ -235,7 +235,7 @@ function finishDownload(ok: boolean) {
 
     <div v-if="errorText" class="text-xs text-red-600">{{ errorText }}</div>
     <div v-else-if="probeResult?.reason && !downloading && !canDownload"
-      class="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 leading-relaxed">
+      class="rounded-2xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800 leading-relaxed">
       <div class="font-medium mb-1">检测详情</div>
       {{ probeResult.reason }}
     </div>

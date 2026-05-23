@@ -5,7 +5,7 @@
   "tailwind": {
     "config": "tailwind.config.cjs",
     "css": "src/sidebar/styles.css",
-    "baseColor": "olive",
+    "baseColor": "slate",
     "cssVariables": true,
     "prefix": ""
   },

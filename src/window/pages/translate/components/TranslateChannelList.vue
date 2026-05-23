@@ -1,5 +1,5 @@
 <template>
-  <div class="flex h-full min-h-0 flex-col gap-3 -mr-2.5">
+  <div class="flex h-full min-h-0 flex-col gap-2 -mr-2.5">
     <ScrollArea class="flex-1 min-h-0 pr-2.5">
       <draggable
         v-model="modelValueLocal"
@@ -7,7 +7,7 @@
         handle=".ifocal-drag-handle"
         :animation="180"
         ghost-class="ifocal-drag-ghost"
-        class="space-y-3"
+        class="space-y-2"
         @end="onDragEnd">
         <template #item="{ element }">
           <TranslateChannelCard
@@ -21,7 +21,7 @@
         </template>
       </draggable>
 
-      <div v-if="modelValueLocal.length === 0" class="text-center text-sm text-olive-400 py-12">
+      <div v-if="modelValueLocal.length === 0" class="text-center text-sm text-slate-400 py-12">
         请通过顶部「添加翻译渠道」按钮添加一个渠道开始
       </div>
     </ScrollArea>

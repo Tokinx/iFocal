@@ -409,7 +409,7 @@ const SHADOW_STYLE = `
 .ifocal-overlay:hover .copy-btn{opacity:1}
 .ifocal-dot{position:absolute;width:10px;height:10px;border-radius:50%;background:#0f172a;opacity:.9;cursor:pointer;box-shadow:0 0 0 2px rgba(255,255,255,.9);z-index:2147483647;pointer-events:auto}
 @keyframes ifocal-shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
-.ifocal-skeleton-line{height:12px;border-radius:6px;margin:10px 0;background:linear-gradient(90deg, rgba(15,23,42,0.08) 25%, rgba(15,23,42,0.14) 37%, rgba(15,23,42,0.08) 63%);background-size:400% 100%;animation:ifocal-shimmer 1.2s ease-in-out infinite}
+.ifocal-skeleton-line{height:12px;border-radius:6px;margin:10px 0;background:linear-gradient(90deg, rgba(15,23,42,0.08), rgba(15,23,42,0.14), rgba(15,23,42,0.08));background-size:200%;animation:ifocal-shimmer 0.8s linear infinite}
 .ifocal-skeleton-line:first-child{margin-top:0}
 .ifocal-skeleton-line:last-child{margin-bottom:0}
 .hidden{display:none}

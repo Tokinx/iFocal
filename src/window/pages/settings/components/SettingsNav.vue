@@ -24,12 +24,12 @@ const navItems: Array<{ id: SettingsNavId; label: string }> = [
 </script>
 
 <template>
-  <aside class="w-30 shrink-0 border-r pr-2">
+  <aside class="w-28 shrink-0">
     <div class="flex h-full min-h-0 flex-col gap-4">
       <nav class="space-y-1" :class="embedded ? 'pt-0' : 'pt-12'">
         <Button v-for="item in navItems" :key="item.id" variant="ghost"
-          class="w-full rounded-lg justify-start gap-2 text-olive-500 hover:bg-olive-100 hover:text-amber-800/80"
-          :class="modelValue === item.id ? 'bg-olive-100 !text-amber-800' : ''"
+          class="w-full rounded-1xl justify-start gap-2 text-slate-500 hover:bg-white/50 hover:text-blue-700/90 hover:border hover:border-slate-200"
+          :class="modelValue === item.id && '!bg-white !text-blue-700 border-slate-200 shadow-xs'"
           @click="emit('update:modelValue', item.id)">
           <Icon :icon="iconOfNav(item.id)" width="16" class="opacity-80" />
           <span>{{ item.label }}</span>

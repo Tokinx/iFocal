@@ -24,7 +24,7 @@
                 <DropdownMenuContent align="start" class="p-2 grid grid-cols-4 gap-2 w-42 min-w-none">
                   <Button v-for="iconOption in ASSISTANT_ICON_OPTIONS" :key="iconOption.value" variant="outline"
                     class="h-8 w-8 p-0 rounded-lg"
-                    :class="draft.icon === iconOption.value ? '!bg-amber-800/90 !text-olive-100 border-amber-800/90' : ''"
+                    :class="draft.icon === iconOption.value ? '!bg-blue-800/90 !text-slate-100 border-blue-800/90' : ''"
                     :title="iconOption.label" @click="updateIcon(iconOption.value)">
                     <Icon :icon="iconOption.value" class="h-4 w-4" />
                   </Button>

@@ -1,5 +1,5 @@
 <template>
-  <div class="flex h-full min-h-0 gap-2">
+  <div class="flex h-full min-h-0 gap-2 bg-slate-50 p-2 rounded-l-4xl">
     <AssistantNav class="w-56 shrink-0"
       :tasks="tasks"
       :sessions="sessions"

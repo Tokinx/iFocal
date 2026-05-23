@@ -8,7 +8,7 @@
 
       <DropdownMenu>
         <DropdownMenuTrigger as-child>
-          <Button variant="outline" size="icon" :class="['h-8 w-8 shrink-0 rounded-xl', bgClass, blurClass]">
+          <Button variant="outline" size="icon" :class="['h-8 w-8 shrink-0 rounded-xl border border-slate-300/50 shadow-xs', bgClass, blurClass]">
             <Icon icon="ri:apps-2-ai-line" class="h-5 w-5" />
           </Button>
         </DropdownMenuTrigger>
@@ -98,7 +98,7 @@
         <Tooltip>
           <TooltipTrigger as-child>
             <Button variant="outline" size="icon"
-              :class="['h-8 w-8 shrink-0 rounded-xl hover:bg-red-500/10 hover:text-red-600 hover:border-red-500/20', bgClass, blurClass]"
+              :class="['h-8 w-8 shrink-0 rounded-xl border border-slate-300/50 shadow-xs hover:bg-red-500/10 hover:text-red-600 hover:border-red-500/20', bgClass, blurClass]"
               :disabled="sending" @click="$emit('clearMessages')">
               <Icon icon="ri:eraser-line" class="h-4 w-4" />
             </Button>
@@ -112,7 +112,7 @@
       <div class="flex-1"></div>
 
       <Button variant="outline" size="icon" :class="[
-        'absolute right-0 top-0 h-8 w-8 shrink-0 rounded-xl transition-opacity duration-150',
+        'absolute right-0 top-0 h-8 w-8 shrink-0 rounded-xl border border-slate-300/50 shadow-xs transition-opacity duration-150',
         bgClass,
         blurClass,
         showScrollToBottomButton ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
@@ -124,7 +124,7 @@
     <!-- 输入框容器 -->
     <div :class="['relative rounded-xl', bgClass, blurClass]">
       <Textarea v-model="innerValue" v-autosize="8" :rows="2" placeholder="输入你想了解到内容"
-        class="resize-none pb-11 bg-transparent rounded-xl" @keydown.enter.exact.prevent="trySend"
+        class="resize-none pb-11 bg-transparent rounded-xl border border-slate-300/50 shadow-xs" @keydown.enter.exact.prevent="trySend"
         @paste="handlePaste" />
       <div class="absolute bottom-2 left-2 right-2 flex items-center justify-between pointer-events-none">
         <!-- 输入框功能区 -->
@@ -132,7 +132,7 @@
           <!-- 附件预览区域 -->
           <div v-if="attachments.length > 0" class="flex flex-wrap gap-2">
             <div v-for="(file, idx) in attachments" :key="idx"
-              class="relative group flex items-center gap-2 py-1 pl-1 pr-2 rounded-lg bg-white/60 border border-zinc-200">
+              class="relative group flex items-center gap-2 py-1 pl-1 pr-2 rounded-lg bg-white/60 border border-slate-100">
               <!-- 文件图标 -->
               <Icon :icon="getFileIcon(file.type)" class="h-4 w-4 text-muted-foreground shrink-0" />
               <!-- 文件名 -->
@@ -170,13 +170,13 @@
         <!-- 右侧：发送/停止按钮 -->
         <div class="flex gap-1 pointer-events-auto">
           <!-- 发送按钮 -->
-          <Button variant="ghost" size="icon" class="rounded-lg h-7 w-7 bg-amber-800 hover:!bg-amber-800/80 !text-white"
+          <Button variant="ghost" size="icon" class="rounded-lg h-7 w-7 bg-blue-700/90 hover:!bg-blue-600 !text-white"
             @click="trySend" v-show="canSend && !sending">
             <Icon icon="ri:send-plane-2-fill" class="h-3 w-3" />
           </Button>
           <!-- 停止按钮 -->
           <Button variant="ghost" size="icon"
-            class="group rounded-lg h-7 w-7 bg-amber-800 hover:!bg-amber-800/80 !text-white" @click="$emit('stop')"
+            class="group rounded-lg h-7 w-7 bg-blue-700/90 hover:!bg-blue-600 !text-white" @click="$emit('stop')"
             v-show="sending" title="停止生成">
             <span class="relative flex h-3.5 w-3.5 items-center justify-center">
               <span class="ifocal-loading absolute opacity-100 duration-800 group-hover:opacity-0"
