@@ -1,7 +1,7 @@
 <template>
   <div class="relative w-full flex flex-col" :class="compact ? '' : 'h-full'">
-    <Textarea v-model="props.modelValue" @keydown.enter.exact.prevent="$emit('translate')"
-      placeholder="输入或粘贴原文，回车开始翻译" :class="[
+    <Textarea v-model="inputValue" @keydown.enter.exact.prevent="$emit('translate')" placeholder="输入或粘贴原文，回车开始翻译"
+      :class="[
         'w-full resize-none rounded-xl border border-slate-200 bg-white p-3 text-sm leading-relaxed shadow-xs outline-none focus:border-blue-700/50',
         compact ? 'min-h-30 max-h-60' : 'flex-1 min-h-0',
       ]" />
@@ -9,15 +9,10 @@
       <span>{{ charCount }} 字符</span>
     </div>
     <div class="absolute top-1 right-1 flex items-center gap-1">
-      <Tooltip v-if="modelValue">
-        <TooltipTrigger as-child>
-          <Button variant="ghost" size="icon" class="h-5 w-5 rounded-lg text-slate-500 hover:bg-slate-100"
-            @click="$emit('update:modelValue', '')">
-            <Icon icon="ri:close-line" class="h-4 w-4" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>清空</TooltipContent>
-      </Tooltip>
+      <Button v-if="modelValue" variant="ghost" size="icon" class="h-5 w-5 rounded-lg text-slate-500 hover:bg-slate-100"
+        @click="$emit('update:modelValue', '')">
+        <Icon icon="ri:close-line" class="h-4 w-4" />
+      </Button>
     </div>
   </div>
 </template>
@@ -27,7 +22,6 @@ import { computed } from 'vue'
 import Icon from '@/components/ui/icon/Icon.vue'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 const props = defineProps<{
   modelValue: string
@@ -39,10 +33,10 @@ const emit = defineEmits<{
   (e: 'translate'): void
 }>()
 
-const charCount = computed(() => props.modelValue.length)
+const inputValue = computed<string>({
+  get: () => props.modelValue,
+  set: (value: string) => emit('update:modelValue', value),
+})
 
-function onInput(event: Event) {
-  const value = (event.target as HTMLTextAreaElement).value
-  emit('update:modelValue', value)
-}
+const charCount = computed(() => props.modelValue.length)
 </script>
