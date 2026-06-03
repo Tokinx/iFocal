@@ -4,7 +4,8 @@
     <div class="relative flex min-h-8 items-center gap-2">
       <!-- 模型选择 Dropdown -->
       <ModelSelect :current-model-name="currentModelName" :grouped-models="groupedModels"
-        :selected-pair-key="selectedPairKey" :bg-class="bgClass" :blur-class="blurClass" @selectModel="selectModel" />
+        :selected-pair-key="selectedPairKey" :pinned-model-keys="pinnedModelKeys" :bg-class="bgClass"
+        :blur-class="blurClass" @selectModel="selectModel" @togglePin="(key) => $emit('togglePinnedModel', key)" />
 
       <DropdownMenu>
         <DropdownMenuTrigger as-child>
@@ -242,6 +243,7 @@ const props = defineProps<{
   currentModelName: string
   groupedModels: Record<string, Array<{ key: string; model: string; channel: string }>>
   selectedPairKey: string
+  pinnedModelKeys: string[]
   showScrollToBottomButton: boolean
   bgClass?: string
   blurClass?: string
@@ -261,6 +263,7 @@ const emit = defineEmits<{
   (e: 'toggleFileUpload', checked: boolean): void
   (e: 'toggleMcpServer', name: string, checked: boolean): void
   (e: 'selectModel', key: string): void
+  (e: 'togglePinnedModel', key: string): void
   (e: 'scrollToBottom'): void
   (e: 'clearMessages'): void
   (e: 'attachmentsChange', files: FileAttachment[]): void

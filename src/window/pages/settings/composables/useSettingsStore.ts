@@ -17,7 +17,11 @@ import { mcpServersToEntries, type McpServerEntry } from '@/shared/mcp';
 import { mergeTargetStylePresets } from '@/shared/style-presets';
 import { modelIdFromSpec, parseModelSpec } from '@/shared/model-utils';
 import { ensureLocalChannelInjected } from '@/shared/local-llm-types';
-import { LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY } from '@/shared/model-catalog';
+import {
+  LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY,
+  PINNED_MODEL_KEYS_STORAGE_KEY,
+  normalizePinnedModelKeys,
+} from '@/shared/model-catalog';
 import { probeLocalGeminiNanoVisible } from '@/window/composables/useModelCatalog';
 import { useChannels } from './useChannels';
 
@@ -65,6 +69,7 @@ export function createSettingsStore() {
   const defaultModelValue = ref<string>('');
   const localGeminiNanoVisible = ref<boolean>(false);
   const localGeminiNanoEnabled = ref<boolean>(true);
+  const pinnedModelKeys = ref<string[]>([]);
   let storageListenerInstalled = false;
 
   watch(defaultModel, (val) => { defaultModelValue.value = joinPair(val); }, { immediate: true });
@@ -72,12 +77,68 @@ export function createSettingsStore() {
     channelsApi.includeLocalModels.value = localGeminiNanoVisible.value && localGeminiNanoEnabled.value;
   }, { immediate: true });
   watch(channelsApi.modelPairs, () => {
+    void prunePinnedModelKeys();
     if (!defaultModelValue.value) return;
     if (channelsApi.modelPairs.value.some((pair) => pair.value === defaultModelValue.value)) return;
     defaultModelValue.value = channelsApi.modelPairs.value[0]?.value || '';
     defaultModel.value = parsePair(defaultModelValue.value);
     try { chrome.storage.sync.set({ defaultModel: defaultModel.value }); } catch { /* ignore */ }
   }, { deep: true });
+
+  function settingsCatalogPairs() {
+    return channelsApi.modelPairs.value.map((pair) => {
+      const parsed = parsePair(pair.value);
+      return {
+        key: pair.value,
+        channel: parsed?.channel || '未分组',
+        model: pair.label,
+        modelId: parsed?.model || '',
+      };
+    });
+  }
+
+  function localGet(keys: string[]): Promise<any> {
+    return new Promise((resolve) => {
+      try {
+        chrome.storage.local.get(keys, resolve);
+      } catch {
+        resolve({});
+      }
+    });
+  }
+
+  function localSet(payload: Record<string, unknown>): Promise<void> {
+    return new Promise((resolve) => {
+      try {
+        chrome.storage.local.set(payload, () => resolve());
+      } catch {
+        resolve();
+      }
+    });
+  }
+
+  async function loadPinnedModelKeys() {
+    const data = await localGet([PINNED_MODEL_KEYS_STORAGE_KEY]);
+    pinnedModelKeys.value = normalizePinnedModelKeys(data?.[PINNED_MODEL_KEYS_STORAGE_KEY], settingsCatalogPairs());
+    await localSet({ [PINNED_MODEL_KEYS_STORAGE_KEY]: pinnedModelKeys.value });
+  }
+
+  async function prunePinnedModelKeys() {
+    const normalized = normalizePinnedModelKeys(pinnedModelKeys.value, settingsCatalogPairs());
+    if (normalized.length === pinnedModelKeys.value.length && normalized.every((key, index) => key === pinnedModelKeys.value[index])) return;
+    pinnedModelKeys.value = normalized;
+    await localSet({ [PINNED_MODEL_KEYS_STORAGE_KEY]: normalized });
+  }
+
+  async function togglePinnedModel(key: string) {
+    const normalizedKey = String(key || '').trim();
+    if (!normalizedKey) return;
+    const current = normalizePinnedModelKeys(pinnedModelKeys.value, settingsCatalogPairs());
+    pinnedModelKeys.value = current.includes(normalizedKey)
+      ? current.filter((item) => item !== normalizedKey)
+      : normalizePinnedModelKeys([normalizedKey, ...current], settingsCatalogPairs());
+    await localSet({ [PINNED_MODEL_KEYS_STORAGE_KEY]: pinnedModelKeys.value });
+  }
 
   async function loadAssistantDefaults() {
     const data = await new Promise<any>((resolve) => {
@@ -152,6 +213,7 @@ export function createSettingsStore() {
     });
 
     await loadAssistantDefaults();
+    await loadPinnedModelKeys();
     installStorageListener();
   }
 
@@ -166,6 +228,9 @@ export function createSettingsStore() {
     storageListenerInstalled = true;
     try {
       chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'local' && changes[PINNED_MODEL_KEYS_STORAGE_KEY]) {
+          pinnedModelKeys.value = normalizePinnedModelKeys(changes[PINNED_MODEL_KEYS_STORAGE_KEY].newValue, settingsCatalogPairs());
+        }
         if (area !== 'sync') return;
         if (changes[LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY]) {
           localGeminiNanoEnabled.value = changes[LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY].newValue !== false;
@@ -192,9 +257,11 @@ export function createSettingsStore() {
     defaultModelValue,
     localGeminiNanoVisible,
     localGeminiNanoEnabled,
+    pinnedModelKeys,
     load,
     loadAssistantDefaults,
     setLocalGeminiNanoEnabled,
+    togglePinnedModel,
     joinPair,
     parsePair,
     modelOptionsOf,

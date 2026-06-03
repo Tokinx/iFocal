@@ -90,6 +90,7 @@ export interface AssistantWorkspaceContext {
   currentModelName: string
   groupedModels: Record<string, ModelOption[]>
   selectedPairKey: string
+  pinnedModelKeys: string[]
   currentLangLabel: string
   targetLang: string
   supportedLanguages: Array<{ value: string; label: string }>
@@ -99,6 +100,7 @@ export interface AssistantWorkspaceContext {
   updateText: (value: string) => void
   selectLanguage: (lang: string) => void
   selectModel: (key: string) => void
+  togglePinnedModel: (key: string) => void
   handleSend: () => void
   stopGenerating: () => void
   toggleStreaming: (checked: boolean) => void

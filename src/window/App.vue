@@ -7,10 +7,12 @@
       <AssistantPage v-if="isAssistantRoute" :key="assistantPageKey" ref="activePageRef" :ctx="assistantCtx"
         :tasks="sidebarTasks" :sessions="sidebarSessions" :current-session-id="currentSessionId"
         :active-assistant-id="activeAssistantId" :assistant-configs="assistantConfigs" :model-pairs="modelPairs"
+        :pinned-model-keys="pinnedModelKeys"
         :format-date="formatDate"
         @selectAssistant="switchAssistant" @deleteAssistant="deleteAssistantWithHistory"
         @switchSession="switchSession" @deleteSession="deleteSession"
         @newSession="handleNewSession"
+        @togglePinnedModel="(key) => modelCatalog.togglePinnedModel(key)"
         @saveAssistant="saveAssistantFromEditor" />
       <TranslatePage v-else-if="currentRoute.name === 'translate'" key="translate" />
       <SettingsPage v-else key="settings" />
@@ -72,6 +74,7 @@ const modelPairs = computed(() => modelCatalog.modelPairs.value.map((pair) => ({
   channel: pair.channel,
   model: pair.model,
 })));
+const pinnedModelKeys = computed(() => modelCatalog.normalizedPinnedModelKeys.value);
 const assistantConfigs = ref<AssistantConfig[]>([]);
 const activeAssistantId = ref(DEFAULT_ASSISTANT_ID);
 const defaultAssistantId = ref(DEFAULT_ASSISTANT_ID);
@@ -510,6 +513,7 @@ const assistantCtx = computed<AssistantWorkspaceContext>(() => ({
   currentModelName: currentModelName.value,
   groupedModels: groupedModels.value,
   selectedPairKey: selectedPairKey.value,
+  pinnedModelKeys: pinnedModelKeys.value,
   currentLangLabel: currentLangLabel.value,
   targetLang: state.targetLang,
   supportedLanguages: SUPPORTED_LANGUAGES,
@@ -519,6 +523,7 @@ const assistantCtx = computed<AssistantWorkspaceContext>(() => ({
   updateText: (value: string) => { state.text = value },
   selectLanguage,
   selectModel,
+  togglePinnedModel: (key: string) => { void modelCatalog.togglePinnedModel(key); },
   handleSend,
   stopGenerating,
   toggleStreaming,

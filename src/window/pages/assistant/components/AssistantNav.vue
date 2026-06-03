@@ -78,7 +78,8 @@
     </ScrollArea>
 
     <AssistantEditorDialog v-if="editorOpen" :open="editorOpen" :assistant="editingAssistant" :model-pairs="modelPairs"
-      @update:open="handleEditorOpenChange" @save="onSave" @delete="onDeleteFromDialog" />
+      :pinned-model-keys="pinnedModelKeys" @update:open="handleEditorOpenChange"
+      @togglePinnedModel="(key) => $emit('togglePinnedModel', key)" @save="onSave" @delete="onDeleteFromDialog" />
   </div>
 </template>
 
@@ -105,6 +106,7 @@ const props = defineProps<{
   activeAssistantId: string
   assistantConfigs: AssistantConfig[]
   modelPairs: Array<{ key: string; channel: string; model: string }>
+  pinnedModelKeys: string[]
   formatDate: (timestamp: number) => string
 }>()
 
@@ -114,6 +116,7 @@ const emit = defineEmits<{
   (e: 'switchSession', sessionId: string): void
   (e: 'deleteSession', sessionId: string): void
   (e: 'newSession'): void
+  (e: 'togglePinnedModel', key: string): void
   (e: 'save', assistant: AssistantConfig): void
 }>()
 

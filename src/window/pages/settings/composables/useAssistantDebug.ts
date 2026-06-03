@@ -1,9 +1,10 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import type { AssistantConfig } from '@/shared/assistants';
+import { PINNED_MODELS_GROUP_NAME } from '@/shared/model-catalog';
 import type { SettingsStore, ModelPair } from './useSettingsStore';
 
 export function useAssistantDebug(store: SettingsStore) {
-  const { modelPairs, defaultModelValue, assistantConfigs, mcpServers, config, activeModel, parsePair } = store;
+  const { modelPairs, defaultModelValue, assistantConfigs, mcpServers, config, activeModel, pinnedModelKeys, parsePair } = store;
 
   const assistantDraft = ref('');
   const assistantModelValue = ref('');
@@ -25,7 +26,11 @@ export function useAssistantDebug(store: SettingsStore) {
 
   const debugGroupedModels = computed(() => {
     const groups: Record<string, Array<{ key: string; model: string; channel: string }>> = {};
+    const pinnedSet = new Set(pinnedModelKeys.value || []);
+    const pinned = debugModelPairs.value.filter((pair) => pinnedSet.has(pair.key));
+    if (pinned.length) groups[PINNED_MODELS_GROUP_NAME] = pinned;
     debugModelPairs.value.forEach((pair) => {
+      if (pinnedSet.has(pair.key)) return;
       if (!groups[pair.channel]) groups[pair.channel] = [];
       groups[pair.channel].push(pair);
     });

@@ -13,6 +13,7 @@ import {
   upsertCustomStylePreset,
 } from '@/shared/style-presets';
 import { normalizeMachineTranslateDefaultChannelId } from '@/shared/machine-translation';
+import { PINNED_MODELS_GROUP_NAME } from '@/shared/model-catalog';
 import ModelSelect from '@/window/components/ModelSelect.vue';
 import { useSettingsStore } from '@/window/pages/settings/composables/useSettingsStore';
 import { useToast } from '@/window/composables/useToast';
@@ -25,6 +26,8 @@ const {
   modelPairs,
   defaultModel,
   defaultModelValue,
+  pinnedModelKeys,
+  togglePinnedModel,
   parsePair,
   normalizeContextMessagesCount,
   ALLOWED_CONTEXT_MESSAGE_COUNTS,
@@ -50,7 +53,11 @@ const settingsModelPairs = computed(() => {
 
 const settingsGroupedModels = computed(() => {
   const groups: Record<string, Array<{ key: string; model: string; channel: string }>> = {};
+  const pinnedSet = new Set(pinnedModelKeys.value || []);
+  const pinned = settingsModelPairs.value.filter((pair) => pinnedSet.has(pair.key));
+  if (pinned.length) groups[PINNED_MODELS_GROUP_NAME] = pinned;
   settingsModelPairs.value.forEach((pair) => {
+    if (pinnedSet.has(pair.key)) return;
     if (!groups[pair.channel]) groups[pair.channel] = [];
     groups[pair.channel].push(pair);
   });
@@ -208,8 +215,9 @@ async function saveStyleOnly() {
           </div>
           <div class="w-60">
             <ModelSelect :current-model-name="defaultModelCurrentName" :grouped-models="settingsGroupedModels"
-              :selected-pair-key="defaultModelValue" buttonClass="w-full h-9 justify-between rounded-xl"
-              @selectModel="handleDefaultModelSelect" />
+              :selected-pair-key="defaultModelValue" :pinned-model-keys="pinnedModelKeys"
+              buttonClass="w-full h-9 justify-between rounded-xl" @selectModel="handleDefaultModelSelect"
+              @togglePin="togglePinnedModel" />
           </div>
         </div>
         <div class="flex items-center justify-between gap-4">

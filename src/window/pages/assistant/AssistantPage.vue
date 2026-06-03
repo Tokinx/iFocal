@@ -7,12 +7,14 @@
       :active-assistant-id="activeAssistantId"
       :assistant-configs="assistantConfigs"
       :model-pairs="modelPairs"
+      :pinned-model-keys="pinnedModelKeys"
       :format-date="formatDate"
       @selectAssistant="(id) => $emit('selectAssistant', id)"
       @deleteAssistant="(id) => $emit('deleteAssistant', id)"
       @switchSession="(id) => $emit('switchSession', id)"
       @deleteSession="(id) => $emit('deleteSession', id)"
       @newSession="$emit('newSession')"
+      @togglePinnedModel="(key) => $emit('togglePinnedModel', key)"
       @save="(assistant) => $emit('saveAssistant', assistant)" />
     <AssistantWorkspace ref="workspaceRef" :ctx="ctx" class="min-w-0" />
   </div>
@@ -39,6 +41,7 @@ defineProps<{
   activeAssistantId: string
   assistantConfigs: AssistantConfig[]
   modelPairs: Array<{ key: string; channel: string; model: string }>
+  pinnedModelKeys: string[]
   formatDate: (timestamp: number) => string
 }>()
 
@@ -48,6 +51,7 @@ defineEmits<{
   (e: 'switchSession', sessionId: string): void
   (e: 'deleteSession', sessionId: string): void
   (e: 'newSession'): void
+  (e: 'togglePinnedModel', key: string): void
   (e: 'saveAssistant', assistant: AssistantConfig): void
 }>()
 

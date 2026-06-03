@@ -36,7 +36,8 @@
           <div class="space-y-1">
             <Label class="text-sm font-medium">默认模型</Label>
             <ModelSelect :current-model-name="currentModelName" :grouped-models="groupedModels"
-              :selected-pair-key="draft.modelKey" @selectModel="updateModelKey"
+              :selected-pair-key="draft.modelKey" :pinned-model-keys="pinnedModelKeys"
+              @selectModel="updateModelKey" @togglePin="(key) => emit('togglePinnedModel', key)"
               buttonClass="w-full h-9 justify-between" />
           </div>
         </div>
@@ -107,17 +108,20 @@ import {
   type AssistantConfig,
   type AssistantPreset,
 } from '@/shared/assistants';
+import { PINNED_MODELS_GROUP_NAME } from '@/shared/model-catalog';
 
 const props = defineProps<{
   open: boolean
   assistant: AssistantConfig | null
   modelPairs: Array<{ key: string; channel: string; model: string }>
+  pinnedModelKeys: string[]
 }>();
 
 const emit = defineEmits<{
   (e: 'update:open', open: boolean): void
   (e: 'save', assistant: AssistantConfig): void
   (e: 'delete', assistantId: string): void
+  (e: 'togglePinnedModel', key: string): void
 }>();
 
 const error = ref('');
@@ -137,7 +141,11 @@ const draft = reactive<AssistantConfig>({
 
 const groupedModels = computed<Record<string, Array<{ key: string; model: string; channel: string }>>>(() => {
   const groups: Record<string, Array<{ key: string; model: string; channel: string }>> = {};
+  const pinnedSet = new Set(props.pinnedModelKeys || []);
+  const pinned = props.modelPairs.filter((pair) => pinnedSet.has(pair.key));
+  if (pinned.length) groups[PINNED_MODELS_GROUP_NAME] = pinned;
   for (const pair of props.modelPairs) {
+    if (pinnedSet.has(pair.key)) continue;
     if (!groups[pair.channel]) groups[pair.channel] = [];
     groups[pair.channel].push(pair);
   }

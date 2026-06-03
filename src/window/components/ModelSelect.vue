@@ -14,9 +14,15 @@
           <DropdownMenuSeparator v-if="groupIndex" />
           <DropdownMenuLabel>{{ channelName }}</DropdownMenuLabel>
           <DropdownMenuItem v-for="model in group" :key="model.key" @click="$emit('selectModel', model.key)"
-            class=" cursor-pointer">
-            <span class="truncate">{{ model.model }}</span>
-            <Icon v-if="selectedPairKey === model.key" icon="ri:check-line" class="ml-auto h-4 w-4" />
+            class="cursor-pointer gap-2">
+            <span class="min-w-0 flex-1 truncate">{{ model.model }}</span>
+            <Button variant="ghost" size="icon" class="h-6 w-6 shrink-0 rounded-lg text-slate-500 hover:bg-slate-100"
+              :title="pinnedSet.has(model.key) ? '取消置顶' : '置顶模型'"
+              @click.stop.prevent="$emit('togglePin', model.key)">
+              <Icon :icon="pinnedSet.has(model.key) ? 'ri:pushpin-fill' : 'ri:pushpin-line'"
+                :class="['h-3.5 w-3.5', pinnedSet.has(model.key) ? 'text-blue-700' : '']" />
+            </Button>
+            <Icon v-if="selectedPairKey === model.key" icon="ri:check-line" class="h-4 w-4 shrink-0" />
           </DropdownMenuItem>
         </template>
       </ScrollArea>
@@ -43,6 +49,7 @@ const props = defineProps<{
   currentModelName: string
   groupedModels: Record<string, Array<{ key: string; model: string; channel: string }>>
   selectedPairKey: string
+  pinnedModelKeys?: string[]
   bgClass?: string
   blurClass?: string,
   buttonClass?: string
@@ -62,7 +69,10 @@ const filteredGroupedModels = computed(() => {
   return result
 })
 
+const pinnedSet = computed(() => new Set(props.pinnedModelKeys || []))
+
 defineEmits<{
   (e: 'selectModel', key: string): void
+  (e: 'togglePin', key: string): void
 }>()
 </script>

@@ -8,7 +8,7 @@ import { useAssistantDebug } from '@/window/pages/settings/composables/useAssist
 import { useGlossary } from '@/window/pages/settings/composables/useGlossary';
 
 const store = useSettingsStore();
-const { config, assistantConfigs } = store;
+const { config, assistantConfigs, pinnedModelKeys, togglePinnedModel } = store;
 const {
   assistantDraft,
   assistantModelValue,
@@ -44,8 +44,9 @@ async function onLangChange() {
           <div class="w-56 space-y-1">
             <Label class="block">模型</Label>
             <ModelSelect :current-model-name="debugCurrentModelName" :grouped-models="debugGroupedModels"
-              :selected-pair-key="assistantModelValue" buttonClass="w-full h-9 justify-between"
-              @selectModel="handleDebugModelSelect" />
+              :selected-pair-key="assistantModelValue" :pinned-model-keys="pinnedModelKeys"
+              buttonClass="w-full h-9 justify-between" @selectModel="handleDebugModelSelect"
+              @togglePin="togglePinnedModel" />
           </div>
           <div class="w-40 space-y-1">
             <Label class="block">任务</Label>
