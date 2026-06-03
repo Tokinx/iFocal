@@ -77,6 +77,17 @@
                   <Icon icon="ri:apps-2-ai-line" class="h-4 w-4" />
                   <span class="text-sm font-medium">MCP 功能</span>
                 </div>
+                <!-- MCP 工具调用步数 -->
+                <div class="pl-6">
+                  <div class="mb-1 text-xs text-muted-foreground">工具调用步数</div>
+                  <div class="grid grid-cols-4 gap-1" :class="[bgClass]">
+                    <Button v-for="item in maxStepsOptions" :key="item.value" variant="ghost" size="sm"
+                      @click="$emit('changeMaxSteps', item.value)" class="h-6 text-xs px-0"
+                      :class="[item.value === maxSteps ? '!bg-black !text-white' : '']">
+                      {{ item.label }}
+                    </Button>
+                  </div>
+                </div>
                 <div class="space-y-2 pl-6">
                   <div v-for="server in mcpServers" :key="server.name" class="flex items-center justify-between gap-3">
                     <span
@@ -222,6 +233,7 @@ const props = defineProps<{
   enableStreaming: boolean
   enableReasoning: boolean
   reasoningEffort: ReasoningEffort
+  maxSteps: number
   enableContext: boolean
   autoPasteGlobalAssistant: boolean
   enableFileUpload: boolean
@@ -243,6 +255,7 @@ const emit = defineEmits<{
   (e: 'toggleStreaming', checked: boolean): void
   (e: 'toggleReasoning', checked: boolean): void
   (e: 'changeReasoningEffort', effort: ReasoningEffort): void
+  (e: 'changeMaxSteps', steps: number): void
   (e: 'toggleContext', checked: boolean): void
   (e: 'toggleClipboardListening', checked: boolean): void
   (e: 'toggleFileUpload', checked: boolean): void
@@ -270,6 +283,12 @@ const reasoningEffortOptions: Array<{ value: ReasoningEffort; label: string }> =
   { value: 'medium', label: '中' },
   { value: 'high', label: '高' },
   { value: 'xhigh', label: '超高' },
+]
+const maxStepsOptions: Array<{ value: number; label: string }> = [
+  { value: 1, label: '1' },
+  { value: 3, label: '3' },
+  { value: 5, label: '5' },
+  { value: 10, label: '10' },
 ]
 
 // 支持的文件类型

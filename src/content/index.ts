@@ -2534,7 +2534,7 @@ function createHoverAiTranslator(): SessionTranslator {
       const result = await new Promise<{ translated: string; error: string }>((resolve) => {
         try {
           chrome.runtime.sendMessage(
-            { action: 'performAiAction', task: 'translate', text },
+            { action: 'performAiAction', task: 'translate', text, enabledMcpServers: [] },
             (response: { ok?: boolean; result?: string; error?: string } | undefined) => {
               try { void chrome.runtime.lastError; } catch {}
               if (response && response.ok && typeof response.result === 'string') {
@@ -2724,6 +2724,7 @@ function triggerSelectionTranslate() {
 function startStreamForOverlay(overlay: OverlayHandle, task: string, text: string, pair: ChannelPair, lang: string, prevLang?: string) {
   overlay.setLoading(true);
   const payload: any = { action: 'performAiAction', task, text };
+  payload.enabledMcpServers = []; // 划词/悬浮翻译不使用 MCP，显式禁用避免连接开销
   if (pair?.channel && pair.model) { payload.channel = pair.channel; payload.model = pair.model; }
   if (lang) payload.targetLang = lang;
   if (prevLang) payload.prevLang = prevLang;

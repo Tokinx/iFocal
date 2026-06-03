@@ -76,8 +76,18 @@ type McpToolCacheEntry = McpToolContext & {
 
 type AiSdkMcpToolContext = {
   tools: ToolSet;
-  clients: MCPClient[];
   toolRefs: Record<string, McpToolReference>;
+};
+
+// AI SDK MCP 连接池条目：client 与 toolSet 同生命周期（execute 闭包绑定到 client）
+type AiSdkMcpPoolEntry = {
+  client: MCPClient;
+  toolSet: ToolSet;          // key = server 原始 toolName
+  definitions: any;          // listTools 结果，TTL 过期时复用存活 client 本地重建 toolSet
+  serverName: string;
+  server: McpServerConfig;
+  expiresAt: number;
+  failed?: boolean;          // onUncaughtError / 工具执行连接错误后置位，下次重建
 };
 
 type McpToolStatusPhase = 'preparing' | 'running' | 'finished' | 'error' | 'clear';
@@ -94,19 +104,26 @@ type McpToolStatusEvent = {
 type ModelInvokeOptions = {
   enableReasoning?: boolean;
   reasoningEffort?: ReasoningEffort;
+  maxSteps?: number;
   shouldStop?: () => boolean;
   signal?: AbortSignal;
   attachments?: any[];
   systemPrompt?: string;
-  enabledMcpServers?: string[];
+  enabledMcpServers?: string[]; // 省略（undefined）= 不启用任何 MCP；空数组同样禁用
   mcpServers?: McpServersConfig;
   onToolStatus?: (status: McpToolStatusEvent) => void;
 };
 
 const MCP_TOOL_CACHE_TTL_MS = 5 * 60 * 1000;
-const MCP_CONNECT_TIMEOUT_MS = 15000;
-const MCP_REQUEST_TIMEOUT_MS = 20000;
+const MCP_CONNECT_TIMEOUT_MS = 8000;
+const MCP_REQUEST_TIMEOUT_MS = 12000;
+const MCP_CIRCUIT_OPEN_MS = 30000;      // 坏 server 熔断窗口：失败后短期跳过
+const MCP_RESOLVE_DEADLINE_MS = 6000;   // 整条 MCP 解析软截止：超时先无工具应答
 const mcpToolCache = new Map<string, McpToolCacheEntry>();
+// AI SDK MCP 连接池：SW 存活期内复用 client + toolSet，避免每条消息重连重列
+const aiSdkMcpPool = new Map<string, AiSdkMcpPoolEntry>();
+const aiSdkMcpInflight = new Map<string, Promise<AiSdkMcpPoolEntry | null>>();
+const mcpCircuitBreaker = new Map<string, number>(); // key -> 熔断解除时间戳
 const MCP_CSP_SAFE_JSON_SCHEMA_VALIDATOR = {
   getValidator() {
     return (input: unknown) => ({ valid: true, data: input, errorMessage: undefined });
@@ -434,6 +451,7 @@ chrome.runtime.onConnect.addListener((port) => {
       const context = message.context || undefined;
       const enableReasoning = !!message.enableReasoning;
       const reasoningEffort = normalizeReasoningEffort(message.reasoningEffort);
+      const maxSteps = normalizeMaxSteps(message.maxSteps);
       const enabledMcpServers = Array.isArray(message.enabledMcpServers)
         ? normalizeEnabledMcpServerNames(message.enabledMcpServers)
         : undefined;
@@ -457,6 +475,7 @@ chrome.runtime.onConnect.addListener((port) => {
         {
           enableReasoning,
           reasoningEffort,
+          maxSteps,
           shouldStop: () => portDisconnected,
           attachments,
           systemPrompt,
@@ -498,6 +517,7 @@ async function handleLegacyAction(request: any) {
   const enableStreaming = request.enableStreaming || false;
   const enableReasoning = !!request.enableReasoning;
   const reasoningEffort = normalizeReasoningEffort(request.reasoningEffort);
+  const maxSteps = normalizeMaxSteps(request.maxSteps);
   const enabledMcpServers = Array.isArray(request.enabledMcpServers)
     ? normalizeEnabledMcpServerNames(request.enabledMcpServers)
     : undefined;
@@ -517,6 +537,7 @@ async function handleLegacyAction(request: any) {
       const resultText = await invokeModel(channel, pair.model, prompt, context, false, undefined, {
         enableReasoning,
         reasoningEffort,
+        maxSteps,
         signal: controller.signal,
         attachments,
         systemPrompt,
@@ -612,15 +633,13 @@ function normalizeEnabledMcpServerNames(value: unknown): string[] {
   return [...names];
 }
 
-function resolveEnabledMcpServerNames(enabledServers: unknown, rawServers: unknown): string[] {
+function resolveEnabledMcpServerNames(enabledServers: unknown, _rawServers?: unknown): string[] {
   if (Array.isArray(enabledServers)) {
     return normalizeEnabledMcpServerNames(enabledServers);
   }
-
-  const servers = normalizeMcpServers(rawServers);
-  return Object.entries(servers)
-    .filter(([, server]) => server.enabled !== false)
-    .map(([name]) => name);
+  // 未显式指定 enabledMcpServers（undefined）时不启用任何 MCP。
+  // fail-safe：避免划词/悬浮翻译等未传该字段的调用方误连全部 server 而被拖慢。
+  return [];
 }
 
 async function resolveMcpToolContext(rawServers: unknown, enabledServers: unknown): Promise<McpToolContext> {
@@ -650,62 +669,125 @@ async function resolveMcpToolContext(rawServers: unknown, enabledServers: unknow
 }
 
 async function resolveAiSdkMcpToolContext(rawServers: unknown, enabledServers: unknown): Promise<AiSdkMcpToolContext> {
-  const names = resolveEnabledMcpServerNames(enabledServers, rawServers);
-  if (!names.length) return { tools: {}, clients: [], toolRefs: {} };
+  const names = resolveEnabledMcpServerNames(enabledServers);
+  if (!names.length) return { tools: {}, toolRefs: {} };
 
   const servers = normalizeMcpServers(rawServers);
+
+  // 阶段一（并行，无共享命名状态）：池化获取每个 server 的连接/工具。
+  // 用软截止包裹：超过 deadline 就用已收集到的部分先应答；未完成的 server 仍在后台写入池，下条消息即命中。
+  const collected: Array<{ name: string; entry: AiSdkMcpPoolEntry }> = [];
+  const tasks = names.map(async (name) => {
+    const server = servers[name];
+    if (!server?.url) return;
+    const entry = await acquireAiSdkMcpEntry(name, server);
+    if (entry) collected.push({ name, entry });
+  });
+
+  await Promise.race([
+    Promise.allSettled(tasks),
+    new Promise<void>((resolve) => { setTimeout(resolve, MCP_RESOLVE_DEADLINE_MS); }),
+  ]);
+
+  // 阶段二（按 names 原顺序串行，保证命名去重确定性）：组装 tools/toolRefs。
   const tools: ToolSet = {};
-  const clients: MCPClient[] = [];
   const toolRefs: Record<string, McpToolReference> = {};
   const usedNames = new Set<string>();
+  const collectedByName = new Map(collected.map((c) => [c.name, c.entry] as const));
 
   for (const name of names) {
-    const server = servers[name];
-    if (!server?.url) continue;
-
-    let client: MCPClient | null = null;
-    try {
-      client = await withMcpTimeout(createAiSdkMcpClient(name, server), MCP_CONNECT_TIMEOUT_MS, `连接 MCP 超时：${name}`);
-      const definitions = await withMcpTimeout(client.listTools({
-        options: {
-          timeout: MCP_REQUEST_TIMEOUT_MS,
-          maxTotalTimeout: MCP_REQUEST_TIMEOUT_MS,
-        },
-      }), MCP_REQUEST_TIMEOUT_MS, `读取 MCP 工具超时：${name}`);
-      const serverTools = client.toolsFromDefinitions(definitions);
-
-      for (const [toolName, toolDef] of Object.entries(serverTools)) {
-        const functionName = chooseAiSdkMcpFunctionName(name, toolName, usedNames);
-        usedNames.add(functionName);
-        tools[functionName] = toolDef as ToolSet[string];
-        toolRefs[functionName] = {
-          serverName: name,
-          server: { ...server },
-          toolName,
-        };
-      }
-
-      clients.push(client);
-      client = null;
-    } catch (error) {
-      console.warn(`[MCP] 加载 AI SDK 工具失败：${name}`, error);
-    } finally {
-      if (client) {
-        try { await client.close(); } catch { }
-      }
+    const entry = collectedByName.get(name);
+    if (!entry) continue;
+    for (const [toolName, toolDef] of Object.entries(entry.toolSet)) {
+      const functionName = chooseAiSdkMcpFunctionName(name, toolName, usedNames);
+      usedNames.add(functionName);
+      tools[functionName] = toolDef as ToolSet[string];
+      toolRefs[functionName] = {
+        serverName: name,
+        server: { ...entry.server },
+        toolName,
+      };
     }
   }
 
   if (!Object.keys(tools).length) {
     console.warn('[MCP] 已启用 MCP Server，但未加载到可注入 AI SDK 工具：', names);
-    await closeAiSdkMcpClients(clients);
-    return { tools: {}, clients: [], toolRefs: {} };
   }
 
-  return { tools, clients, toolRefs };
+  return { tools, toolRefs };
 }
 
-async function createAiSdkMcpClient(serverName: string, server: McpServerConfig): Promise<MCPClient> {
+// 池化获取单个 server 的连接 + 工具集；失败返回 null（不抛），坏 server 不拖垮整体。
+async function acquireAiSdkMcpEntry(serverName: string, server: McpServerConfig): Promise<AiSdkMcpPoolEntry | null> {
+  const key = getMcpServerCacheKey(serverName, server);
+
+  // 熔断：坏 server 在窗口内直接跳过
+  const openUntil = mcpCircuitBreaker.get(key);
+  if (typeof openUntil === 'number' && openUntil > Date.now()) return null;
+
+  const cached = aiSdkMcpPool.get(key);
+  if (cached && !cached.failed) {
+    if (cached.expiresAt > Date.now()) return cached; // 命中有效池：零网络
+    // 过期但连接仍在：复用存活 client 本地重建 toolSet（无网络），续期
+    try {
+      cached.toolSet = cached.client.toolsFromDefinitions(cached.definitions) as ToolSet;
+      cached.expiresAt = Date.now() + MCP_TOOL_CACHE_TTL_MS;
+      return cached;
+    } catch (error) {
+      cached.failed = true; // 本地重建失败说明连接已坏，落到重建分支
+    }
+  }
+
+  // 失效条目：关掉并移除，随后重建
+  if (cached && cached.failed) {
+    try { await cached.client.close(); } catch { }
+    aiSdkMcpPool.delete(key);
+  }
+
+  // 并发去重：同 key 同时多请求只建一次
+  const inflight = aiSdkMcpInflight.get(key);
+  if (inflight) return inflight;
+
+  const building = (async (): Promise<AiSdkMcpPoolEntry | null> => {
+    let client: MCPClient | null = null;
+    try {
+      client = await withMcpTimeout(createAiSdkMcpClient(serverName, server, key), MCP_CONNECT_TIMEOUT_MS, `连接 MCP 超时：${serverName}`);
+      const definitions = await withMcpTimeout(client.listTools({
+        options: {
+          timeout: MCP_REQUEST_TIMEOUT_MS,
+          maxTotalTimeout: MCP_REQUEST_TIMEOUT_MS,
+        },
+      }), MCP_REQUEST_TIMEOUT_MS, `读取 MCP 工具超时：${serverName}`);
+      const toolSet = client.toolsFromDefinitions(definitions) as ToolSet;
+      const entry: AiSdkMcpPoolEntry = {
+        client,
+        toolSet,
+        definitions,
+        serverName,
+        server: { ...server },
+        expiresAt: Date.now() + MCP_TOOL_CACHE_TTL_MS,
+      };
+      aiSdkMcpPool.set(key, entry);
+      mcpCircuitBreaker.delete(key); // 成功则清除熔断
+      client = null;                 // 交给池持有，不在 catch 关闭
+      return entry;
+    } catch (error) {
+      console.warn(`[MCP] 连接/加载 AI SDK 工具失败：${serverName}`, error);
+      mcpCircuitBreaker.set(key, Date.now() + MCP_CIRCUIT_OPEN_MS);
+      if (client) { try { await client.close(); } catch { } }
+      return null;
+    }
+  })();
+
+  aiSdkMcpInflight.set(key, building);
+  try {
+    return await building;
+  } finally {
+    aiSdkMcpInflight.delete(key);
+  }
+}
+
+async function createAiSdkMcpClient(serverName: string, server: McpServerConfig, poolKey?: string): Promise<MCPClient> {
   const headers = headersInitToRecord(buildMcpAuthHeaders(server));
   return createMCPClient({
     name: 'ifocal',
@@ -719,6 +801,10 @@ async function createAiSdkMcpClient(serverName: string, server: McpServerConfig)
     onUncaughtError(error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       if (errorMsg.includes('Unsupported message type')) return;
+      if (poolKey) {
+        const entry = aiSdkMcpPool.get(poolKey);
+        if (entry) entry.failed = true; // 连接出错：标记失效，下次重建
+      }
       console.warn(`[MCP] ${serverName} 未捕获错误：`, error);
     },
   });
@@ -1987,6 +2073,11 @@ function normalizeReasoningEffort(value: unknown): ReasoningEffort {
   return 'medium';
 }
 
+function normalizeMaxSteps(value: unknown): number {
+  const n = Math.trunc(Number(value));
+  return Number.isFinite(n) && n >= 1 && n <= 20 ? n : 5;
+}
+
 function mapReasoningEffortForModel(model: string, effort: ReasoningEffort): string {
   const normalized = normalizeReasoningEffort(effort);
   if (!model.includes('deepseek-v4')) return normalized;
@@ -2342,26 +2433,23 @@ async function callOpenAI(
 
   console.log('[OpenAI] AI SDK 发送请求，消息数量:', messages.length);
 
-  try {
-    return await rateLimited(async () => {
-      const result = await streamAiSdkOpenAICompletion({
-        provider,
-        model,
-        messages,
-        tools: aiMcpContext.tools,
-        providerOptions,
-        stream,
-        onChunk,
-        opts,
-        mcpContext: mcpDisplayContext,
-      });
-
-      if (!result.content) throw new Error('OpenAI returned empty response');
-      return result.content;
+  // MCP 连接由连接池持有并跨请求复用，请求结束后不再关闭（见 acquireAiSdkMcpEntry）。
+  return await rateLimited(async () => {
+    const result = await streamAiSdkOpenAICompletion({
+      provider,
+      model,
+      messages,
+      tools: aiMcpContext.tools,
+      providerOptions,
+      stream,
+      onChunk,
+      opts,
+      mcpContext: mcpDisplayContext,
     });
-  } finally {
-    await closeAiSdkMcpClients(aiMcpContext.clients);
-  }
+
+    if (!result.content) throw new Error('OpenAI returned empty response');
+    return result.content;
+  });
 }
 
 async function streamAiSdkOpenAICompletion(args: {
@@ -2435,7 +2523,7 @@ async function streamAiSdkOpenAICompletion(args: {
       temperature: 0.2,
       tools: Object.keys(args.tools).length ? args.tools : undefined,
       toolChoice: Object.keys(args.tools).length ? 'auto' : undefined,
-      stopWhen: stepCountIs(5),
+      stopWhen: stepCountIs(args.opts?.maxSteps ?? 5),
       maxRetries: 1,
       abortSignal: abortController.signal,
       providerOptions: args.providerOptions,
@@ -2498,9 +2586,17 @@ async function streamAiSdkOpenAICompletion(args: {
 
       if (part.type === 'tool-error') {
         closeThinking();
-        console.warn('[MCP] AI SDK 工具执行失败：', getErrorMessage(part.error));
+        const errMsg = getErrorMessage(part.error);
+        console.warn('[MCP] AI SDK 工具执行失败：', errMsg);
         const functionName = String(part.toolName || '').trim();
         if (functionName) {
+          if (/closed client|connection closed/i.test(errMsg)) {
+            const ref = args.mcpContext.toolRefs[functionName];
+            if (ref) {
+              const failedEntry = aiSdkMcpPool.get(getMcpServerCacheKey(ref.serverName, ref.server));
+              if (failedEntry) failedEntry.failed = true; // 连接错误：下条请求重建
+            }
+          }
           emitToolStatus(buildMcpToolStatus('error', functionName, args.mcpContext, undefined, part.error, String(part.toolCallId || part.id || '')));
         }
         continue;

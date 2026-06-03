@@ -81,6 +81,7 @@ export interface AssistantWorkspaceContext {
   enableStreaming: boolean
   enableReasoning: boolean
   reasoningEffort: ReasoningEffort
+  maxSteps: number
   enableContext: boolean
   enableFileUpload: boolean
   mcpServers: McpServerEntry[]
@@ -103,6 +104,7 @@ export interface AssistantWorkspaceContext {
   toggleStreaming: (checked: boolean) => void
   toggleReasoning: (checked: boolean) => void
   changeReasoningEffort: (effort: ReasoningEffort) => void
+  changeMaxSteps: (steps: number) => void
   toggleContext: (checked: boolean) => void
   toggleClipboardListening: (checked: boolean) => void
   toggleFileUpload: (checked: boolean) => void

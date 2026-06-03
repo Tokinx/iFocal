@@ -23,7 +23,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref, watch, nextTick, type ComponentPublicInstance } from 'vue';
 import { marked } from 'marked';
-import { DEFAULT_REASONING_EFFORT, SUPPORTED_LANGUAGES, loadConfig, saveConfig, type ReasoningEffort } from '@/shared/config';
+import { DEFAULT_MAX_STEPS, DEFAULT_REASONING_EFFORT, SUPPORTED_LANGUAGES, loadConfig, saveConfig, type ReasoningEffort } from '@/shared/config';
 import {
   ACTIVE_ASSISTANT_ID_STORAGE_KEY,
   ASSISTANT_CONFIGS_STORAGE_KEY,
@@ -93,6 +93,7 @@ const aiMessageElements = ref<HTMLElement[]>([]);
 const enableStreaming = ref(false);
 const enableReasoning = ref(false); // 思考模式
 const reasoningEffort = ref<ReasoningEffort>(DEFAULT_REASONING_EFFORT); // 思考等级
+const maxSteps = ref<number>(DEFAULT_MAX_STEPS); // MCP 工具调用最大步数
 const enableContext = ref(false); // 上下文
 const enableFileUpload = ref(false); // 文件上传
 const mcpServers = ref<McpServerEntry[]>([]); // 可用 MCP Server
@@ -493,6 +494,7 @@ const assistantCtx = computed<AssistantWorkspaceContext>(() => ({
   enableStreaming: enableStreaming.value,
   enableReasoning: enableReasoning.value,
   reasoningEffort: reasoningEffort.value,
+  maxSteps: maxSteps.value,
   enableContext: enableContext.value,
   enableFileUpload: enableFileUpload.value,
   mcpServers: mcpServers.value,
@@ -515,6 +517,7 @@ const assistantCtx = computed<AssistantWorkspaceContext>(() => ({
   toggleStreaming,
   toggleReasoning,
   changeReasoningEffort,
+  changeMaxSteps,
   toggleContext,
   toggleClipboardListening,
   toggleFileUpload,
@@ -1287,6 +1290,7 @@ function applyAssistantRuntime(assistant: AssistantConfig | null) {
   enableStreaming.value = assistant.settings.enableStreaming;
   enableReasoning.value = assistant.settings.enableReasoning;
   reasoningEffort.value = assistant.settings.reasoningEffort;
+  maxSteps.value = assistant.settings.maxSteps;
   enableContext.value = assistant.settings.enableContext;
   enableFileUpload.value = assistant.settings.enableFileUpload;
   mcpServerToggles.value = { ...(assistant.settings.mcpServerToggles || {}) };
@@ -1809,6 +1813,7 @@ async function sendPreparedMessage(
   const enableReasoningFlag = enableReasoning.value;
   const enabledMcpServerNamesSnapshot = enabledMcpServerNames.value;
   const reasoningEffortFlag = reasoningEffort.value;
+  const maxStepsFlag = maxSteps.value;
 
   // 添加用户消息到当前会话
   const safeAttachments = hasAttachments ? attachments : undefined;
@@ -1860,10 +1865,10 @@ async function sendPreparedMessage(
 
   // 如果启用流式，使用流式调用
   if (enableStreaming.value) {
-    await handleStreamingSend(text, pair, session, currentModelNameSnapshot, assistantPromptSnapshot, enableContextFlag, contextCount, enableReasoningFlag, enabledMcpServerNamesSnapshot, reasoningEffortFlag, requestStartAt, requestId, attachments);
+    await handleStreamingSend(text, pair, session, currentModelNameSnapshot, assistantPromptSnapshot, enableContextFlag, contextCount, enableReasoningFlag, enabledMcpServerNamesSnapshot, reasoningEffortFlag, maxStepsFlag, requestStartAt, requestId, attachments);
   } else {
     inflightRequestId = requestId;
-    await handleNonStreamingSend(text, pair, session, currentModelNameSnapshot, assistantPromptSnapshot, enableContextFlag, contextCount, enableReasoningFlag, enabledMcpServerNamesSnapshot, reasoningEffortFlag, requestStartAt, requestId, attachments);
+    await handleNonStreamingSend(text, pair, session, currentModelNameSnapshot, assistantPromptSnapshot, enableContextFlag, contextCount, enableReasoningFlag, enabledMcpServerNamesSnapshot, reasoningEffortFlag, maxStepsFlag, requestStartAt, requestId, attachments);
   }
 }
 
@@ -1879,6 +1884,7 @@ async function handleNonStreamingSend(
   enableReasoning: boolean,
   enabledMcpServers: string[],
   reasoningEffort: ReasoningEffort,
+  maxSteps: number,
   requestStartAt: number,
   requestId: string,
   attachments?: Message['attachments']
@@ -1892,6 +1898,7 @@ async function handleNonStreamingSend(
     enableReasoning,
     enabledMcpServers,
     reasoningEffort,
+    maxSteps,
     assistantPrompt,
     requestId
   };
@@ -2010,6 +2017,7 @@ async function handleStreamingSend(
   enableReasoning: boolean,
   enabledMcpServers: string[],
   reasoningEffort: ReasoningEffort,
+  maxSteps: number,
   requestStartAt: number,
   requestId: string,
   attachments?: Message['attachments']
@@ -2023,6 +2031,7 @@ async function handleStreamingSend(
     enableReasoning,
     enabledMcpServers,
     reasoningEffort,
+    maxSteps,
     assistantPrompt
   };
   if (pair) { msg.channel = pair.channel; msg.model = pair.model; }
@@ -2579,6 +2588,15 @@ async function changeReasoningEffort(effort: ReasoningEffort) {
     await updateActiveAssistantSettings({ reasoningEffort: effort });
   } catch (e) {
     console.error('保存思考等级设置失败:', e);
+  }
+}
+
+async function changeMaxSteps(steps: number) {
+  maxSteps.value = steps;
+  try {
+    await updateActiveAssistantSettings({ maxSteps: steps });
+  } catch (e) {
+    console.error('保存工具步数设置失败:', e);
   }
 }
 

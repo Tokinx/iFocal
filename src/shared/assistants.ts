@@ -1,5 +1,5 @@
 import { DEFAULT_PROMPT_TEMPLATES, type PromptTemplates } from '@/shared/ai';
-import { DEFAULT_REASONING_EFFORT, DEFAULT_TASK_SETTINGS, type ReasoningEffort, type TaskSettings } from '@/shared/config';
+import { DEFAULT_MAX_STEPS, DEFAULT_REASONING_EFFORT, DEFAULT_TASK_SETTINGS, type ReasoningEffort, type TaskSettings } from '@/shared/config';
 import { normalizeBuiltinMcpServerName } from '@/shared/mcp';
 
 export type AssistantPreset = 'chat' | 'translate' | 'summarize';
@@ -227,6 +227,7 @@ function normalizeAssistantSettings(
     targetLang: normalizeLanguageCode(source.targetLang, normalizedDefaultTargetLang),
     prevLang: normalizeLanguageCode(source.prevLang, normalizedDefaultPrevLang),
     reasoningEffort: normalizeReasoningEffort(source.reasoningEffort ?? fallback.reasoningEffort),
+    maxSteps: normalizeMaxSteps(source.maxSteps ?? fallback.maxSteps),
   };
 }
 
@@ -262,6 +263,11 @@ function normalizeReasoningEffort(value: unknown): ReasoningEffort {
   const effort = String(value || '').toLowerCase();
   if (effort === 'low' || effort === 'medium' || effort === 'high' || effort === 'xhigh') return effort;
   return DEFAULT_REASONING_EFFORT;
+}
+
+function normalizeMaxSteps(value: unknown): number {
+  const n = Math.trunc(Number(value));
+  return Number.isFinite(n) && n >= 1 && n <= 20 ? n : DEFAULT_MAX_STEPS;
 }
 
 function normalizeAssistantIcon(value: unknown, preset: AssistantPreset): string {

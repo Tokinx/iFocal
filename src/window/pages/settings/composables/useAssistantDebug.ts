@@ -94,6 +94,7 @@ export function useAssistantDebug(store: SettingsStore) {
       enableStreaming: !!selectedAssistant.settings.enableStreaming,
       enableReasoning: !!selectedAssistant.settings.enableReasoning,
       reasoningEffort: selectedAssistant.settings.reasoningEffort,
+      maxSteps: selectedAssistant.settings.maxSteps,
       enabledMcpServers: getEnabledAssistantMcpServers(selectedAssistant),
     };
     if (pair) {

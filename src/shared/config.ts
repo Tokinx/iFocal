@@ -38,6 +38,7 @@ export const SUPPORTED_TASKS = [
 
 export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
 export const DEFAULT_REASONING_EFFORT: ReasoningEffort = 'medium';
+export const DEFAULT_MAX_STEPS = 5; // MCP 工具调用最大步数（agentic 多轮上限）
 
 // 任务专属设置类型
 export interface TaskSettings {
@@ -46,6 +47,7 @@ export interface TaskSettings {
   enableReasoning: boolean;     // 启用思考模式
   enableFileUpload: boolean;    // 启用文件上传
   reasoningEffort: ReasoningEffort; // 思考等级
+  maxSteps: number;             // MCP 工具调用最大步数
 }
 
 // 默认任务设置（按任务类型）
@@ -55,21 +57,24 @@ export const DEFAULT_TASK_SETTINGS: Record<string, TaskSettings> = {
     enableStreaming: false,
     enableReasoning: false,
     enableFileUpload: false,
-    reasoningEffort: DEFAULT_REASONING_EFFORT
+    reasoningEffort: DEFAULT_REASONING_EFFORT,
+    maxSteps: DEFAULT_MAX_STEPS
   },
   chat: {
     enableContext: true,
     enableStreaming: true,
     enableReasoning: false,
     enableFileUpload: true,
-    reasoningEffort: DEFAULT_REASONING_EFFORT
+    reasoningEffort: DEFAULT_REASONING_EFFORT,
+    maxSteps: DEFAULT_MAX_STEPS
   },
   summarize: {
     enableContext: false,
     enableStreaming: false,
     enableReasoning: true,
     enableFileUpload: false,
-    reasoningEffort: DEFAULT_REASONING_EFFORT
+    reasoningEffort: DEFAULT_REASONING_EFFORT,
+    maxSteps: DEFAULT_MAX_STEPS
   }
 };
 
@@ -81,6 +86,11 @@ function normalizeReasoningEffort(value: unknown): ReasoningEffort {
   return DEFAULT_REASONING_EFFORT;
 }
 
+function normalizeMaxSteps(value: unknown): number {
+  const n = Math.trunc(Number(value));
+  return Number.isFinite(n) && n >= 1 && n <= 20 ? n : DEFAULT_MAX_STEPS;
+}
+
 function normalizeTaskSetting(task: string, raw: any): TaskSettings {
   const fallback = DEFAULT_TASK_SETTINGS[task] || DEFAULT_TASK_SETTINGS.translate;
   return {
@@ -89,6 +99,7 @@ function normalizeTaskSetting(task: string, raw: any): TaskSettings {
     enableReasoning: typeof raw?.enableReasoning === 'boolean' ? raw.enableReasoning : fallback.enableReasoning,
     enableFileUpload: typeof raw?.enableFileUpload === 'boolean' ? raw.enableFileUpload : fallback.enableFileUpload,
     reasoningEffort: normalizeReasoningEffort(raw?.reasoningEffort ?? fallback.reasoningEffort),
+    maxSteps: normalizeMaxSteps(raw?.maxSteps ?? fallback.maxSteps),
   };
 }
 
@@ -349,7 +360,8 @@ export async function loadConfig(): Promise<typeof DEFAULT_CONFIG> {
               enableStreaming: items.enableStreaming ?? DEFAULT_TASK_SETTINGS[task].enableStreaming,
               enableReasoning: items.enableReasoning ?? DEFAULT_TASK_SETTINGS[task].enableReasoning,
               enableFileUpload: items.enableFileUpload ?? DEFAULT_TASK_SETTINGS[task].enableFileUpload,
-              reasoningEffort: DEFAULT_TASK_SETTINGS[task].reasoningEffort
+              reasoningEffort: DEFAULT_TASK_SETTINGS[task].reasoningEffort,
+              maxSteps: DEFAULT_TASK_SETTINGS[task].maxSteps
             };
           }
           config.taskSettings = migratedSettings;
