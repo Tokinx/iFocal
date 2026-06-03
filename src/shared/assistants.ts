@@ -7,7 +7,7 @@ export type AssistantPreset = 'chat' | 'translate' | 'summarize';
 export interface AssistantSettings extends TaskSettings {
   enableClipboardListening: boolean;
   mcpServerToggles: Record<string, boolean>;
-  enableMcpTools?: boolean;
+  enableMcpTools: boolean;
   targetLang: string;
   prevLang: string;
 }
@@ -223,7 +223,7 @@ function normalizeAssistantSettings(
           ? legacyClipboard
           : !!defaults.enableClipboardListening,
     mcpServerToggles: normalizeMcpServerToggles(source.mcpServerToggles, source.enableMcpTools, defaults.mcpServerToggles),
-    enableMcpTools: undefined,
+    enableMcpTools: typeof source.enableMcpTools === 'boolean' ? source.enableMcpTools : true,
     targetLang: normalizeLanguageCode(source.targetLang, normalizedDefaultTargetLang),
     prevLang: normalizeLanguageCode(source.prevLang, normalizedDefaultPrevLang),
     reasoningEffort: normalizeReasoningEffort(source.reasoningEffort ?? fallback.reasoningEffort),

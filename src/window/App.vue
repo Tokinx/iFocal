@@ -105,6 +105,7 @@ const reasoningEffort = ref<ReasoningEffort>(DEFAULT_REASONING_EFFORT); // 思�
 const maxSteps = ref<number>(DEFAULT_MAX_STEPS); // MCP 工具调用最大步数
 const enableContext = ref(false); // 上下文
 const enableFileUpload = ref(false); // 文件上传
+const enableMcpTools = ref(true); // MCP 总开关
 const mcpServers = ref<McpServerEntry[]>([]); // 可用 MCP Server
 const mcpServerToggles = ref<Record<string, boolean>>({}); // 当前助手的 MCP 开关
 const reduceVisualEffects = ref(false); // 减弱视觉效果配置
@@ -480,6 +481,7 @@ const effectiveMcpServerToggles = computed(() => {
 });
 
 const enabledMcpServerNames = computed(() => {
+  if (!enableMcpTools.value) return [];
   const toggles = effectiveMcpServerToggles.value;
   return mcpServers.value
     .filter((server) => !!toggles[server.name])
@@ -507,6 +509,7 @@ const assistantCtx = computed<AssistantWorkspaceContext>(() => ({
   maxSteps: maxSteps.value,
   enableContext: enableContext.value,
   enableFileUpload: enableFileUpload.value,
+  enableMcpTools: enableMcpTools.value,
   mcpServers: mcpServers.value,
   mcpServerToggles: effectiveMcpServerToggles.value,
   autoPasteGlobalAssistant: autoPasteGlobalAssistant.value,
@@ -533,6 +536,7 @@ const assistantCtx = computed<AssistantWorkspaceContext>(() => ({
   toggleContext,
   toggleClipboardListening,
   toggleFileUpload,
+  toggleMcpTools,
   toggleMcpServer,
   openSettings: openSettingsCenter,
   handleScrollToBottomClick,
@@ -1322,6 +1326,7 @@ function applyAssistantRuntime(assistant: AssistantConfig | null) {
   maxSteps.value = assistant.settings.maxSteps;
   enableContext.value = assistant.settings.enableContext;
   enableFileUpload.value = assistant.settings.enableFileUpload;
+  enableMcpTools.value = assistant.settings.enableMcpTools !== false;
   mcpServerToggles.value = { ...(assistant.settings.mcpServerToggles || {}) };
   autoPasteGlobalAssistant.value = !!assistant.settings.enableClipboardListening;
   if (autoPasteGlobalAssistant.value && document.hasFocus()) {
@@ -2636,6 +2641,15 @@ async function toggleFileUpload(checked: boolean) {
     await updateActiveAssistantSettings({ enableFileUpload: checked });
   } catch (e) {
     console.error('保存文件上传设置失败:', e);
+  }
+}
+
+async function toggleMcpTools(checked: boolean) {
+  enableMcpTools.value = checked;
+  try {
+    await updateActiveAssistantSettings({ enableMcpTools: checked });
+  } catch (e) {
+    console.error('保存 MCP 总开关失败:', e);
   }
 }
 

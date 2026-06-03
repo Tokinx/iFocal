@@ -84,6 +84,7 @@ export interface AssistantWorkspaceContext {
   maxSteps: number
   enableContext: boolean
   enableFileUpload: boolean
+  enableMcpTools: boolean
   mcpServers: McpServerEntry[]
   mcpServerToggles: Record<string, boolean>
   autoPasteGlobalAssistant: boolean
@@ -110,6 +111,7 @@ export interface AssistantWorkspaceContext {
   toggleContext: (checked: boolean) => void
   toggleClipboardListening: (checked: boolean) => void
   toggleFileUpload: (checked: boolean) => void
+  toggleMcpTools: (checked: boolean) => void
   toggleMcpServer: (name: string, checked: boolean) => void
   openSettings: () => void
   handleScrollToBottomClick: () => void

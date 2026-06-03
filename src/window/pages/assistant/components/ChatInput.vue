@@ -74,30 +74,38 @@
               </div>
               <!-- MCP 功能 -->
               <div v-if="mcpServers.length" class="space-y-2">
-                <div class="flex items-center gap-2">
-                  <Icon icon="ri:apps-2-ai-line" class="h-4 w-4" />
-                  <span class="text-sm font-medium">MCP 功能</span>
-                </div>
-                <!-- MCP 工具调用步数 -->
-                <div class="pl-6">
-                  <div class="mb-1 text-xs text-muted-foreground">工具调用步数</div>
-                  <div class="grid grid-cols-4 gap-1" :class="[bgClass]">
-                    <Button v-for="item in maxStepsOptions" :key="item.value" variant="ghost" size="sm"
-                      @click="$emit('changeMaxSteps', item.value)" class="h-6 text-xs px-0"
-                      :class="[item.value === maxSteps ? '!bg-black !text-white' : '']">
-                      {{ item.label }}
-                    </Button>
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <Icon icon="ri:apps-2-ai-line" class="h-4 w-4" />
+                    <span class="text-sm font-medium">MCP 功能</span>
                   </div>
+                  <Switch :model-value="enableMcpTools" @update:modelValue="$emit('toggleMcpTools', !!$event)" />
                 </div>
-                <div class="space-y-2 pl-6">
-                  <div v-for="server in mcpServers" :key="server.name" class="flex items-center justify-between gap-3">
-                    <span
-                      :class="['min-w-0 truncate text-xs', mcpServerToggles[server.name] ? 'text-foreground' : 'text-muted-foreground']"
-                      :title="server.name">
-                      {{ server.name }}
-                    </span>
-                    <Switch :model-value="!!mcpServerToggles[server.name]" size="sm"
-                      @update:modelValue="$emit('toggleMcpServer', server.name, !!$event)" />
+                <div :class="[
+                  'overflow-hidden transition-all duration-200',
+                  enableMcpTools ? 'max-h-56 opacity-100' : 'max-h-0 opacity-0'
+                ]">
+                  <!-- MCP 工具调用步数 -->
+                  <div class="pl-6">
+                    <div class="mb-1 text-xs text-muted-foreground">工具调用步数</div>
+                    <div class="grid grid-cols-4 gap-1" :class="[bgClass]">
+                      <Button v-for="item in maxStepsOptions" :key="item.value" variant="ghost" size="sm"
+                        @click="$emit('changeMaxSteps', item.value)" class="h-6 text-xs px-0"
+                        :class="[item.value === maxSteps ? '!bg-black !text-white' : '']">
+                        {{ item.label }}
+                      </Button>
+                    </div>
+                  </div>
+                  <div class="mt-2 space-y-2 pl-6">
+                    <div v-for="server in mcpServers" :key="server.name" class="flex items-center justify-between gap-3">
+                      <span
+                        :class="['min-w-0 truncate text-xs', mcpServerToggles[server.name] ? 'text-foreground' : 'text-muted-foreground']"
+                        :title="server.name">
+                        {{ server.name }}
+                      </span>
+                      <Switch :model-value="!!mcpServerToggles[server.name]" size="sm"
+                        @update:modelValue="$emit('toggleMcpServer', server.name, !!$event)" />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -238,6 +246,7 @@ const props = defineProps<{
   enableContext: boolean
   autoPasteGlobalAssistant: boolean
   enableFileUpload: boolean
+  enableMcpTools: boolean
   mcpServers: McpServerEntry[]
   mcpServerToggles: Record<string, boolean>
   currentModelName: string
@@ -261,6 +270,7 @@ const emit = defineEmits<{
   (e: 'toggleContext', checked: boolean): void
   (e: 'toggleClipboardListening', checked: boolean): void
   (e: 'toggleFileUpload', checked: boolean): void
+  (e: 'toggleMcpTools', checked: boolean): void
   (e: 'toggleMcpServer', name: string, checked: boolean): void
   (e: 'selectModel', key: string): void
   (e: 'togglePinnedModel', key: string): void

@@ -170,7 +170,7 @@
         <ChatInput ref="chatInputRef" :model-value="ctx.text" :sending="ctx.isBusy"
           :enable-streaming="ctx.enableStreaming" :enable-reasoning="ctx.enableReasoning"
           :reasoning-effort="ctx.reasoningEffort" :max-steps="ctx.maxSteps" :enable-context="ctx.enableContext"
-          :enable-file-upload="ctx.enableFileUpload" :mcp-servers="ctx.mcpServers"
+          :enable-file-upload="ctx.enableFileUpload" :enable-mcp-tools="ctx.enableMcpTools" :mcp-servers="ctx.mcpServers"
           :mcp-server-toggles="ctx.mcpServerToggles" :auto-paste-global-assistant="ctx.autoPasteGlobalAssistant"
           :bg-class="ctx.bgClass" :blur-class="ctx.blurClass" :current-model-name="ctx.currentModelName"
           :grouped-models="ctx.groupedModels" :selected-pair-key="ctx.selectedPairKey"
@@ -181,7 +181,7 @@
           @stop="ctx.stopGenerating" @toggleStreaming="ctx.toggleStreaming" @toggleReasoning="ctx.toggleReasoning"
           @changeReasoningEffort="ctx.changeReasoningEffort" @changeMaxSteps="ctx.changeMaxSteps" @toggleContext="ctx.toggleContext"
           @toggleClipboardListening="ctx.toggleClipboardListening" @toggleFileUpload="ctx.toggleFileUpload"
-          @toggleMcpServer="ctx.toggleMcpServer" @openSettings="ctx.openSettings"
+          @toggleMcpTools="ctx.toggleMcpTools" @toggleMcpServer="ctx.toggleMcpServer" @openSettings="ctx.openSettings"
           @scrollToBottom="ctx.handleScrollToBottomClick" @clearMessages="ctx.clearMessages" />
       </footer>
     </ScrollArea>
