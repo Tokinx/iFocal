@@ -10,6 +10,8 @@ import {
   type MachineTranslateChannel,
 } from '@/shared/machine-translation'
 import { modelIdFromSpec, parseModelSpec } from '@/shared/model-utils'
+import { LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY, buildModelCatalogPairs } from '@/shared/model-catalog'
+import { probeLocalGeminiNanoVisible } from '@/window/composables/useModelCatalog'
 
 const STORAGE_KEY = 'translatePageState'
 
@@ -148,6 +150,8 @@ export function useTranslatePage() {
   const machineChannels = ref<MachineTranslateChannel[]>([])
   const mtDefaultChannelId = ref<string>(DEFAULT_MACHINE_TRANSLATE_CHANNEL_ID)
   const defaultAiPairKey = ref<string>('')
+  const localGeminiNanoVisible = ref<boolean>(false)
+  const localGeminiNanoEnabled = ref<boolean>(true)
 
   const watchClipboard = ref<boolean>(false)
   const autoTranslate = ref<boolean>(false)
@@ -164,22 +168,14 @@ export function useTranslatePage() {
   const targetLangOptions = computed<TranslateLanguageOption[]>(() => SUPPORTED_LANGUAGES)
 
   const aiPairOptions = computed(() => {
-    const out: { key: string; channel: string; modelId: string; modelLabel: string }[] = []
-    for (const ch of aiChannels.value) {
-      const channelName = String(ch.name || '').trim()
-      if (!channelName) continue
-      for (const m of ch.models || []) {
-        const { modelId, displayName } = parseModelSpec(m)
-        if (!modelId) continue
-        out.push({
-          key: `${channelName}|${modelId}`,
-          channel: channelName,
-          modelId,
-          modelLabel: displayName || modelId,
-        })
-      }
-    }
-    return out
+    return buildModelCatalogPairs(aiChannels.value, {
+      includeLocalGeminiNano: localGeminiNanoVisible.value && localGeminiNanoEnabled.value,
+    }).map((pair) => ({
+      key: pair.key,
+      channel: pair.channel,
+      modelId: pair.modelId,
+      modelLabel: pair.model,
+    }))
   })
 
   const groupedAiModels = computed(() => {
@@ -263,13 +259,16 @@ export function useTranslatePage() {
   async function loadAll() {
     initializing.value = true
     try {
-      const [globalConfig, syncData, localData] = await Promise.all([
+      const [globalConfig, syncData, localData, localVisible] = await Promise.all([
         loadConfig(),
-        syncGet<{ channels?: AiChannel[]; defaultModel?: any; activeModel?: any }>(['channels', 'defaultModel', 'activeModel']),
+        syncGet<{ channels?: AiChannel[]; defaultModel?: any; activeModel?: any; localGeminiNanoEnabled?: boolean }>(['channels', 'defaultModel', 'activeModel', LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY]),
         localGet<{ [k: string]: any }>([STORAGE_KEY]),
+        probeLocalGeminiNanoVisible(),
       ])
 
       aiChannels.value = Array.isArray(syncData.channels) ? syncData.channels : []
+      localGeminiNanoVisible.value = !!localVisible
+      localGeminiNanoEnabled.value = syncData.localGeminiNanoEnabled !== false
 
       const mt = normalizeMachineTranslateChannels(globalConfig.mtChannels)
       machineChannels.value = mt
@@ -504,6 +503,34 @@ export function useTranslatePage() {
     }
   }
 
+  async function refreshChannelCatalog() {
+    const [globalConfig, syncData, localVisible] = await Promise.all([
+      loadConfig(),
+      syncGet<{ channels?: AiChannel[]; defaultModel?: any; activeModel?: any; localGeminiNanoEnabled?: boolean }>(['channels', 'defaultModel', 'activeModel', LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY]),
+      probeLocalGeminiNanoVisible(),
+    ])
+    aiChannels.value = Array.isArray(syncData.channels) ? syncData.channels : []
+    localGeminiNanoVisible.value = !!localVisible
+    localGeminiNanoEnabled.value = syncData.localGeminiNanoEnabled !== false
+
+    const mt = normalizeMachineTranslateChannels(globalConfig.mtChannels)
+    machineChannels.value = mt
+    mtDefaultChannelId.value = normalizeMachineTranslateDefaultChannelId(globalConfig.mtDefaultChannelId, mt)
+
+    defaultAiPairKey.value = ''
+    const prefer = syncData.activeModel || syncData.defaultModel
+    if (prefer && prefer.channel && prefer.model) {
+      const modelId = modelIdFromSpec(prefer.model)
+      if (modelId) defaultAiPairKey.value = `${String(prefer.channel)}|${modelId}`
+    }
+    if (!defaultAiPairKey.value && aiPairOptions.value[0]) {
+      defaultAiPairKey.value = aiPairOptions.value[0].key
+    }
+
+    const nextCards = pruneCards(cards.value)
+    cards.value = nextCards.length || !cards.value.length ? nextCards : buildDefaultCards()
+  }
+
   function refreshCard(id: string) {
     const card = cards.value.find((c) => c.id === id)
     if (card) void runCard(card)
@@ -575,7 +602,24 @@ export function useTranslatePage() {
       clearTimeout(saveTimer)
       saveTimer = null
     }
+    try { chrome.storage.onChanged.removeListener(onStorageChanged) } catch { /* ignore */ }
   })
+
+  function onStorageChanged(changes: Record<string, chrome.storage.StorageChange>, area: string) {
+    if (area !== 'sync') return
+    if (
+      changes.channels
+      || changes.mtChannels
+      || changes.mtDefaultChannelId
+      || changes.defaultModel
+      || changes.activeModel
+      || changes[LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY]
+    ) {
+      void refreshChannelCatalog()
+    }
+  }
+
+  try { chrome.storage.onChanged.addListener(onStorageChanged) } catch { /* ignore */ }
 
   return {
     sourceLang,

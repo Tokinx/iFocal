@@ -21,6 +21,10 @@ import {
   type McpServersConfig,
 } from '@/shared/mcp';
 import {
+  LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY,
+  isLocalGeminiNanoChannel,
+} from '@/shared/model-catalog';
+import {
   normalizeLocalProviderId,
   ensureLocalChannelInjected,
   LOCAL_CHANNEL_TYPE,
@@ -437,7 +441,7 @@ chrome.runtime.onConnect.addListener((port) => {
     try {
       const attachments = Array.isArray(message.attachments) ? message.attachments : undefined;
       const text = ensureTextOrAttachments(message.text, attachments);
-      const cfg = await readConfig(['channels', 'defaultModel', 'activeModel', 'translateTargetLang', 'prevLanguage', 'promptTemplates', 'systemPrompt', 'mcpServers']);
+      const cfg = await readConfig(['channels', 'defaultModel', 'activeModel', 'translateTargetLang', 'prevLanguage', 'promptTemplates', 'systemPrompt', 'mcpServers', LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY]);
       const pair = pickModelFromConfig(message.task, message.channel && message.model ? { channel: message.channel, model: message.model } : null, cfg);
       if (!pair) throw new Error('No available model');
       const channel = ensureChannel(cfg.channels, pair.channel);
@@ -502,7 +506,7 @@ chrome.runtime.onConnect.addListener((port) => {
 async function handleLegacyAction(request: any) {
   const attachments = Array.isArray(request.attachments) ? request.attachments : undefined;
   const text = ensureTextOrAttachments(request.text, attachments);
-  const cfg = await readConfig(['channels', 'defaultModel', 'activeModel', 'translateTargetLang', 'prevLanguage', 'promptTemplates', 'systemPrompt', 'mcpServers']);
+  const cfg = await readConfig(['channels', 'defaultModel', 'activeModel', 'translateTargetLang', 'prevLanguage', 'promptTemplates', 'systemPrompt', 'mcpServers', LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY]);
   const pair = pickModelFromConfig(request.task, request.channel && request.model ? { channel: request.channel, model: request.model } : null, cfg);
   if (!pair) throw new Error('No available model');
   const channel = ensureChannel(cfg.channels, pair.channel);
@@ -2032,6 +2036,12 @@ async function readConfig(keys: string[]) {
 
 function pickModelFromConfig(task: string, requestPair: any, cfg: any) {
   const channels = Array.isArray(cfg.channels) ? cfg.channels : [];
+  const includeLocalGeminiNano = cfg?.[LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY] !== false;
+  const isChannelSelectable = (channel: any) => {
+    if (!channel) return false;
+    if (isLocalGeminiNanoChannel(channel) && !includeLocalGeminiNano) return false;
+    return true;
+  };
   const normalizePair = (pair: any) => {
     if (!pair || !pair.channel || !pair.model) return null;
     const channel = String(pair.channel || '').trim();
@@ -2043,12 +2053,13 @@ function pickModelFromConfig(task: string, requestPair: any, cfg: any) {
     const normalized = normalizePair(pair);
     if (!normalized) return false;
     const ch = channels.find((c: any) => c.name === normalized.channel);
-    return !!(ch && channelContainsModelId(ch, normalized.model));
+    return !!(isChannelSelectable(ch) && channelContainsModelId(ch, normalized.model));
   };
   if (isValid(requestPair)) return normalizePair(requestPair);
   if (isValid(cfg.defaultModel)) return normalizePair(cfg.defaultModel);
   if (task === 'translate') {
     for (const ch of channels) {
+      if (!isChannelSelectable(ch)) continue;
       const firstModelId = firstModelIdFromChannel(ch);
       if (firstModelId) return { channel: ch.name, model: firstModelId };
     }
@@ -2056,6 +2067,7 @@ function pickModelFromConfig(task: string, requestPair: any, cfg: any) {
   }
   if (isValid(cfg.activeModel)) return normalizePair(cfg.activeModel);
   for (const ch of channels) {
+    if (!isChannelSelectable(ch)) continue;
     const firstModelId = firstModelIdFromChannel(ch);
     if (firstModelId) return { channel: ch.name, model: firstModelId };
   }

@@ -38,10 +38,12 @@ import {
   type AssistantConfig,
   type AssistantPreset,
 } from '@/shared/assistants';
-import { modelIdFromSpec, parseModelSpec } from '@/shared/model-utils';
+import { modelIdFromSpec } from '@/shared/model-utils';
 import { useToast } from '@/window/composables/useToast';
 import { loadPromptTemplates } from '@/shared/prompt-templates';
 import { mcpServersToEntries, type McpServerEntry } from '@/shared/mcp';
+import { LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY, PINNED_MODEL_KEYS_STORAGE_KEY } from '@/shared/model-catalog';
+import { useModelCatalog } from '@/window/composables/useModelCatalog';
 import Sidebar from './components/Sidebar.vue';
 import AssistantPage from './pages/assistant/AssistantPage.vue';
 import SettingsPage from './pages/settings/SettingsPage.vue';
@@ -52,7 +54,6 @@ import type { AssistantPageExpose, AssistantTask, AssistantWorkspaceContext, Sid
 const GLOBAL_WIN_VIEW_KEY = 'globalAssistantWindowRequestedView';
 
 type Pair = { channel: string; model: string };
-type Channel = { name: string; type: string; apiKey?: string; apiUrl?: string; models?: string[]; systemPromptCompatMode?: boolean };
 type ToolStatusResponse = {
   phase?: string;
   id?: string;
@@ -65,7 +66,12 @@ type ToolStatusResponse = {
 type Message = WindowMessage;
 type Session = WindowSession;
 
-const modelPairs = ref<{ key: string; channel: string; model: string }[]>([]);
+const modelCatalog = useModelCatalog();
+const modelPairs = computed(() => modelCatalog.modelPairs.value.map((pair) => ({
+  key: pair.key,
+  channel: pair.channel,
+  model: pair.model,
+})));
 const assistantConfigs = ref<AssistantConfig[]>([]);
 const activeAssistantId = ref(DEFAULT_ASSISTANT_ID);
 const defaultAssistantId = ref(DEFAULT_ASSISTANT_ID);
@@ -445,12 +451,13 @@ const currentLangLabel = computed(() => {
 // 按渠道分组模型
 const groupedModels = computed(() => {
   const groups: Record<string, typeof modelPairs.value> = {};
-  modelPairs.value.forEach(pair => {
-    if (!groups[pair.channel]) {
-      groups[pair.channel] = [];
-    }
-    groups[pair.channel].push(pair);
-  });
+  for (const [groupName, pairs] of Object.entries(modelCatalog.groupedModels.value)) {
+    groups[groupName] = pairs.map((pair) => ({
+      key: pair.key,
+      channel: pair.channel,
+      model: pair.model,
+    }));
+  }
   return groups;
 });
 
@@ -1222,6 +1229,23 @@ function normalizeAssistantModelKeys(configs: AssistantConfig[]): { configs: Ass
   return { configs: next, changed };
 }
 
+let assistantModelNormalizeTimer: ReturnType<typeof setTimeout> | null = null;
+
+watch(modelPairs, () => {
+  if (!assistantConfigs.value.length || !modelPairs.value.length) return;
+  if (assistantModelNormalizeTimer) clearTimeout(assistantModelNormalizeTimer);
+  assistantModelNormalizeTimer = setTimeout(() => {
+    assistantModelNormalizeTimer = null;
+    const normalized = normalizeAssistantModelKeys(assistantConfigs.value);
+    if (!normalized.changed) return;
+    assistantConfigs.value = normalized.configs;
+    applyAssistantRuntime(activeAssistant.value);
+    persistAssistantConfigs(normalized.configs).catch((e) => {
+      console.error('保存助手模型清理失败:', e);
+    });
+  }, 100);
+}, { deep: true });
+
 function localGet(keys: string[]): Promise<any> {
   return new Promise((resolve) => {
     try {
@@ -1592,21 +1616,12 @@ function normalizeLoadedMessage(raw: any): Message | null {
   return message;
 }
 
-async function loadModels() {
-  const cfg: any = await new Promise(resolve => chrome.storage.sync.get(['channels', 'defaultModel', 'activeModel'], resolve));
+async function loadModels(refreshCatalog = true) {
+  if (refreshCatalog) await modelCatalog.refresh();
+  const cfg: any = await new Promise(resolve => chrome.storage.sync.get(['defaultModel', 'activeModel'], resolve));
   const localData: any = await new Promise(resolve => chrome.storage.local.get(['selectedModelByTask'], resolve));
 
-  const channels: Channel[] = Array.isArray(cfg.channels) ? cfg.channels : [];
-  const pairs = channels.flatMap(ch => (ch.models || []).map(m => {
-    const { modelId, displayName } = parseModelSpec(m);
-    if (!modelId) return null;
-    return {
-      key: keyOf({ channel: ch.name, model: modelId }),
-      channel: ch.name,
-      model: displayName || modelId // 显示名称
-    };
-  }).filter((p): p is { key: string; channel: string; model: string } => !!p));
-  modelPairs.value = pairs;
+  const pairs = modelPairs.value;
 
   // 加载每个任务的模型选择
   if (localData.selectedModelByTask) {
@@ -2708,6 +2723,15 @@ onMounted(async () => {
       if (area === 'sync' && changes.mcpServers) {
         mcpServers.value = mcpServersToEntries(changes.mcpServers.newValue);
       }
+      if (
+        area === 'sync'
+        && (changes.channels || changes.defaultModel || changes.activeModel || changes[LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY])
+      ) {
+        void loadModels(true);
+      }
+      if (area === 'local' && changes[PINNED_MODEL_KEYS_STORAGE_KEY]) {
+        void modelCatalog.prunePinnedModels();
+      }
       if (area === 'local' && changes[GLOBAL_WIN_VIEW_KEY]) {
         void consumeRequestedWindowView(changes[GLOBAL_WIN_VIEW_KEY].newValue);
       }
@@ -2812,6 +2836,10 @@ onBeforeUnmount(() => {
   if (saveSessionsTimer) {
     clearTimeout(saveSessionsTimer);
     saveSessionsTimer = null;
+  }
+  if (assistantModelNormalizeTimer) {
+    clearTimeout(assistantModelNormalizeTimer);
+    assistantModelNormalizeTimer = null;
   }
   // 组件卸载前保存会话
   saveSessions();

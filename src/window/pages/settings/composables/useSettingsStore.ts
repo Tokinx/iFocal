@@ -1,5 +1,5 @@
 import { inject, ref, watch, type InjectionKey } from 'vue';
-import { DEFAULT_CONFIG, loadConfig } from '@/shared/config';
+import { DEFAULT_CONFIG, loadConfig, saveConfig } from '@/shared/config';
 import {
   ASSISTANT_CONFIGS_STORAGE_KEY,
   DEFAULT_ASSISTANT_ID,
@@ -17,6 +17,8 @@ import { mcpServersToEntries, type McpServerEntry } from '@/shared/mcp';
 import { mergeTargetStylePresets } from '@/shared/style-presets';
 import { modelIdFromSpec, parseModelSpec } from '@/shared/model-utils';
 import { ensureLocalChannelInjected } from '@/shared/local-llm-types';
+import { LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY } from '@/shared/model-catalog';
+import { probeLocalGeminiNanoVisible } from '@/window/composables/useModelCatalog';
 import { useChannels } from './useChannels';
 
 export type ModelPair = { channel: string; model: string } | null;
@@ -61,8 +63,21 @@ export function createSettingsStore() {
   const assistantConfigs = ref<AssistantConfig[]>([]);
   const defaultAssistantId = ref<string>(DEFAULT_ASSISTANT_ID);
   const defaultModelValue = ref<string>('');
+  const localGeminiNanoVisible = ref<boolean>(false);
+  const localGeminiNanoEnabled = ref<boolean>(true);
+  let storageListenerInstalled = false;
 
   watch(defaultModel, (val) => { defaultModelValue.value = joinPair(val); }, { immediate: true });
+  watch([localGeminiNanoVisible, localGeminiNanoEnabled], () => {
+    channelsApi.includeLocalModels.value = localGeminiNanoVisible.value && localGeminiNanoEnabled.value;
+  }, { immediate: true });
+  watch(channelsApi.modelPairs, () => {
+    if (!defaultModelValue.value) return;
+    if (channelsApi.modelPairs.value.some((pair) => pair.value === defaultModelValue.value)) return;
+    defaultModelValue.value = channelsApi.modelPairs.value[0]?.value || '';
+    defaultModel.value = parsePair(defaultModelValue.value);
+    try { chrome.storage.sync.set({ defaultModel: defaultModel.value }); } catch { /* ignore */ }
+  }, { deep: true });
 
   async function loadAssistantDefaults() {
     const data = await new Promise<any>((resolve) => {
@@ -89,8 +104,13 @@ export function createSettingsStore() {
   }
 
   async function load() {
-    const globalConfig = await loadConfig();
+    const [globalConfig, localVisible] = await Promise.all([
+      loadConfig(),
+      probeLocalGeminiNanoVisible(),
+    ]);
     config.value = { ...globalConfig };
+    localGeminiNanoVisible.value = !!localVisible;
+    localGeminiNanoEnabled.value = (globalConfig as any)[LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY] !== false;
     config.value.contextMessagesCount = normalizeContextMessagesCount(config.value.contextMessagesCount);
     machineChannels.value = normalizeMachineTranslateChannels((globalConfig as any).mtChannels);
     mtDefaultChannelId.value = normalizeMachineTranslateDefaultChannelId((globalConfig as any).mtDefaultChannelId, machineChannels.value);
@@ -132,6 +152,31 @@ export function createSettingsStore() {
     });
 
     await loadAssistantDefaults();
+    installStorageListener();
+  }
+
+  async function setLocalGeminiNanoEnabled(checked: boolean) {
+    localGeminiNanoEnabled.value = !!checked;
+    (config.value as any)[LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY] = localGeminiNanoEnabled.value;
+    await saveConfig({ [LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY]: localGeminiNanoEnabled.value } as any);
+  }
+
+  function installStorageListener() {
+    if (storageListenerInstalled) return;
+    storageListenerInstalled = true;
+    try {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== 'sync') return;
+        if (changes[LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY]) {
+          localGeminiNanoEnabled.value = changes[LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY].newValue !== false;
+          (config.value as any)[LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY] = localGeminiNanoEnabled.value;
+        }
+        if (changes.channels) {
+          channelsApi.channels.value = Array.isArray(changes.channels.newValue) ? changes.channels.newValue : [];
+          channelsApi.initTestModels();
+        }
+      });
+    } catch { /* ignore */ }
   }
 
   return {
@@ -145,8 +190,11 @@ export function createSettingsStore() {
     assistantConfigs,
     defaultAssistantId,
     defaultModelValue,
+    localGeminiNanoVisible,
+    localGeminiNanoEnabled,
     load,
     loadAssistantDefaults,
+    setLocalGeminiNanoEnabled,
     joinPair,
     parsePair,
     modelOptionsOf,

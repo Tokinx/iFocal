@@ -1,5 +1,6 @@
 import { computed, reactive, ref } from 'vue';
 import { firstModelIdFromChannel, modelIdFromSpec, parseModelSpec } from '@/shared/model-utils';
+import { buildModelCatalogPairs } from '@/shared/model-catalog';
 import type { LocalLlmParams, LocalLlmProviderId } from '@/shared/local-llm-types';
 
 export type Channel = {
@@ -23,21 +24,14 @@ function withDefaultApiUrl(type: string, url?: string) {
 
 export function useChannels() {
   const channels = ref<Channel[]>([]);
+  const includeLocalModels = ref(false);
   const modelPairs = computed(() => {
-    const pairs: { value: string; label: string }[] = [];
-    channels.value.forEach(ch => {
-      const models = Array.isArray(ch?.models) ? ch.models : [];
-      models.forEach(m => {
-        if (typeof m !== 'string') return;
-        const { modelId, displayName } = parseModelSpec(m);
-        if (!modelId) return;
-        pairs.push({
-          value: `${ch.name}|${modelId}`,
-          label: displayName || modelId
-        });
-      });
-    });
-    return pairs;
+    return buildModelCatalogPairs(channels.value, {
+      includeLocalGeminiNano: includeLocalModels.value,
+    }).map((pair) => ({
+      value: pair.key,
+      label: pair.model,
+    }));
   });
 
   // 通道新增
@@ -197,6 +191,7 @@ export function useChannels() {
 
   return {
     channels,
+    includeLocalModels,
     modelPairs,
     addForm,
     addChannel,

@@ -9,6 +9,7 @@ import {
   DEFAULT_MCP_SERVERS,
   normalizeMcpServers,
 } from '@/shared/mcp';
+import { LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY } from '@/shared/model-catalog';
 
 // 支持的语言列表
 export const SUPPORTED_LANGUAGES = [
@@ -157,6 +158,9 @@ export const DEFAULT_CONFIG = {
   // MCP 服务：为空时由用户自行添加
   mcpServers: DEFAULT_MCP_SERVERS,
 
+  // Chrome 内置 Gemini-Nano：支持环境中允许用户手动关闭
+  [LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY]: true,
+
   // 新增：译文样式名称（应用到译文包裹元素），默认点状下划线
   wrapperStyleName: 'ifocal-target-style-dotted',
   // 新增：样式预设列表（可在设置页选择与编辑）
@@ -294,6 +298,7 @@ export const CONFIG_KEYS = [
   'mtChannels',
   'mtDefaultChannelId',
   'mcpServers',
+  LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY,
   'wrapperStyleName',
   'targetStylePresets'
 ];

@@ -4,11 +4,18 @@ import Icon from '@/components/ui/icon/Icon.vue';
 import { iconOfAction } from '@/shared/icons';
 import { useSettingsStore } from '@/window/pages/settings/composables/useSettingsStore';
 import { useChannelExtras } from '@/window/pages/settings/composables/useChannelExtras';
-import { useLocalChannelAvailability } from '@/window/pages/settings/composables/useLocalChannelAvailability';
 import LocalChannelPanel from '@/window/pages/settings/components/LocalChannelPanel.vue';
 
 const store = useSettingsStore();
-const { channels, addForm, testModel, modelOptionsOf } = store;
+const {
+  channels,
+  addForm,
+  testModel,
+  modelOptionsOf,
+  localGeminiNanoVisible,
+  localGeminiNanoEnabled,
+  setLocalGeminiNanoEnabled,
+} = store;
 const {
   showApiKeyByIndex,
   modelsTextByIndex,
@@ -36,12 +43,10 @@ const {
   fetchAddFormModels,
 } = useChannelExtras(store);
 
-const { visible: localChannelVisible } = useLocalChannelAvailability();
-
 // 探测未完成（null）或不可用（false） → 隐藏本地渠道；其他渠道始终显示
 function shouldShowChannel(type: string | undefined): boolean {
   if (type !== 'local') return true;
-  return localChannelVisible.value === true;
+  return localGeminiNanoVisible.value === true;
 }
 
 const hasVisibleChannel = computed(() => channels.value.some((ch) => shouldShowChannel(ch?.type)));
@@ -188,8 +193,10 @@ const hasVisibleChannel = computed(() => channels.value.some((ch) => shouldShowC
           <LocalChannelPanel
             :channel="ch"
             :index="idx"
+            :enabled="localGeminiNanoEnabled"
             @save="handleSaveChannelInline(idx)"
             @remove="confirmRemoveChannel(idx)"
+            @update:enabled="(checked) => setLocalGeminiNanoEnabled(checked)"
           />
         </div>
 

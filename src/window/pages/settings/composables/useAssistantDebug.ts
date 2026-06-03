@@ -1,10 +1,9 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
-import { parseModelSpec } from '@/shared/model-utils';
 import type { AssistantConfig } from '@/shared/assistants';
 import type { SettingsStore, ModelPair } from './useSettingsStore';
 
 export function useAssistantDebug(store: SettingsStore) {
-  const { channels, defaultModelValue, assistantConfigs, mcpServers, config, activeModel, parsePair } = store;
+  const { modelPairs, defaultModelValue, assistantConfigs, mcpServers, config, activeModel, parsePair } = store;
 
   const assistantDraft = ref('');
   const assistantModelValue = ref('');
@@ -14,15 +13,14 @@ export function useAssistantDebug(store: SettingsStore) {
   let assistantPort: chrome.runtime.Port | null = null;
 
   const debugModelPairs = computed(() => {
-    return channels.value.flatMap((ch) => (ch.models || []).map((m) => {
-      const { modelId, displayName } = parseModelSpec(m);
-      if (!modelId) return null;
+    return modelPairs.value.map((pair) => {
+      const parsed = parsePair(pair.value);
       return {
-        key: `${ch.name}|${modelId}`,
-        model: displayName || modelId,
-        channel: ch.name,
+        key: pair.value,
+        model: pair.label,
+        channel: parsed?.channel || '未分组',
       };
-    }).filter((p): p is { key: string; model: string; channel: string } => !!p));
+    });
   });
 
   const debugGroupedModels = computed(() => {

@@ -11,8 +11,11 @@ import {
   type LocalLlmProbeResult,
 } from '@/shared/local-llm-types';
 
-const props = defineProps<{ channel: Channel; index: number }>();
-const emit = defineEmits<{ (e: 'save'): void }>();
+const props = defineProps<{ channel: Channel; index: number; enabled: boolean }>();
+const emit = defineEmits<{
+  (e: 'save'): void;
+  (e: 'update:enabled', value: boolean): void;
+}>();
 
 const checking = ref(false);
 const probeResult = ref<LocalLlmProbeResult | null>(null);
@@ -191,6 +194,16 @@ function finishDownload(ok: boolean) {
       当前仅支持 Chrome 138+ 并在
       <code class="rounded bg-background px-1">chrome://flags/#prompt-api-for-gemini-nano</code>
       中启用 Gemini-Nano
+    </div>
+
+    <div class="flex items-center justify-between gap-4">
+      <div>
+        <label class="text-sm font-medium leading-none block mb-1">启用 Gemini-Nano</label>
+        <p class="text-xs text-muted-foreground">关闭后不会出现在聊天、翻译和默认模型选择器中</p>
+      </div>
+      <div>
+        <Switch :model-value="enabled" @update:modelValue="emit('update:enabled', !!$event)" />
+      </div>
     </div>
 
     <div class="flex items-center justify-between gap-4">
