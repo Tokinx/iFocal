@@ -13,14 +13,18 @@
         <template v-for="(group, channelName, groupIndex) in filteredGroupedModels" :key="channelName">
           <DropdownMenuSeparator v-if="groupIndex" />
           <DropdownMenuLabel>{{ channelName }}</DropdownMenuLabel>
-          <DropdownMenuItem v-for="model in group" :key="model.key" @click="$emit('selectModel', model.key)"
+          <DropdownMenuItem v-for="model in group" :key="model.key" @click="emit('selectModel', model.key)"
             class="cursor-pointer gap-2">
             <span class="min-w-0 flex-1 truncate">{{ model.model }}</span>
-            <Button variant="ghost" size="icon" class="h-6 w-6 shrink-0 rounded-lg text-slate-500 hover:bg-slate-100"
+            <Button as="span" variant="ghost" size="icon"
+              class="h-6 w-6 shrink-0 cursor-pointer rounded-lg text-slate-500 hover:bg-slate-100"
               :title="pinnedSet.has(model.key) ? '取消置顶' : '置顶模型'"
-              @click.stop.prevent="$emit('togglePin', model.key)">
-              <Icon :icon="pinnedSet.has(model.key) ? 'ri:pushpin-fill' : 'ri:pushpin-line'"
-                :class="['h-3.5 w-3.5', pinnedSet.has(model.key) ? 'text-blue-700' : '']" />
+              role="button" tabindex="-1"
+              @pointerdown.stop.prevent
+              @mousedown.stop.prevent
+              @click.stop.prevent="togglePin(model.key)">
+              <Icon icon="lucide:pin"
+                :class="['h-3.5 w-3.5', pinnedSet.has(model.key) ? 'rotate-45 text-blue-700' : 'text-slate-400']" />
             </Button>
             <Icon v-if="selectedPairKey === model.key" icon="ri:check-line" class="h-4 w-4 shrink-0" />
           </DropdownMenuItem>
@@ -71,8 +75,12 @@ const filteredGroupedModels = computed(() => {
 
 const pinnedSet = computed(() => new Set(props.pinnedModelKeys || []))
 
-defineEmits<{
+const emit = defineEmits<{
   (e: 'selectModel', key: string): void
   (e: 'togglePin', key: string): void
 }>()
+
+function togglePin(key: string) {
+  emit('togglePin', key)
+}
 </script>

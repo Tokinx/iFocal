@@ -9,7 +9,7 @@ import {
   normalizeMachineTranslateDefaultChannelId,
   type MachineTranslateChannel,
 } from '@/shared/machine-translation'
-import { modelIdFromSpec, parseModelSpec } from '@/shared/model-utils'
+import { modelIdFromSpec } from '@/shared/model-utils'
 import { LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY, buildModelCatalogPairs } from '@/shared/model-catalog'
 import { probeLocalGeminiNanoVisible } from '@/window/composables/useModelCatalog'
 
@@ -75,6 +75,17 @@ type AiChannel = {
   models?: string[]
 }
 
+type TranslateHistoryRun = {
+  runId: string
+  recordId: string
+  startedAt: number
+  sourceText: string
+  sourceLang: string
+  targetLang: string
+  cards: TranslateCardItem[]
+  limit: number
+}
+
 function randomId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
@@ -97,6 +108,26 @@ function localSet(payload: Record<string, unknown>): Promise<void> {
       resolve()
     }
   })
+}
+
+function readHistoryFromLocalStorage(): unknown {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return undefined
+    const raw = window.localStorage.getItem(HISTORY_STORAGE_KEY)
+    if (!raw) return undefined
+    return JSON.parse(raw)
+  } catch {
+    return undefined
+  }
+}
+
+function writeHistoryToLocalStorage(records: TranslateHistoryRecord[]) {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return
+    window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(records))
+  } catch {
+    // localStorage may be unavailable in restricted contexts.
+  }
 }
 
 function syncGet<T = any>(keys: string[]): Promise<T> {
@@ -187,6 +218,7 @@ export function useTranslatePage() {
   let autoTranslateTimer: ReturnType<typeof setTimeout> | null = null
   let suppressAutoTranslateUntil = 0
   let lastClipboardText = ''
+  let activeTranslateRunId = ''
 
   const sourceLangOptions = computed<TranslateLanguageOption[]>(() => {
     return [{ value: 'auto', label: '自动检测' }, ...SUPPORTED_LANGUAGES]
@@ -319,7 +351,11 @@ export function useTranslatePage() {
       if (typeof persisted.targetLang === 'string' && persisted.targetLang) targetLang.value = persisted.targetLang
       if (typeof persisted.watchClipboard === 'boolean') watchClipboard.value = persisted.watchClipboard
       if (typeof persisted.autoTranslate === 'boolean') autoTranslate.value = persisted.autoTranslate
-      historyRecords.value = normalizeHistoryRecords(localData?.[HISTORY_STORAGE_KEY])
+      const localStorageHistory = readHistoryFromLocalStorage()
+      historyRecords.value = normalizeHistoryRecords(localStorageHistory ?? localData?.[HISTORY_STORAGE_KEY])
+      if (localStorageHistory === undefined && historyRecords.value.length) {
+        writeHistoryToLocalStorage(historyRecords.value)
+      }
     } finally {
       initializing.value = false
     }
@@ -576,8 +612,23 @@ export function useTranslatePage() {
     activeHistoryId.value = ''
     clearHistoryTitleOverrides()
     const activeCards = cards.value.filter((card) => !card.collapsed)
-    await Promise.all(activeCards.map((card) => runCard(card)))
-    await saveHistorySnapshot()
+    const text = sourceText.value.trim()
+    if (!text || !activeCards.length) return
+    const config = await loadConfig()
+    const run: TranslateHistoryRun = {
+      runId: randomId(),
+      recordId: '',
+      startedAt: Date.now(),
+      sourceText: text,
+      sourceLang: sourceLang.value,
+      targetLang: targetLang.value,
+      cards: cards.value.map((card) => ({ ...card })),
+      limit: normalizeHistoryLimit((config as any).maxSessionsCount),
+    }
+    activeTranslateRunId = run.runId
+    for (const card of activeCards) {
+      void runCard(card).then(() => saveHistoryRunSnapshot(run))
+    }
   }
 
   function normalizeHistoryLimit(value: unknown): number {
@@ -585,21 +636,12 @@ export function useTranslatePage() {
     return Number.isFinite(n) && n > 0 ? Math.min(100, n) : 10
   }
 
-  function hasHistoryResult(): boolean {
-    return cards.value.some((card) => {
-      const rt = runtime[card.id]
-      return !!(rt && !rt.loading && String(rt.result || '').trim())
-    })
-  }
-
-  async function saveHistorySnapshot() {
-    const text = sourceText.value.trim()
-    if (!text || !hasHistoryResult()) return
+  function buildHistoryResults(run: TranslateHistoryRun): Record<string, TranslateHistoryCardSnapshot> {
     const results: Record<string, TranslateHistoryCardSnapshot> = {}
-    const cardSnapshots = cards.value.map((card) => ({ ...card }))
-    for (const card of cards.value) {
+    for (const card of run.cards) {
       const rt = runtime[card.id]
       if (!rt || rt.loading) continue
+      if (rt.startedAt < run.startedAt) continue
       results[card.id] = {
         cardId: card.id,
         kind: card.kind,
@@ -611,20 +653,41 @@ export function useTranslatePage() {
         durationMs: Math.max(0, Number(rt.durationMs) || 0),
       }
     }
+    return results
+  }
+
+  function hasPersistableHistoryResult(results: Record<string, TranslateHistoryCardSnapshot>): boolean {
+    return Object.values(results).some((item) => String(item.result || item.error || '').trim())
+  }
+
+  function saveHistoryRunSnapshot(run: TranslateHistoryRun) {
+    if (activeTranslateRunId !== run.runId) return
+    const results = buildHistoryResults(run)
+    if (!hasPersistableHistoryResult(results)) return
+
+    const existingIndex = run.recordId
+      ? historyRecords.value.findIndex((item) => item.id === run.recordId)
+      : -1
+
     const record: TranslateHistoryRecord = {
-      id: randomId(),
-      createdAt: Date.now(),
-      sourceText: text,
-      sourceLang: sourceLang.value,
-      targetLang: targetLang.value,
-      cards: cardSnapshots,
+      id: run.recordId || randomId(),
+      createdAt: existingIndex >= 0 ? historyRecords.value[existingIndex]!.createdAt : Date.now(),
+      sourceText: run.sourceText,
+      sourceLang: run.sourceLang,
+      targetLang: run.targetLang,
+      cards: run.cards.map((card) => ({ ...card })),
       results,
     }
-    const config = await loadConfig()
-    const limit = normalizeHistoryLimit((config as any).maxSessionsCount)
-    historyRecords.value = [record, ...historyRecords.value].slice(0, limit)
+    run.recordId = record.id
+    if (existingIndex >= 0) {
+      const next = historyRecords.value.slice()
+      next[existingIndex] = record
+      historyRecords.value = next.slice(0, run.limit)
+    } else {
+      historyRecords.value = [record, ...historyRecords.value].slice(0, run.limit)
+    }
     activeHistoryId.value = record.id
-    await localSet({ [HISTORY_STORAGE_KEY]: historyRecords.value })
+    writeHistoryToLocalStorage(historyRecords.value)
   }
 
   function restoreHistory(recordId: string) {
@@ -635,6 +698,7 @@ export function useTranslatePage() {
       autoTranslateTimer = null
     }
     suppressAutoTranslateUntil = Date.now() + 1000
+    activeTranslateRunId = ''
     activeHistoryId.value = record.id
     sourceText.value = record.sourceText
     sourceLang.value = record.sourceLang || 'auto'

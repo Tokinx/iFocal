@@ -15,20 +15,10 @@
             <span>{{ formatTime(record.createdAt) }}</span>
             <span class="h-1 w-1 rounded-full bg-slate-300" />
             <span>{{ record.sourceLang }} → {{ record.targetLang }}</span>
-            <span class="ml-auto tabular-nums">{{ resultCount(record) }} 个结果</span>
+            <span class="ml-auto tabular-nums">{{ record.cards.length }} 渠道</span>
           </div>
           <div class="mt-1 truncate text-xs font-medium text-slate-700" :title="record.sourceText">
             {{ record.sourceText }}
-          </div>
-          <div class="mt-1 space-y-0.5">
-            <div v-for="item in resultPreview(record)" :key="item.cardId"
-              class="flex min-w-0 items-start gap-1 text-[11px] text-slate-500">
-              <span class="shrink-0 text-slate-400">{{ item.title || '未配置' }}</span>
-              <span class="shrink-0 text-slate-300">·</span>
-              <span class="min-w-0 truncate" :class="item.error ? 'text-red-500' : ''">
-                {{ item.error || item.result || '无结果' }}
-              </span>
-            </div>
           </div>
         </button>
       </div>
@@ -42,7 +32,7 @@
 <script setup lang="ts">
 import Icon from '@/components/ui/icon/Icon.vue'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import type { TranslateHistoryCardSnapshot, TranslateHistoryRecord } from '../useTranslatePage'
+import type { TranslateHistoryRecord } from '../useTranslatePage'
 
 defineProps<{
   records: TranslateHistoryRecord[]
@@ -53,20 +43,6 @@ defineProps<{
 defineEmits<{
   (e: 'restore', recordId: string): void
 }>()
-
-function resultEntries(record: TranslateHistoryRecord): TranslateHistoryCardSnapshot[] {
-  return record.cards
-    .map((card) => record.results[card.id])
-    .filter((item): item is TranslateHistoryCardSnapshot => !!item)
-}
-
-function resultCount(record: TranslateHistoryRecord): number {
-  return resultEntries(record).filter((item) => item.result || item.error).length
-}
-
-function resultPreview(record: TranslateHistoryRecord): TranslateHistoryCardSnapshot[] {
-  return resultEntries(record).filter((item) => item.result || item.error).slice(0, 2)
-}
 
 function formatTime(timestamp: number): string {
   const date = new Date(timestamp)
