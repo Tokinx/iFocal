@@ -14,6 +14,7 @@ import { LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY, buildModelCatalogPairs } from '@
 import { probeLocalGeminiNanoVisible } from '@/window/composables/useModelCatalog'
 
 const STORAGE_KEY = 'translatePageState'
+const HISTORY_STORAGE_KEY = 'translateHistoryRecords'
 
 export type TranslateCardKind = 'machine' | 'ai'
 
@@ -32,6 +33,27 @@ export interface TranslateCardRuntime {
   durationMs: number
   startedAt: number
   lastText: string
+}
+
+export interface TranslateHistoryCardSnapshot {
+  cardId: string
+  kind: TranslateCardKind
+  ref: string
+  title: string
+  subtitle: string
+  result: string
+  error: string
+  durationMs: number
+}
+
+export interface TranslateHistoryRecord {
+  id: string
+  createdAt: number
+  sourceText: string
+  sourceLang: string
+  targetLang: string
+  cards: TranslateCardItem[]
+  results: Record<string, TranslateHistoryCardSnapshot>
 }
 
 export interface TranslateLanguageOption {
@@ -145,6 +167,10 @@ export function useTranslatePage() {
 
   const cards = ref<TranslateCardItem[]>([])
   const runtime = reactive<Record<string, TranslateCardRuntime>>({})
+  const historyRecords = ref<TranslateHistoryRecord[]>([])
+  const activeHistoryId = ref<string>('')
+  const titleOverrides = reactive<Record<string, string>>({})
+  const subtitleOverrides = reactive<Record<string, string>>({})
 
   const aiChannels = ref<AiChannel[]>([])
   const machineChannels = ref<MachineTranslateChannel[]>([])
@@ -159,6 +185,7 @@ export function useTranslatePage() {
   const initializing = ref(true)
   let saveTimer: ReturnType<typeof setTimeout> | null = null
   let autoTranslateTimer: ReturnType<typeof setTimeout> | null = null
+  let suppressAutoTranslateUntil = 0
   let lastClipboardText = ''
 
   const sourceLangOptions = computed<TranslateLanguageOption[]>(() => {
@@ -190,7 +217,7 @@ export function useTranslatePage() {
   const cardTitleMap = computed(() => {
     const map: Record<string, string> = {}
     for (const card of cards.value) {
-      map[card.id] = resolveCardTitle(card)
+      map[card.id] = titleOverrides[card.id] || resolveCardTitle(card)
     }
     return map
   })
@@ -198,7 +225,7 @@ export function useTranslatePage() {
   const cardSubtitleMap = computed(() => {
     const map: Record<string, string> = {}
     for (const card of cards.value) {
-      map[card.id] = resolveCardSubtitle(card)
+      map[card.id] = subtitleOverrides[card.id] || resolveCardSubtitle(card)
     }
     return map
   })
@@ -262,7 +289,7 @@ export function useTranslatePage() {
       const [globalConfig, syncData, localData, localVisible] = await Promise.all([
         loadConfig(),
         syncGet<{ channels?: AiChannel[]; defaultModel?: any; activeModel?: any; localGeminiNanoEnabled?: boolean }>(['channels', 'defaultModel', 'activeModel', LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY]),
-        localGet<{ [k: string]: any }>([STORAGE_KEY]),
+        localGet<{ [k: string]: any }>([STORAGE_KEY, HISTORY_STORAGE_KEY]),
         probeLocalGeminiNanoVisible(),
       ])
 
@@ -292,6 +319,7 @@ export function useTranslatePage() {
       if (typeof persisted.targetLang === 'string' && persisted.targetLang) targetLang.value = persisted.targetLang
       if (typeof persisted.watchClipboard === 'boolean') watchClipboard.value = persisted.watchClipboard
       if (typeof persisted.autoTranslate === 'boolean') autoTranslate.value = persisted.autoTranslate
+      historyRecords.value = normalizeHistoryRecords(localData?.[HISTORY_STORAGE_KEY])
     } finally {
       initializing.value = false
     }
@@ -308,6 +336,48 @@ export function useTranslatePage() {
       kind,
       ref: refStr,
       collapsed: !!raw.collapsed,
+    }
+  }
+
+  function normalizeHistoryRecords(raw: any): TranslateHistoryRecord[] {
+    const list = Array.isArray(raw) ? raw : []
+    return list.map((item) => normalizeHistoryRecord(item)).filter((item): item is TranslateHistoryRecord => !!item)
+  }
+
+  function normalizeHistoryRecord(raw: any): TranslateHistoryRecord | null {
+    if (!raw || typeof raw !== 'object') return null
+    const source = String(raw.sourceText || '').trim()
+    if (!source) return null
+    const cardList = (Array.isArray(raw.cards) ? raw.cards : [])
+      .map(normalizeCard)
+      .filter((item): item is TranslateCardItem => !!item)
+    const rawResults = raw.results && typeof raw.results === 'object' ? raw.results as Record<string, any> : {}
+    const results: Record<string, TranslateHistoryCardSnapshot> = {}
+    for (const [key, value] of Object.entries(rawResults)) {
+      if (!value || typeof value !== 'object') continue
+      const cardId = String((value as any).cardId || key || '').trim()
+      const kind = (value as any).kind === 'ai' ? 'ai' : (value as any).kind === 'machine' ? 'machine' : null
+      const ref = String((value as any).ref || '').trim()
+      if (!cardId || !kind || !ref) continue
+      results[cardId] = {
+        cardId,
+        kind,
+        ref,
+        title: String((value as any).title || ''),
+        subtitle: String((value as any).subtitle || ''),
+        result: String((value as any).result || ''),
+        error: String((value as any).error || ''),
+        durationMs: Math.max(0, Number((value as any).durationMs) || 0),
+      }
+    }
+    return {
+      id: String(raw.id || randomId()),
+      createdAt: Number(raw.createdAt) || Date.now(),
+      sourceText: source,
+      sourceLang: String(raw.sourceLang || 'auto'),
+      targetLang: String(raw.targetLang || 'zh-CN'),
+      cards: cardList,
+      results,
     }
   }
 
@@ -497,9 +567,92 @@ export function useTranslatePage() {
     })
   }
 
-  function translateAll() {
+  function clearHistoryTitleOverrides() {
+    for (const key of Object.keys(titleOverrides)) delete titleOverrides[key]
+    for (const key of Object.keys(subtitleOverrides)) delete subtitleOverrides[key]
+  }
+
+  async function translateAll() {
+    activeHistoryId.value = ''
+    clearHistoryTitleOverrides()
+    const activeCards = cards.value.filter((card) => !card.collapsed)
+    await Promise.all(activeCards.map((card) => runCard(card)))
+    await saveHistorySnapshot()
+  }
+
+  function normalizeHistoryLimit(value: unknown): number {
+    const n = Math.trunc(Number(value))
+    return Number.isFinite(n) && n > 0 ? Math.min(100, n) : 10
+  }
+
+  function hasHistoryResult(): boolean {
+    return cards.value.some((card) => {
+      const rt = runtime[card.id]
+      return !!(rt && !rt.loading && String(rt.result || '').trim())
+    })
+  }
+
+  async function saveHistorySnapshot() {
+    const text = sourceText.value.trim()
+    if (!text || !hasHistoryResult()) return
+    const results: Record<string, TranslateHistoryCardSnapshot> = {}
+    const cardSnapshots = cards.value.map((card) => ({ ...card }))
     for (const card of cards.value) {
-      if (!card.collapsed) void runCard(card)
+      const rt = runtime[card.id]
+      if (!rt || rt.loading) continue
+      results[card.id] = {
+        cardId: card.id,
+        kind: card.kind,
+        ref: card.ref,
+        title: cardTitleMap.value[card.id] || resolveCardTitle(card),
+        subtitle: cardSubtitleMap.value[card.id] || resolveCardSubtitle(card),
+        result: String(rt.result || ''),
+        error: String(rt.error || ''),
+        durationMs: Math.max(0, Number(rt.durationMs) || 0),
+      }
+    }
+    const record: TranslateHistoryRecord = {
+      id: randomId(),
+      createdAt: Date.now(),
+      sourceText: text,
+      sourceLang: sourceLang.value,
+      targetLang: targetLang.value,
+      cards: cardSnapshots,
+      results,
+    }
+    const config = await loadConfig()
+    const limit = normalizeHistoryLimit((config as any).maxSessionsCount)
+    historyRecords.value = [record, ...historyRecords.value].slice(0, limit)
+    activeHistoryId.value = record.id
+    await localSet({ [HISTORY_STORAGE_KEY]: historyRecords.value })
+  }
+
+  function restoreHistory(recordId: string) {
+    const record = historyRecords.value.find((item) => item.id === recordId)
+    if (!record) return
+    if (autoTranslateTimer) {
+      clearTimeout(autoTranslateTimer)
+      autoTranslateTimer = null
+    }
+    suppressAutoTranslateUntil = Date.now() + 1000
+    activeHistoryId.value = record.id
+    sourceText.value = record.sourceText
+    sourceLang.value = record.sourceLang || 'auto'
+    targetLang.value = record.targetLang || 'zh-CN'
+    cards.value = record.cards.map((card) => ({ ...card }))
+    clearHistoryTitleOverrides()
+    for (const key of Object.keys(runtime)) delete runtime[key]
+    for (const card of cards.value) {
+      const snapshot = record.results[card.id]
+      const rt = ensureRuntime(card.id)
+      rt.loading = false
+      rt.result = snapshot?.result || ''
+      rt.error = snapshot?.error || ''
+      rt.durationMs = snapshot?.durationMs || 0
+      rt.startedAt = 0
+      rt.lastText = record.sourceText
+      if (snapshot?.title) titleOverrides[card.id] = snapshot.title
+      if (snapshot?.subtitle) subtitleOverrides[card.id] = snapshot.subtitle
     }
   }
 
@@ -580,6 +733,7 @@ export function useTranslatePage() {
 
   watch([sourceText, sourceLang, targetLang], () => {
     if (initializing.value) return
+    if (Date.now() < suppressAutoTranslateUntil) return
     if (!autoTranslate.value) return
     if (autoTranslateTimer) clearTimeout(autoTranslateTimer)
     autoTranslateTimer = setTimeout(() => {
@@ -627,6 +781,8 @@ export function useTranslatePage() {
     sourceText,
     cards,
     runtime,
+    historyRecords,
+    activeHistoryId,
     machineChannels,
     aiPairOptions,
     groupedAiModels,
@@ -647,6 +803,7 @@ export function useTranslatePage() {
     reorderCards,
     refreshCard,
     translateAll,
+    restoreHistory,
     swapLanguages,
   }
 }

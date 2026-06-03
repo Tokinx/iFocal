@@ -15,8 +15,8 @@
         <div :class="isCompact ? 'shrink-0 w-full' : 'w-1/2 min-w-0 flex flex-col'">
           <TranslateSourcePanel :compact="isCompact" :model-value="store.sourceText.value"
             @update:modelValue="(v) => (store.sourceText.value = v)" @translate="store.translateAll" class="flex-1" />
-          <!-- 历史记录 -->
-          <div></div>
+          <TranslateHistoryList :records="store.historyRecords.value" :active-record-id="store.activeHistoryId.value"
+            :compact="isCompact" @restore="store.restoreHistory" />
         </div>
         <div :class="isCompact ? 'flex-1 min-h-0 w-full' : 'w-1/2 min-w-0'">
           <TranslateChannelList :cards="store.cards.value" :titles="store.cardTitleMap.value"
@@ -33,6 +33,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useElementSize } from '@vueuse/core'
 import TranslateTopBar from './components/TranslateTopBar.vue'
 import TranslateSourcePanel from './components/TranslateSourcePanel.vue'
+import TranslateHistoryList from './components/TranslateHistoryList.vue'
 import TranslateChannelList from './components/TranslateChannelList.vue'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useTranslatePage } from './useTranslatePage'
