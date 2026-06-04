@@ -44,7 +44,7 @@ import { modelIdFromSpec } from '@/shared/model-utils';
 import { useToast } from '@/window/composables/useToast';
 import { loadPromptTemplates } from '@/shared/prompt-templates';
 import { mcpServersToEntries, type McpServerEntry } from '@/shared/mcp';
-import { LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY, PINNED_MODEL_KEYS_STORAGE_KEY } from '@/shared/model-catalog';
+import { LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY, PINNED_MODEL_KEYS_STORAGE_KEY, modelKeyOf } from '@/shared/model-catalog';
 import { useModelCatalog } from '@/window/composables/useModelCatalog';
 import Sidebar from './components/Sidebar.vue';
 import AssistantPage from './pages/assistant/AssistantPage.vue';
@@ -1169,7 +1169,9 @@ function getReasoningElapsedLabel(message: Message): string {
 }
 
 function keyOf(pair: Pair) {
-  return JSON.stringify([String(pair.channel || ''), String(pair.model || '')]);
+  // 必须与模型目录(model-catalog.ts modelKeyOf)保持一致的 pipe 格式 `channel|modelId`，
+  // 否则与 modelPairs.key 比较恒不相等，会导致已选模型被规整逻辑清空、置顶时被重置为第一个模型。
+  return modelKeyOf(pair);
 }
 
 function parseKey(key: string): Pair | null {

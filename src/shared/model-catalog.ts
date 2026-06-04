@@ -69,10 +69,19 @@ export function buildModelCatalogPairs(
   return pairs;
 }
 
+// chrome.storage 的结构化克隆会把 Vue 响应式(Proxy)数组写成 {"0":..,"1":..} 类数组对象，
+// 读回时 Array.isArray 为 false。这里统一兼容“数组”与“类数组对象”两种历史格式，
+// 避免读取旧数据时把已置顶项误判为空。写入侧务必传纯数组(见各 composable 的 Array.from)。
+export function toPinnedKeyArray(raw: unknown): string[] {
+  if (Array.isArray(raw)) return raw.map((item) => String(item));
+  if (raw && typeof raw === 'object') return Object.values(raw as Record<string, unknown>).map((item) => String(item));
+  return [];
+}
+
 export function normalizePinnedModelKeys(raw: unknown, pairs: ModelCatalogPair[]): string[] {
   const available = new Set(pairs.map((pair) => pair.key));
   const seen = new Set<string>();
-  const input = Array.isArray(raw) ? raw : [];
+  const input = toPinnedKeyArray(raw);
   const next: string[] = [];
   for (const item of input) {
     const key = String(item || '').trim();

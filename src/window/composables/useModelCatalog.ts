@@ -6,6 +6,7 @@ import {
   normalizePinnedModelKeys,
   orderModelPairsByPins,
   PINNED_MODEL_KEYS_STORAGE_KEY,
+  toPinnedKeyArray,
   type ModelCatalogChannel,
   type ModelCatalogPair,
 } from '@/shared/model-catalog';
@@ -76,7 +77,7 @@ export function useModelCatalog() {
     ]);
     channels.value = Array.isArray(syncData.channels) ? syncData.channels : [];
     localGeminiNanoEnabled.value = syncData.localGeminiNanoEnabled !== false;
-    pinnedModelKeys.value = Array.isArray(localData.pinnedModelKeys) ? localData.pinnedModelKeys.map(String) : [];
+    pinnedModelKeys.value = toPinnedKeyArray(localData.pinnedModelKeys);
   }
 
   async function refreshLocalAvailability() {
@@ -96,8 +97,10 @@ export function useModelCatalog() {
   }
 
   async function setPinnedModelKeys(keys: string[]) {
-    pinnedModelKeys.value = normalizePinnedModelKeys(keys, availablePairs.value);
-    await localSet({ [PINNED_MODEL_KEYS_STORAGE_KEY]: pinnedModelKeys.value });
+    const result = normalizePinnedModelKeys(keys, availablePairs.value);
+    pinnedModelKeys.value = result;
+    // 写入纯数组：chrome.storage 会把 Vue 响应式 Proxy 克隆成 {"0":..} 类数组对象
+    await localSet({ [PINNED_MODEL_KEYS_STORAGE_KEY]: result });
   }
 
   async function togglePinnedModel(key: string) {
@@ -121,9 +124,8 @@ export function useModelCatalog() {
       }
     }
     if (area === 'local' && changes[PINNED_MODEL_KEYS_STORAGE_KEY]) {
-      pinnedModelKeys.value = Array.isArray(changes[PINNED_MODEL_KEYS_STORAGE_KEY].newValue)
-        ? changes[PINNED_MODEL_KEYS_STORAGE_KEY].newValue.map(String)
-        : [];
+      // 兼容历史写入的类数组对象格式（见 toPinnedKeyArray），不能用 Array.isArray 直接判空，否则会误清空置顶
+      pinnedModelKeys.value = toPinnedKeyArray(changes[PINNED_MODEL_KEYS_STORAGE_KEY].newValue);
       void prunePinnedModels();
     }
   };

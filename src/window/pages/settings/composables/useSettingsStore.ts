@@ -119,8 +119,9 @@ export function createSettingsStore() {
 
   async function loadPinnedModelKeys() {
     const data = await localGet([PINNED_MODEL_KEYS_STORAGE_KEY]);
-    pinnedModelKeys.value = normalizePinnedModelKeys(data?.[PINNED_MODEL_KEYS_STORAGE_KEY], settingsCatalogPairs());
-    await localSet({ [PINNED_MODEL_KEYS_STORAGE_KEY]: pinnedModelKeys.value });
+    const normalized = normalizePinnedModelKeys(data?.[PINNED_MODEL_KEYS_STORAGE_KEY], settingsCatalogPairs());
+    pinnedModelKeys.value = normalized;
+    await localSet({ [PINNED_MODEL_KEYS_STORAGE_KEY]: normalized });
   }
 
   async function prunePinnedModelKeys() {
@@ -134,10 +135,11 @@ export function createSettingsStore() {
     const normalizedKey = String(key || '').trim();
     if (!normalizedKey) return;
     const current = normalizePinnedModelKeys(pinnedModelKeys.value, settingsCatalogPairs());
-    pinnedModelKeys.value = current.includes(normalizedKey)
+    const next = current.includes(normalizedKey)
       ? current.filter((item) => item !== normalizedKey)
       : normalizePinnedModelKeys([normalizedKey, ...current], settingsCatalogPairs());
-    await localSet({ [PINNED_MODEL_KEYS_STORAGE_KEY]: pinnedModelKeys.value });
+    pinnedModelKeys.value = next;
+    await localSet({ [PINNED_MODEL_KEYS_STORAGE_KEY]: next });
   }
 
   async function loadAssistantDefaults() {

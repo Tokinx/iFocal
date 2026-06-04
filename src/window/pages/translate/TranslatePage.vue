@@ -12,13 +12,13 @@
         @update:autoTranslate="(v) => (store.autoTranslate.value = v)" @swapLanguages="store.swapLanguages"
         @translate="store.translateAll" @addChannel="store.addCard" />
       <div ref="bodyEl" class="flex flex-1 min-h-0 gap-2" :class="isCompact ? 'flex-col' : 'flex-row'">
-        <div :class="isCompact ? 'shrink-0 w-full' : 'w-1/2 min-w-0 flex flex-col'">
+        <div :class="isCompact ? 'shrink-0 w-full' : 'w-0 flex-1 min-w-0 flex flex-col'">
           <TranslateSourcePanel :compact="isCompact" :model-value="store.sourceText.value"
             @update:modelValue="(v) => (store.sourceText.value = v)" @translate="store.translateAll" class="flex-1" />
           <TranslateHistoryList :records="store.historyRecords.value" :active-record-id="store.activeHistoryId.value"
             :compact="isCompact" @restore="store.restoreHistory" />
         </div>
-        <div :class="isCompact ? 'flex-1 min-h-0 w-full' : 'w-1/2 min-w-0'">
+        <div :class="isCompact ? 'flex-1 min-h-0 w-full' : 'w-0 flex-1 min-w-0'">
           <TranslateChannelList :cards="store.cards.value" :titles="store.cardTitleMap.value"
             :subtitles="store.cardSubtitleMap.value" :ensure-runtime="store.ensureRuntime" @reorder="store.reorderCards"
             @refresh="store.refreshCard" @toggleCollapsed="store.toggleCardCollapsed" @remove="store.removeCard" />
