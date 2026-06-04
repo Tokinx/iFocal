@@ -1,7 +1,7 @@
 <template>
   <TooltipProvider :delay-duration="200">
     <div class="flex flex-col h-full min-h-0 gap-2 overflow-hidden bg-slate-50 p-2 rounded-l-4xl">
-      <TranslateTopBar :source-lang="store.sourceLang.value" :target-lang="store.targetLang.value"
+      <TranslateTopBar class="shrink-0" :source-lang="store.sourceLang.value" :target-lang="store.targetLang.value"
         :source-lang-options="store.sourceLangOptions.value" :target-lang-options="store.targetLangOptions.value"
         :disabled="!store.sourceText.value.trim()" :watch-clipboard="store.watchClipboard.value"
         :auto-translate="store.autoTranslate.value" :machine-channels="store.machineChannels.value"
@@ -11,17 +11,23 @@
         @update:watchClipboard="(v) => (store.watchClipboard.value = v)"
         @update:autoTranslate="(v) => (store.autoTranslate.value = v)" @swapLanguages="store.swapLanguages"
         @translate="store.translateAll" @addChannel="store.addCard" />
-      <div ref="bodyEl" class="flex flex-1 min-h-0 gap-2" :class="isCompact ? 'flex-col' : 'flex-row'">
-        <div :class="isCompact ? 'shrink-0 w-full' : 'w-0 flex-1 min-w-0 flex flex-col'">
+      <div class="flex flex-1 min-h-0 gap-2" :class="isCompact ? 'flex-col' : 'flex-row'">
+        <div :class="isCompact
+          ? 'shrink-0 w-full min-w-0 flex flex-col'
+          : 'w-0 flex-1 min-w-0 flex flex-col min-h-0'">
           <TranslateSourcePanel :compact="isCompact" :model-value="store.sourceText.value"
-            @update:modelValue="(v) => (store.sourceText.value = v)" @translate="store.translateAll" class="flex-1" />
+            @update:modelValue="(v) => (store.sourceText.value = v)" @translate="store.translateAll"
+            :class="isCompact ? 'shrink-0' : 'flex-1 min-h-0'" />
           <TranslateHistoryList :records="store.historyRecords.value" :active-record-id="store.activeHistoryId.value"
-            :compact="isCompact" @restore="store.restoreHistory" />
+            :compact="isCompact" class="shrink-0" @restore="store.restoreHistory" />
         </div>
-        <div :class="isCompact ? 'flex-1 min-h-0 w-full' : 'w-0 flex-1 min-w-0'">
+        <div :class="isCompact
+          ? 'flex-1 min-h-0 w-full min-w-0 flex flex-col'
+          : 'w-0 flex-1 min-w-0 flex flex-col min-h-0'">
           <TranslateChannelList :cards="store.cards.value" :titles="store.cardTitleMap.value"
             :subtitles="store.cardSubtitleMap.value" :ensure-runtime="store.ensureRuntime" @reorder="store.reorderCards"
-            @refresh="store.refreshCard" @toggleCollapsed="store.toggleCardCollapsed" @remove="store.removeCard" />
+            @refresh="store.refreshCard" @toggleCollapsed="store.toggleCardCollapsed" @remove="store.removeCard"
+            class="flex-1 min-h-0" />
         </div>
       </div>
     </div>
@@ -40,8 +46,7 @@ import { useTranslatePage } from './useTranslatePage'
 
 const store = useTranslatePage()
 
-const bodyEl = ref<HTMLDivElement | null>(null)
-const { width } = useElementSize(bodyEl)
+const { width } = useElementSize(document.body)
 const isCompact = computed(() => width.value > 0 && width.value < 640)
 
 onMounted(() => {
