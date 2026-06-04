@@ -86,6 +86,12 @@ type TranslateHistoryRun = {
   limit: number
 }
 
+type HistoryPreviewSnapshot = {
+  cards: TranslateCardItem[]
+  sourceLang: string
+  targetLang: string
+}
+
 function randomId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
@@ -200,6 +206,7 @@ export function useTranslatePage() {
   const runtime = reactive<Record<string, TranslateCardRuntime>>({})
   const historyRecords = ref<TranslateHistoryRecord[]>([])
   const activeHistoryId = ref<string>('')
+  const historyPreviewSnapshot = ref<HistoryPreviewSnapshot | null>(null)
   const titleOverrides = reactive<Record<string, string>>({})
   const subtitleOverrides = reactive<Record<string, string>>({})
 
@@ -219,6 +226,7 @@ export function useTranslatePage() {
   let suppressAutoTranslateUntil = 0
   let lastClipboardText = ''
   let activeTranslateRunId = ''
+  let restoringHistoryPreview = false
 
   const sourceLangOptions = computed<TranslateLanguageOption[]>(() => {
     return [{ value: 'auto', label: '自动检测' }, ...SUPPORTED_LANGUAGES]
@@ -285,6 +293,30 @@ export function useTranslatePage() {
       runtime[id] = { loading: false, result: '', error: '', durationMs: 0, startedAt: 0, lastText: '' }
     }
     return runtime[id]
+  }
+
+  function cloneCards(list: TranslateCardItem[]): TranslateCardItem[] {
+    return list.map((card) => ({ ...card }))
+  }
+
+  function clearRuntime() {
+    for (const key of Object.keys(runtime)) delete runtime[key]
+  }
+
+  function exitHistoryPreview(options: { restoreLanguages?: boolean } = {}): boolean {
+    const snapshot = historyPreviewSnapshot.value
+    if (!snapshot) return false
+    historyPreviewSnapshot.value = null
+    activeTranslateRunId = ''
+    activeHistoryId.value = ''
+    clearHistoryTitleOverrides()
+    if (options.restoreLanguages !== false) {
+      sourceLang.value = snapshot.sourceLang || 'auto'
+      targetLang.value = snapshot.targetLang || 'zh-CN'
+    }
+    cards.value = cloneCards(snapshot.cards)
+    clearRuntime()
+    return true
   }
 
   function cardForRef(kind: TranslateCardKind, ref: string): TranslateCardItem | null {
@@ -422,10 +454,11 @@ export function useTranslatePage() {
     if (saveTimer) clearTimeout(saveTimer)
     saveTimer = setTimeout(() => {
       saveTimer = null
+      const persistedCards = historyPreviewSnapshot.value?.cards || cards.value
       const payload: PersistedState = {
-        cards: cards.value.map((c) => ({ id: c.id, kind: c.kind, ref: c.ref, collapsed: c.collapsed })),
-        sourceLang: sourceLang.value,
-        targetLang: targetLang.value,
+        cards: persistedCards.map((c) => ({ id: c.id, kind: c.kind, ref: c.ref, collapsed: c.collapsed })),
+        sourceLang: historyPreviewSnapshot.value?.sourceLang || sourceLang.value,
+        targetLang: historyPreviewSnapshot.value?.targetLang || targetLang.value,
         watchClipboard: watchClipboard.value,
         autoTranslate: autoTranslate.value,
       }
@@ -438,6 +471,7 @@ export function useTranslatePage() {
   watch([watchClipboard, autoTranslate], schedulePersist)
 
   function addCard(kind: TranslateCardKind, ref: string) {
+    exitHistoryPreview()
     const trimmed = ref.trim()
     if (!trimmed) return
     if (cardForRef(kind, trimmed)) return
@@ -457,11 +491,13 @@ export function useTranslatePage() {
   }
 
   function removeCard(id: string) {
+    if (exitHistoryPreview()) return
     cards.value = cards.value.filter((c) => c.id !== id)
     delete runtime[id]
   }
 
   function toggleCardCollapsed(id: string) {
+    if (exitHistoryPreview()) return
     const card = cards.value.find((c) => c.id === id)
     if (!card) return
     card.collapsed = !card.collapsed
@@ -476,6 +512,7 @@ export function useTranslatePage() {
   }
 
   function reorderCards(next: TranslateCardItem[]) {
+    if (exitHistoryPreview()) return
     cards.value = [...next]
   }
 
@@ -609,6 +646,7 @@ export function useTranslatePage() {
   }
 
   async function translateAll() {
+    exitHistoryPreview()
     activeHistoryId.value = ''
     clearHistoryTitleOverrides()
     const activeCards = cards.value.filter((card) => !card.collapsed)
@@ -699,24 +737,38 @@ export function useTranslatePage() {
     }
     suppressAutoTranslateUntil = Date.now() + 1000
     activeTranslateRunId = ''
-    activeHistoryId.value = record.id
-    sourceText.value = record.sourceText
-    sourceLang.value = record.sourceLang || 'auto'
-    targetLang.value = record.targetLang || 'zh-CN'
-    cards.value = record.cards.map((card) => ({ ...card }))
-    clearHistoryTitleOverrides()
-    for (const key of Object.keys(runtime)) delete runtime[key]
-    for (const card of cards.value) {
-      const snapshot = record.results[card.id]
-      const rt = ensureRuntime(card.id)
-      rt.loading = false
-      rt.result = snapshot?.result || ''
-      rt.error = snapshot?.error || ''
-      rt.durationMs = snapshot?.durationMs || 0
-      rt.startedAt = 0
-      rt.lastText = record.sourceText
-      if (snapshot?.title) titleOverrides[card.id] = snapshot.title
-      if (snapshot?.subtitle) subtitleOverrides[card.id] = snapshot.subtitle
+    if (!historyPreviewSnapshot.value) {
+      historyPreviewSnapshot.value = {
+        cards: cloneCards(cards.value),
+        sourceLang: sourceLang.value,
+        targetLang: targetLang.value,
+      }
+    }
+    restoringHistoryPreview = true
+    try {
+      activeHistoryId.value = record.id
+      sourceText.value = record.sourceText
+      sourceLang.value = record.sourceLang || 'auto'
+      targetLang.value = record.targetLang || 'zh-CN'
+      cards.value = cloneCards(record.cards)
+      clearHistoryTitleOverrides()
+      clearRuntime()
+      for (const card of cards.value) {
+        const snapshot = record.results[card.id]
+        const rt = ensureRuntime(card.id)
+        rt.loading = false
+        rt.result = snapshot?.result || ''
+        rt.error = snapshot?.error || ''
+        rt.durationMs = snapshot?.durationMs || 0
+        rt.startedAt = 0
+        rt.lastText = record.sourceText
+        if (snapshot?.title) titleOverrides[card.id] = snapshot.title
+        if (snapshot?.subtitle) subtitleOverrides[card.id] = snapshot.subtitle
+      }
+    } finally {
+      void Promise.resolve().then(() => {
+        restoringHistoryPreview = false
+      })
     }
   }
 
@@ -749,11 +801,13 @@ export function useTranslatePage() {
   }
 
   function refreshCard(id: string) {
+    if (exitHistoryPreview()) return
     const card = cards.value.find((c) => c.id === id)
     if (card) void runCard(card)
   }
 
   function swapLanguages() {
+    exitHistoryPreview()
     if (sourceLang.value === 'auto') return
     const next = sourceLang.value
     sourceLang.value = targetLang.value
@@ -794,6 +848,18 @@ export function useTranslatePage() {
     },
     { immediate: true },
   )
+
+  watch(sourceText, () => {
+    if (initializing.value) return
+    if (restoringHistoryPreview) return
+    exitHistoryPreview()
+  })
+
+  watch([sourceLang, targetLang], () => {
+    if (initializing.value) return
+    if (restoringHistoryPreview) return
+    exitHistoryPreview({ restoreLanguages: false })
+  })
 
   watch([sourceText, sourceLang, targetLang], () => {
     if (initializing.value) return
