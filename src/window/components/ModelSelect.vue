@@ -14,16 +14,14 @@
           <DropdownMenuSeparator v-if="groupIndex" />
           <DropdownMenuLabel>{{ channelName }}</DropdownMenuLabel>
           <div v-for="model in group" :key="model.key"
-            class="flex items-center gap-1 rounded-xl px-1.5 py-1 text-sm hover:bg-accent hover:text-accent-foreground">
-            <button type="button" class="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-left"
-              @click="selectModel(model.key)">
+            :class="['group flex items-center gap-1 rounded-xl px-1.5 py-1 text-sm hover:bg-blue-700/10 hover:text-blue-700', model.key === selectedPairKey ? '!bg-blue-700 !text-white' : '']">
+            <button type="button" @click="selectModel(model.key)"
+              class="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-left">
               <span class="min-w-0 flex-1 truncate">{{ model.model }}</span>
-              <Icon v-if="selectedPairKey === model.key" icon="ri:check-line" class="h-4 w-4 shrink-0" />
             </button>
             <button type="button"
-              class="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"
-              :title="pinnedSet.has(model.key) ? '取消置顶' : '置顶模型'"
-              @click.stop.prevent="togglePin(model.key)">
+              class="hidden group-hover:flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-white/80 hover:bg-white"
+              :title="pinnedSet.has(model.key) ? '取消置顶' : '置顶模型'" @click.stop.prevent="togglePin(model.key)">
               <Icon :icon="pinnedSet.has(model.key) ? 'ri:pushpin-fill' : 'ri:pushpin-line'"
                 :class="['h-3.5 w-3.5', pinnedSet.has(model.key) ? 'rotate-45 text-blue-700' : 'text-slate-400']" />
             </button>
