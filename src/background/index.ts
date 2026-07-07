@@ -2175,7 +2175,7 @@ function buildReasoningParams(model: string, enabled: boolean | undefined, effor
   }
   // 显式关闭：部分模型默认开启思考，需要明确指定才能关闭
   if (!enabled) {
-    if (m.includes('deepseek-v4') || m.includes('glm')) {
+    if (m.includes('deepseek-v4') || m.includes('glm') || m.includes('mimo')) {
       params.thinking = { type: 'disabled' };
     }
     if (m.includes('qwen')) {
@@ -2190,7 +2190,7 @@ function buildReasoningParams(model: string, enabled: boolean | undefined, effor
   params.reasoning = { effort: modelEffort };
   params.reasoning_effort = modelEffort;
   // GLM（智谱/ChatGLM）思考开关：官方文档为 thinking: { type: 'enabled' }
-  if (m.includes('deepseek-v4') || m.includes('glm')) {
+  if (m.includes('deepseek-v4') || m.includes('glm') || m.includes('mimo')) {
     params.thinking = { type: 'enabled' };
   }
   return params;
