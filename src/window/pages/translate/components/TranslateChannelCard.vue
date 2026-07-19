@@ -13,7 +13,7 @@
             <TooltipContent>拖动排序</TooltipContent>
           </Tooltip>
           <Icon :icon="card.kind === 'machine' ? 'ri:translate-2' : 'proicons:sparkle-2'"
-            :class="['h-4 w-4 shrink-0', card.kind === 'machine' ? 'text-emerald-600' : 'text-blue-700']" />
+            :class="['h-4 w-4 shrink-0', card.kind === 'machine' ? 'text-emerald-700' : 'text-stone-700']" />
           <Tooltip v-if="subtitle" :delay-duration="100">
             <TooltipTrigger as-child>
               <span class="truncate text-sm font-medium text-slate-700 cursor-default">{{ title }}</span>

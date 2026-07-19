@@ -14,7 +14,7 @@
           <DropdownMenuSeparator v-if="groupIndex" />
           <DropdownMenuLabel>{{ channelName }}</DropdownMenuLabel>
           <div v-for="model in group" :key="model.key"
-            :class="['group flex items-center gap-1 rounded-xl px-1.5 py-1 text-sm hover:bg-blue-700/10 hover:text-blue-700', model.key === selectedPairKey ? '!bg-blue-700 !text-white' : '']">
+            :class="['group flex items-center gap-1 rounded-xl px-1.5 py-1 text-sm hover:bg-stone-100 hover:text-stone-900', model.key === selectedPairKey ? '!bg-stone-200 !text-stone-900' : '']">
             <button type="button" @click="selectModel(model.key)"
               class="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-left">
               <span class="min-w-0 flex-1 truncate">{{ model.model }}</span>
@@ -23,7 +23,7 @@
               class="hidden group-hover:flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-white/80 hover:bg-white"
               :title="pinnedSet.has(model.key) ? '取消置顶' : '置顶模型'" @click.stop.prevent="togglePin(model.key)">
               <Icon :icon="pinnedSet.has(model.key) ? 'ri:pushpin-fill' : 'ri:pushpin-line'"
-                :class="['h-3.5 w-3.5', pinnedSet.has(model.key) ? 'rotate-45 text-blue-700' : 'text-slate-400']" />
+                :class="['h-3.5 w-3.5', pinnedSet.has(model.key) ? 'rotate-45 text-stone-700' : 'text-stone-400']" />
             </button>
           </div>
         </template>

@@ -1,21 +1,18 @@
 <template>
-  <div ref="rootEl" class="relative flex h-screen w-full text-foreground" @click.capture="handleExternalLinkClick"
+  <div ref="rootEl" class="relative flex h-screen w-full gap-1.5 overflow-hidden bg-[#eeeae6] p-2 text-foreground max-[760px]:gap-1 max-[760px]:p-1" @click.capture="handleExternalLinkClick"
     @auxclick.capture="handleExternalLinkClick">
-    <Sidebar :active-route-name="currentRoute.name" @navigate="navigateTo" />
+    <Sidebar :active-route-name="currentRoute.name" v-model:settings-section="settingsSection"
+      :tasks="sidebarTasks" :sessions="sidebarSessions" :current-session-id="currentSessionId"
+      :active-assistant-id="activeAssistantId" :assistant-configs="assistantConfigs" :model-pairs="modelPairs"
+      :pinned-model-keys="pinnedModelKeys" :format-date="formatDate" @navigate="navigateTo"
+      @selectAssistant="switchAssistant" @deleteAssistant="deleteAssistantWithHistory"
+      @switchSession="switchSession" @deleteSession="deleteSession" @newSession="handleNewSession"
+      @togglePinnedModel="(key) => modelCatalog.togglePinnedModel(key)" @saveAssistant="saveAssistantFromEditor" />
 
     <main class="relative min-h-0 flex-1">
-      <AssistantPage v-if="isAssistantRoute" :key="assistantPageKey" ref="activePageRef" :ctx="assistantCtx"
-        :tasks="sidebarTasks" :sessions="sidebarSessions" :current-session-id="currentSessionId"
-        :active-assistant-id="activeAssistantId" :assistant-configs="assistantConfigs" :model-pairs="modelPairs"
-        :pinned-model-keys="pinnedModelKeys"
-        :format-date="formatDate"
-        @selectAssistant="switchAssistant" @deleteAssistant="deleteAssistantWithHistory"
-        @switchSession="switchSession" @deleteSession="deleteSession"
-        @newSession="handleNewSession"
-        @togglePinnedModel="(key) => modelCatalog.togglePinnedModel(key)"
-        @saveAssistant="saveAssistantFromEditor" />
+      <AssistantPage v-if="isAssistantRoute" :key="assistantPageKey" ref="activePageRef" :ctx="assistantCtx" />
       <TranslatePage v-else-if="currentRoute.name === 'translate'" key="translate" />
-      <SettingsPage v-else key="settings" />
+      <SettingsPage v-else key="settings" :nav="settingsSection" />
       <!-- <Transition name="ifocal-route" mode="out-in" @after-enter="handleRouteAfterEnter">
       </Transition> -->
     </main>
@@ -50,10 +47,12 @@ import Sidebar from './components/Sidebar.vue';
 import AssistantPage from './pages/assistant/AssistantPage.vue';
 import SettingsPage from './pages/settings/SettingsPage.vue';
 import TranslatePage from './pages/translate/TranslatePage.vue';
+import type { SettingsNavId } from './pages/settings/components/SettingsNav.vue';
 import { currentRoute, hasInitialRoute, navigateTo } from './router';
 import type { AssistantPageExpose, AssistantTask, AssistantWorkspaceContext, SidebarTask, WindowMessage, WindowSession } from './types';
 
 const GLOBAL_WIN_VIEW_KEY = 'globalAssistantWindowRequestedView';
+const settingsSection = ref<SettingsNavId>('settings');
 
 type Pair = { channel: string; model: string };
 type ToolStatusResponse = {

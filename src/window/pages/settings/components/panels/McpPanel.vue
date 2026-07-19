@@ -33,7 +33,7 @@ const {
       </Button>
     </header>
 
-    <div class="border border-blue-200/50 bg-blue-50/70 p-3 text-xs text-blue-900 rounded-lg">
+    <div class="border border-stone-200 bg-stone-100/80 p-3 text-xs text-stone-700 rounded-xl">
       这里管理 MCP Server 名称、类型、地址和鉴权方式；每个助手是否启用某个 MCP 由输入框功能菜单分别控制。
     </div>
 

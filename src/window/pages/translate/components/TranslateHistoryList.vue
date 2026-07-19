@@ -12,7 +12,7 @@
         <div v-if="records.length" class="divide-y divide-slate-100 w-0 flex-1">
           <button v-for="record in records" :key="record.id" type="button"
             class="block w-full px-2 py-2 text-left transition-colors hover:bg-slate-50"
-            :class="record.id === activeRecordId ? 'bg-blue-50/70' : ''" @click="$emit('restore', record.id)">
+            :class="record.id === activeRecordId ? 'bg-stone-200/70' : ''" @click="$emit('restore', record.id)">
             <div class="flex items-center gap-2 text-[11px] text-slate-400">
               <span>{{ formatTime(record.createdAt) }}</span>
               <span class="h-1 w-1 rounded-full bg-slate-300" />

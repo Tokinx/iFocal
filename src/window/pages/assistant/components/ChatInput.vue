@@ -142,9 +142,9 @@
     </div>
 
     <!-- 输入框容器 -->
-    <div :class="['relative rounded-xl', bgClass, blurClass]">
+    <div :class="['relative rounded-2xl p-1 border border-slate-700/8 backdrop-blur']">
       <Textarea v-model="innerValue" v-autosize="8" :rows="2" placeholder="输入你想了解到内容"
-        class="resize-none pb-11 bg-transparent rounded-xl border border-slate-300/50 shadow-xs" @keydown.enter.exact.prevent="trySend"
+        class="resize-none pb-11 bg-white rounded-xl border-0" @keydown.enter.exact.prevent="trySend"
         @paste="handlePaste" />
       <div class="absolute bottom-2 left-2 right-2 flex items-center justify-between pointer-events-none">
         <!-- 输入框功能区 -->
@@ -190,13 +190,13 @@
         <!-- 右侧：发送/停止按钮 -->
         <div class="flex gap-1 pointer-events-auto">
           <!-- 发送按钮 -->
-          <Button variant="ghost" size="icon" class="rounded-lg h-7 w-7 bg-blue-700/90 hover:!bg-blue-600 !text-white"
+          <Button variant="ghost" size="icon" class="h-7 w-7 rounded-lg !bg-stone-800 !text-white hover:!bg-stone-900"
             @click="trySend" v-show="canSend && !sending">
             <Icon icon="ri:send-plane-2-fill" class="h-3 w-3" />
           </Button>
           <!-- 停止按钮 -->
           <Button variant="ghost" size="icon"
-            class="group rounded-lg h-7 w-7 bg-blue-700/90 hover:!bg-blue-600 !text-white" @click="$emit('stop')"
+            class="group h-7 w-7 rounded-lg !bg-stone-800 !text-white hover:!bg-stone-900" @click="$emit('stop')"
             v-show="sending" title="停止生成">
             <span class="relative flex h-3.5 w-3.5 items-center justify-center">
               <span class="ifocal-loading absolute opacity-100 duration-800 group-hover:opacity-0"

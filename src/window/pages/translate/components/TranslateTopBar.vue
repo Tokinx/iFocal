@@ -43,7 +43,7 @@
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <Button class="h-8 rounded-xl bg-blue-700 text-white hover:bg-blue-800" :disabled="disabled"
+      <Button class="h-8" :disabled="disabled"
         @click="$emit('translate')">
         <Icon icon="ri:translate-2" class="h-4 w-4" />
         翻译
@@ -55,7 +55,7 @@
         <TooltipTrigger as-child>
           <Button variant="ghost" size="icon" :aria-pressed="autoTranslate" :class="[
             'h-7 w-7 rounded-lg border border-slate-200',
-            autoTranslate ? 'bg-blue-100 text-blue-700 hover:bg-blue-100 border-blue-200' : 'text-slate-600 hover:bg-slate-100',
+            autoTranslate ? 'bg-stone-200 text-stone-800 hover:bg-stone-200 border-stone-300' : 'text-stone-600 hover:bg-stone-100',
           ]" @click="$emit('update:autoTranslate', !autoTranslate)">
             <Icon icon="proicons:bolt" class="h-4 w-4" />
           </Button>
@@ -69,7 +69,7 @@
         <TooltipTrigger as-child>
           <Button variant="ghost" size="icon" :aria-pressed="watchClipboard" :class="[
             'h-7 w-7 rounded-lg border border-slate-200',
-            watchClipboard ? 'bg-blue-100 text-blue-700 hover:bg-blue-100 border-blue-200' : 'text-slate-600 hover:bg-slate-100',
+            watchClipboard ? 'bg-stone-200 text-stone-800 hover:bg-stone-200 border-stone-300' : 'text-stone-600 hover:bg-stone-100',
           ]" @click="$emit('update:watchClipboard', !watchClipboard)">
             <Icon icon="ri:clipboard-line" class="h-4 w-4" />
           </Button>

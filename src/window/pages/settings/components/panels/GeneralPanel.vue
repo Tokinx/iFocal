@@ -206,8 +206,8 @@ async function saveStyleOnly() {
 <template>
   <section :id="'opt-settings'" class="space-y-4">
     <header class="flex items-center h-10 text-base font-semibold">通用设置</header>
-    <div class="space-y-3">
-      <div class="space-y-4">
+    <div class="space-y-6">
+      <div class="space-y-6">
         <div class="flex items-center justify-between gap-4">
           <div>
             <label class="text-sm font-medium leading-none block mb-1">智能模型</label>

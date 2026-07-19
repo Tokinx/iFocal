@@ -1,8 +1,8 @@
 <template>
-  <div class="relative h-full min-h-0 flex-1 " @click="ctx.handleWorkspaceClick">
+  <div class="relative h-full min-h-0 flex-1" @click="ctx.handleWorkspaceClick">
     <ScrollArea
       ref="messagesContainer"
-      class="ifocal-scroll-style h-full flex-1 px-4 rounded-1xl bg-white border border-slate-200/75 shadow-xs">
+      class="ifocal-scroll-style h-full flex-1 rounded-xl border-4 border-[#faf8f5] bg-white px-4 shadow-none [&>div>div]:scroll-smooth">
       <header class="flex items-center justify-end absolute top-0 left-0 right-0 p-4 z-10">
         <LanguageSelect :current-lang-label="ctx.currentLangLabel" :current-target-lang="ctx.targetLang"
           :supported-languages="ctx.supportedLanguages" :bg-class="ctx.bgClass" :blur-class="ctx.blurClass"
@@ -10,10 +10,11 @@
       </header>
 
       <div class="mx-auto max-w-[50rem] space-y-6">
-        <div v-if="!ctx.messages.length && !ctx.isBusy" class="space-y-4 mx-auto w-[80%] pt-[38%]">
-          <h2 class="text-center text-2xl font-medium text-muted-foreground">
-            有什么可以帮忙的？
-          </h2>
+        <div v-if="!ctx.messages.length && !ctx.isBusy" class="mx-auto w-[min(620px,88%)] pt-[clamp(90px,24vh,220px)] text-center">
+          <div class="mx-auto mb-3.5 grid size-10 place-items-center rounded-[14px] border border-stone-700/[.09] bg-white text-stone-600 shadow-[0_8px_28px_rgba(56,49,43,.08)]"><Icon icon="proicons:sparkle-2" class="h-5 w-5" /></div>
+          <p class="mb-1 text-xs text-stone-500">今天想从哪里开始？</p>
+          <h2 class="m-0 text-[clamp(23px,2.2vw,31px)] font-medium tracking-[-.045em] text-stone-800">你好，我能为你做些什么？</h2>
+          <p class="mt-2 text-[13px] text-stone-400 max-[760px]:hidden">对话、翻译、整理与创作，都可以从一句话开始。</p>
         </div>
 
         <template v-for="(message, idx) in ctx.messages" :key="idx">
@@ -166,7 +167,10 @@
         </div>
       </div>
 
-      <footer ref="footerEl" class="absolute left-0 right-0 bottom-0 p-4">
+      <footer ref="footerEl" class="absolute left-0 right-0 p-4"
+        :class="!ctx.messages.length && !ctx.isBusy
+          ? 'top-[clamp(300px,52vh,510px)] max-[760px]:top-[48vh]'
+          : 'bottom-0 bg-gradient-to-b from-transparent to-[#faf8f5] to-50%'">
         <ChatInput ref="chatInputRef" :model-value="ctx.text" :sending="ctx.isBusy"
           :enable-streaming="ctx.enableStreaming" :enable-reasoning="ctx.enableReasoning"
           :reasoning-effort="ctx.reasoningEffort" :max-steps="ctx.maxSteps" :enable-context="ctx.enableContext"
@@ -183,6 +187,11 @@
           @toggleClipboardListening="ctx.toggleClipboardListening" @toggleFileUpload="ctx.toggleFileUpload"
           @toggleMcpTools="ctx.toggleMcpTools" @toggleMcpServer="ctx.toggleMcpServer" @openSettings="ctx.openSettings"
           @scrollToBottom="ctx.handleScrollToBottomClick" @clearMessages="ctx.clearMessages" />
+        <div v-if="!ctx.messages.length && !ctx.isBusy" class="mx-auto mt-3 flex max-w-[760px] flex-wrap justify-center gap-[7px] px-3" aria-label="快捷提示">
+          <button v-for="prompt in quickPrompts" :key="prompt"
+            class="min-h-8 rounded-[10px] border border-stone-700/10 bg-white/50 px-[13px] text-[11px] text-stone-500 hover:bg-white hover:text-stone-800 hover:shadow-sm"
+            @click="ctx.updateText(prompt)">{{ prompt }}</button>
+        </div>
       </footer>
     </ScrollArea>
   </div>
@@ -206,6 +215,7 @@ defineProps<{
 const messagesContainer = ref<unknown>(null)
 const footerEl = ref<HTMLElement | null>(null)
 const chatInputRef = ref<InstanceType<typeof ChatInputComponent> | null>(null)
+const quickPrompts = ['起草回复', '整理思路', '总结内容', '翻译文本', '制定计划']
 
 function getAttachments(): FileAttachment[] {
   return chatInputRef.value?.getAttachments() || []

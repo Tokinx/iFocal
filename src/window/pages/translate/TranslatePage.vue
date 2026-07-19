@@ -1,6 +1,7 @@
 <template>
   <TooltipProvider :delay-duration="200">
-    <div class="flex flex-col h-full min-h-0 gap-2 overflow-hidden bg-slate-50 p-2 rounded-l-4xl">
+    <div class="flex h-full min-h-0 flex-col gap-3 overflow-hidden rounded-xl border-4 border-[#faf8f5] bg-white p-2
+      [&>header]:min-h-11 [&>header]:border-b [&>header]:border-stone-700/10 [&>header]:px-0.5 [&>header]:pb-2">
       <TranslateTopBar class="shrink-0" :source-lang="store.sourceLang.value" :target-lang="store.targetLang.value"
         :source-lang-options="store.sourceLangOptions.value" :target-lang-options="store.targetLangOptions.value"
         :disabled="!store.sourceText.value.trim()" :watch-clipboard="store.watchClipboard.value"
@@ -18,8 +19,6 @@
           <TranslateSourcePanel :compact="isCompact" :model-value="store.sourceText.value"
             @update:modelValue="(v) => (store.sourceText.value = v)" @translate="store.translateAll"
             :class="isCompact ? 'shrink-0' : 'flex-1 min-h-0'" />
-          <TranslateHistoryList :records="store.historyRecords.value" :active-record-id="store.activeHistoryId.value"
-            :compact="isCompact" class="shrink-0" @restore="store.restoreHistory" />
         </div>
         <div :class="isCompact
           ? 'flex-1 min-h-0 w-full min-w-0 flex flex-col'
@@ -35,21 +34,31 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { useElementSize } from '@vueuse/core'
 import TranslateTopBar from './components/TranslateTopBar.vue'
 import TranslateSourcePanel from './components/TranslateSourcePanel.vue'
-import TranslateHistoryList from './components/TranslateHistoryList.vue'
 import TranslateChannelList from './components/TranslateChannelList.vue'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { useTranslatePage } from './useTranslatePage'
+import { TRANSLATE_HISTORY_RESTORE_EVENT, useTranslatePage } from './useTranslatePage'
 
 const store = useTranslatePage()
+let loadPromise: Promise<void> | null = null
 
 const { width } = useElementSize(document.body)
 const isCompact = computed(() => width.value > 0 && width.value < 640)
 
+async function handleSidebarHistoryRestore(event: Event) {
+  const recordId = String((event as CustomEvent<{ recordId?: string }>).detail?.recordId || '')
+  if (!recordId) return
+  await loadPromise
+  store.restoreHistory(recordId)
+}
+
 onMounted(() => {
-  void store.loadAll()
+  window.addEventListener(TRANSLATE_HISTORY_RESTORE_EVENT, handleSidebarHistoryRestore)
+  loadPromise = store.loadAll()
 })
+
+onBeforeUnmount(() => window.removeEventListener(TRANSLATE_HISTORY_RESTORE_EVENT, handleSidebarHistoryRestore))
 </script>

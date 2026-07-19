@@ -14,7 +14,10 @@ import { LOCAL_GEMINI_NANO_ENABLED_STORAGE_KEY, buildModelCatalogPairs } from '@
 import { probeLocalGeminiNanoVisible } from '@/window/composables/useModelCatalog'
 
 const STORAGE_KEY = 'translatePageState'
-const HISTORY_STORAGE_KEY = 'translateHistoryRecords'
+export const TRANSLATE_HISTORY_STORAGE_KEY = 'translateHistoryRecords'
+export const TRANSLATE_HISTORY_UPDATED_EVENT = 'ifocal:translate-history-updated'
+export const TRANSLATE_HISTORY_RESTORE_EVENT = 'ifocal:translate-history-restore'
+const HISTORY_STORAGE_KEY = TRANSLATE_HISTORY_STORAGE_KEY
 
 export type TranslateCardKind = 'machine' | 'ai'
 
@@ -131,6 +134,7 @@ function writeHistoryToLocalStorage(records: TranslateHistoryRecord[]) {
   try {
     if (typeof window === 'undefined' || !window.localStorage) return
     window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(records))
+    window.dispatchEvent(new CustomEvent(TRANSLATE_HISTORY_UPDATED_EVENT, { detail: records }))
   } catch {
     // localStorage may be unavailable in restricted contexts.
   }

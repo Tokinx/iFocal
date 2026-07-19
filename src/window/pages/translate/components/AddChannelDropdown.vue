@@ -30,7 +30,7 @@
           <DropdownMenuItem v-for="model in group" :key="model.key" :disabled="usedAiRefs.has(model.key)"
             :class="['cursor-pointer', usedAiRefs.has(model.key) ? 'opacity-50' : '']"
             @click="!usedAiRefs.has(model.key) && handleAdd('ai', model.key)">
-            <Icon icon="proicons:sparkle-2" class="h-4 w-4 text-blue-700" />
+            <Icon icon="proicons:sparkle-2" class="h-4 w-4 text-stone-700" />
             <span class="truncate">{{ model.model }}</span>
             <Icon v-if="usedAiRefs.has(model.key)" icon="ri:check-line" class="ml-auto h-4 w-4" />
           </DropdownMenuItem>
