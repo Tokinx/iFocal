@@ -344,6 +344,69 @@ export function useTranslatePage() {
     dispatchHistoryUpdated(historyRecords.value, '')
   }
 
+  function updateHistoryRecord(
+    recordId: string,
+    updater: (record: TranslateHistoryRecord) => TranslateHistoryRecord | null,
+  ): boolean {
+    const index = historyRecords.value.findIndex((record) => record.id === recordId)
+    if (index < 0) return false
+    const updated = updater(historyRecords.value[index]!)
+    if (!updated) return false
+
+    const next = historyRecords.value.slice()
+    next[index] = updated
+    historyRecords.value = next
+    const selectedRecordId = next.some((record) => record.id === activeHistoryId.value)
+      ? activeHistoryId.value
+      : ''
+    writeHistoryToLocalStorage(next, selectedRecordId)
+    return true
+  }
+
+  function persistHistoryPreviewCards() {
+    if (!historyPreviewSnapshot.value || !activeHistoryId.value) return
+    const recordId = activeHistoryId.value
+    const nextCards = cloneCards(cards.value)
+    const cardIds = new Set(nextCards.map((card) => card.id))
+
+    updateHistoryRecord(recordId, (record) => ({
+      ...record,
+      cards: nextCards,
+      results: Object.fromEntries(
+        Object.entries(record.results).filter(([cardId]) => cardIds.has(cardId)),
+      ),
+    }))
+  }
+
+  function persistHistoryCardRuntime(
+    recordId: string,
+    card: TranslateCardItem,
+    rt: TranslateCardRuntime,
+    title: string,
+    subtitle: string,
+  ) {
+    updateHistoryRecord(recordId, (record) => {
+      const recordCard = record.cards.find((item) => item.id === card.id)
+      if (!recordCard || recordCard.kind !== card.kind || recordCard.ref !== card.ref) return null
+      return {
+        ...record,
+        results: {
+          ...record.results,
+          [card.id]: {
+            cardId: card.id,
+            kind: card.kind,
+            ref: card.ref,
+            title,
+            subtitle,
+            result: String(rt.result || ''),
+            error: String(rt.error || ''),
+            durationMs: Math.max(0, Number(rt.durationMs) || 0),
+          },
+        },
+      }
+    })
+  }
+
   function cardForRef(kind: TranslateCardKind, ref: string): TranslateCardItem | null {
     return cards.value.find((c) => c.kind === kind && c.ref === ref) || null
   }
@@ -516,29 +579,32 @@ export function useTranslatePage() {
   }
 
   function removeCard(id: string) {
-    if (exitHistoryPreview()) return
+    if (!cards.value.some((card) => card.id === id)) return
     cards.value = cards.value.filter((c) => c.id !== id)
     delete runtime[id]
+    delete titleOverrides[id]
+    delete subtitleOverrides[id]
+    persistHistoryPreviewCards()
   }
 
   function toggleCardCollapsed(id: string) {
-    if (exitHistoryPreview()) return
     const card = cards.value.find((c) => c.id === id)
     if (!card) return
     card.collapsed = !card.collapsed
+    persistHistoryPreviewCards()
     if (!card.collapsed) {
       const rt = ensureRuntime(card.id)
       const text = sourceText.value.trim()
       const hasFreshResult = !!rt.result && rt.lastText === text && text.length > 0
       if (!hasFreshResult) {
-        void runCard(card)
+        runInteractiveCard(card)
       }
     }
   }
 
   function reorderCards(next: TranslateCardItem[]) {
-    if (exitHistoryPreview()) return
     cards.value = [...next]
+    persistHistoryPreviewCards()
   }
 
   async function runCard(card: TranslateCardItem) {
@@ -572,6 +638,19 @@ export function useTranslatePage() {
       rt.loading = false
       rt.durationMs = Date.now() - rt.startedAt
     }
+  }
+
+  function runInteractiveCard(card: TranslateCardItem) {
+    const historyRecordId = historyPreviewSnapshot.value ? activeHistoryId.value : ''
+    const historyCard = { ...card }
+    const historyTitle = cardTitleMap.value[card.id] || resolveCardTitle(card)
+    const historySubtitle = cardSubtitleMap.value[card.id] || resolveCardSubtitle(card)
+    const rt = ensureRuntime(card.id)
+
+    void runCard(card).then(() => {
+      if (!historyRecordId) return
+      persistHistoryCardRuntime(historyRecordId, historyCard, rt, historyTitle, historySubtitle)
+    })
   }
 
   function runMachineCard(
@@ -857,9 +936,8 @@ export function useTranslatePage() {
   }
 
   function refreshCard(id: string) {
-    if (exitHistoryPreview()) return
     const card = cards.value.find((c) => c.id === id)
-    if (card) void runCard(card)
+    if (card) runInteractiveCard(card)
   }
 
   function swapLanguages() {
