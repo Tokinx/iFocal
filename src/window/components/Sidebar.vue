@@ -54,12 +54,26 @@
         </div>
       </div>
 
-      <button
-        class="flex h-[39px] w-full items-center gap-[9px] rounded-[10px] px-2.5 text-left text-[13px] text-stone-500 hover:bg-stone-500/6 hover:text-stone-800"
-        :class="activeRouteName === 'translate' ? 'text-stone-500 bg-[#faf8f5] hover:!bg-[#f2f0ed]' : ''"
-        @click="$emit('navigate', 'translate')">
-        <Icon icon="ri:translate-2" class="h-[17px] w-[17px]" /><span>翻译</span>
-      </button>
+      <div :class="['rounded-xl', activeRouteName === 'translate' && 'bg-[#faf8f5] font-semibold !text-stone-800']">
+        <div
+          class="flex h-10 w-full items-center rounded-xl text-md text-stone-500 hover:bg-[#f2f0ed] hover:text-stone-800"
+        >
+          <button
+            class="flex h-full min-w-0 flex-1 items-center gap-[9px] pl-2.5 text-left"
+            @click="$emit('navigate', 'translate')"
+          >
+            <Icon icon="ri:translate-2" class="h-[17px] w-[17px]" />
+            <span>翻译</span>
+          </button>
+          <button
+            class="mr-[5px] grid size-[30px] shrink-0 place-items-center rounded-lg text-stone-500 hover:bg-white/70 hover:text-stone-800"
+            title="新翻译"
+            @click.stop="$emit('newTranslation')"
+          >
+            <Icon icon="ri:add-line" class="h-4 w-4" />
+          </button>
+        </div>
+      </div>
 
       <div :class="['rounded-xl', activeRouteName === 'settings' && 'bg-[#faf8f5] font-semibold !text-stone-800']">
         <button
@@ -114,18 +128,26 @@
           </template>
 
           <template v-if="activeRouteName === 'translate'">
-            <button v-for="record in translateHistory" :key="record.id"
-              class="mb-1 block min-h-8 w-full rounded-xl p-1 px-2.5 text-left text-stone-500 hover:bg-stone-500/6 hover:text-stone-800"
+            <div
+              v-for="record in translateHistory"
+              :key="record.id"
+              :ref="(element) => setTranslateHistoryItemRef(element, record.id)"
+              class="group mb-1 flex min-h-8 w-full items-center gap-1 rounded-xl p-1 pl-2.5 text-stone-500 hover:bg-stone-500/6 hover:text-stone-800"
               :class="activeTranslateHistoryId === record.id ? 'text-stone-800 bg-stone-500/6' : ''"
-              @click="restoreTranslateHistory(record.id)">
-              <!-- <span class="flex items-center justify-between gap-1.5 text-[9px] text-stone-400">
-                <span>{{ formatHistoryTime(record.createdAt) }}</span>
-                <span>{{ record.sourceLang }} → {{ record.targetLang }}</span>
-              </span> -->
-              <strong class="block truncate text-xs font-medium leading-[1.45]"
-                :title="record.sourceText">{{
-                  record.sourceText }}</strong>
-            </button>
+            >
+              <button class="flex h-[34px] min-w-0 flex-1 items-center text-left" @click="restoreTranslateHistory(record.id)">
+                <strong class="block min-w-0 flex-1 truncate text-xs font-medium leading-[1.45]" :title="record.sourceText">
+                  {{ record.sourceText }}
+                </strong>
+              </button>
+              <button
+                class="grid size-[25px] shrink-0 place-items-center rounded-lg text-stone-400 opacity-0 hover:bg-red-700/[.08] hover:text-red-700 group-hover:opacity-100"
+                title="删除翻译历史"
+                @click.stop="deleteTranslateHistory(record.id)"
+              >
+                <Icon icon="ri:delete-bin-line" class="h-3.5 w-3.5" />
+              </button>
+            </div>
             <div v-if="!translateHistory.length" class="flex min-h-[110px] items-center justify-center text-sm text-stone-400">暂无翻译历史</div>
           </template>
         </ScrollArea>
@@ -140,7 +162,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import Icon from '@/components/ui/icon/Icon.vue'
 import { iconOfNav } from '@/shared/icons'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -149,10 +171,12 @@ import type { AssistantConfig } from '@/shared/assistants'
 import type { SidebarTask, WindowSession } from '@/window/types'
 import type { SettingsNavId } from '@/window/pages/settings/components/SettingsNav.vue'
 import {
+  TRANSLATE_HISTORY_DELETE_EVENT,
   TRANSLATE_HISTORY_RESTORE_EVENT,
   TRANSLATE_HISTORY_STORAGE_KEY,
   TRANSLATE_HISTORY_UPDATED_EVENT,
   type TranslateHistoryRecord,
+  type TranslateHistoryUpdatedDetail,
 } from '@/window/pages/translate/useTranslatePage'
 import type { WindowRouteName } from '../router'
 
@@ -169,6 +193,7 @@ const settingsItems: Array<{ id: SettingsNavId; label: string }> = [
 
 const translateHistory = ref<TranslateHistoryRecord[]>([])
 const activeTranslateHistoryId = ref('')
+const translateHistoryItemRefs = new Map<string, HTMLElement>()
 const editorOpen = ref(false)
 const editingAssistantId = ref<string | null>(null)
 const editingAssistant = computed(() => {
@@ -219,7 +244,28 @@ function readTranslateHistory() {
 }
 
 function handleHistoryUpdated(event: Event) {
-  translateHistory.value = normalizeTranslateHistory((event as CustomEvent).detail)
+  const detail = (event as CustomEvent<TranslateHistoryUpdatedDetail | TranslateHistoryRecord[]>).detail
+  const records = Array.isArray(detail) ? detail : detail?.records
+  translateHistory.value = normalizeTranslateHistory(records)
+
+  if (!Array.isArray(detail) && typeof detail?.activeRecordId === 'string') {
+    activeTranslateHistoryId.value = detail.activeRecordId
+  } else if (!translateHistory.value.some((record) => record.id === activeTranslateHistoryId.value)) {
+    activeTranslateHistoryId.value = ''
+  }
+
+  if (activeTranslateHistoryId.value) scrollTranslateHistoryIntoView(activeTranslateHistoryId.value)
+}
+
+function setTranslateHistoryItemRef(element: unknown, recordId: string) {
+  if (element instanceof HTMLElement) translateHistoryItemRefs.set(recordId, element)
+  else translateHistoryItemRefs.delete(recordId)
+}
+
+function scrollTranslateHistoryIntoView(recordId: string) {
+  void nextTick(() => {
+    translateHistoryItemRefs.get(recordId)?.scrollIntoView({ block: 'nearest' })
+  })
 }
 
 function restoreTranslateHistory(recordId: string) {
@@ -227,13 +273,8 @@ function restoreTranslateHistory(recordId: string) {
   window.dispatchEvent(new CustomEvent(TRANSLATE_HISTORY_RESTORE_EVENT, { detail: { recordId } }))
 }
 
-function formatHistoryTime(timestamp: number): string {
-  const date = new Date(timestamp)
-  const diff = Date.now() - date.getTime()
-  if (diff >= 0 && diff < 60000) return '刚刚'
-  if (diff >= 0 && diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`
-  if (diff >= 0 && diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`
-  return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
+function deleteTranslateHistory(recordId: string) {
+  window.dispatchEvent(new CustomEvent(TRANSLATE_HISTORY_DELETE_EVENT, { detail: { recordId } }))
 }
 
 onMounted(() => {
@@ -241,7 +282,10 @@ onMounted(() => {
   window.addEventListener(TRANSLATE_HISTORY_UPDATED_EVENT, handleHistoryUpdated)
 })
 
-onBeforeUnmount(() => window.removeEventListener(TRANSLATE_HISTORY_UPDATED_EVENT, handleHistoryUpdated))
+onBeforeUnmount(() => {
+  window.removeEventListener(TRANSLATE_HISTORY_UPDATED_EVENT, handleHistoryUpdated)
+  translateHistoryItemRefs.clear()
+})
 
 const props = defineProps<{
   activeRouteName: WindowRouteName
@@ -264,6 +308,7 @@ const emit = defineEmits<{
   (e: 'switchSession', sessionId: string): void
   (e: 'deleteSession', sessionId: string): void
   (e: 'newSession'): void
+  (e: 'newTranslation'): void
   (e: 'togglePinnedModel', key: string): void
   (e: 'saveAssistant', assistant: AssistantConfig): void
 }>()

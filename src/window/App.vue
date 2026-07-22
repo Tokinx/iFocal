@@ -7,11 +7,12 @@
       :pinned-model-keys="pinnedModelKeys" :format-date="formatDate" @navigate="navigateTo"
       @selectAssistant="switchAssistant" @deleteAssistant="deleteAssistantWithHistory"
       @switchSession="switchSession" @deleteSession="deleteSession" @newSession="handleNewSession"
+      @newTranslation="handleNewTranslation"
       @togglePinnedModel="(key) => modelCatalog.togglePinnedModel(key)" @saveAssistant="saveAssistantFromEditor" />
 
     <main class="relative min-h-0 flex-1">
       <AssistantPage v-if="isAssistantRoute" :key="assistantPageKey" ref="activePageRef" :ctx="assistantCtx" />
-      <TranslatePage v-else-if="currentRoute.name === 'translate'" key="translate" />
+      <TranslatePage v-else-if="currentRoute.name === 'translate'" key="translate" ref="translatePageRef" />
       <SettingsPage v-else key="settings" :nav="settingsSection" />
       <!-- <Transition name="ifocal-route" mode="out-in" @after-enter="handleRouteAfterEnter">
       </Transition> -->
@@ -86,6 +87,7 @@ const selectedModelByTask = ref<Record<string, string>>({
 const sending = ref(false);
 const rootEl = ref<HTMLElement | null>(null);
 const activePageRef = ref<AssistantPageExpose | null>(null);
+const translatePageRef = ref<{ startNewTranslation: () => void } | null>(null);
 const routesReady = ref(false);
 const isInitialLoad = ref(true);
 let clipboardWatcher: ReturnType<typeof setInterval> | null = null;
@@ -1460,6 +1462,12 @@ function handleNewSession() {
   state.text = '';
   lastAutoFilledClipboard = '';
   scheduleScrollToBottomAfterRender(true);
+}
+
+async function handleNewTranslation() {
+  navigateTo('translate');
+  await nextTick();
+  translatePageRef.value?.startNewTranslation();
 }
 
 function clearCurrentSessionMessages() {

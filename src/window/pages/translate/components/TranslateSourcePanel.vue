@@ -4,6 +4,7 @@
     :can-send="Boolean(modelValue.trim())"
     :send-disabled="sendDisabled"
     :show-scroll-to-bottom-button="showScrollToBottomButton"
+    expand-on-focus
     placeholder="输入或粘贴原文"
     aria-label="输入或粘贴原文"
     @update:modelValue="emit('update:modelValue', $event)"

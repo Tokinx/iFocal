@@ -17,6 +17,7 @@ const STORAGE_KEY = 'translatePageState'
 export const TRANSLATE_HISTORY_STORAGE_KEY = 'translateHistoryRecords'
 export const TRANSLATE_HISTORY_UPDATED_EVENT = 'ifocal:translate-history-updated'
 export const TRANSLATE_HISTORY_RESTORE_EVENT = 'ifocal:translate-history-restore'
+export const TRANSLATE_HISTORY_DELETE_EVENT = 'ifocal:translate-history-delete'
 const HISTORY_STORAGE_KEY = TRANSLATE_HISTORY_STORAGE_KEY
 
 export type TranslateCardKind = 'machine' | 'ai'
@@ -57,6 +58,11 @@ export interface TranslateHistoryRecord {
   targetLang: string
   cards: TranslateCardItem[]
   results: Record<string, TranslateHistoryCardSnapshot>
+}
+
+export interface TranslateHistoryUpdatedDetail {
+  records: TranslateHistoryRecord[]
+  activeRecordId: string
 }
 
 export interface TranslateLanguageOption {
@@ -130,14 +136,22 @@ function readHistoryFromLocalStorage(): unknown {
   }
 }
 
-function writeHistoryToLocalStorage(records: TranslateHistoryRecord[]) {
+function dispatchHistoryUpdated(records: TranslateHistoryRecord[], activeRecordId = '') {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent<TranslateHistoryUpdatedDetail>(TRANSLATE_HISTORY_UPDATED_EVENT, {
+    detail: { records, activeRecordId },
+  }))
+}
+
+function writeHistoryToLocalStorage(records: TranslateHistoryRecord[], activeRecordId = '') {
   try {
-    if (typeof window === 'undefined' || !window.localStorage) return
-    window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(records))
-    window.dispatchEvent(new CustomEvent(TRANSLATE_HISTORY_UPDATED_EVENT, { detail: records }))
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(records))
+    }
   } catch {
     // localStorage may be unavailable in restricted contexts.
   }
+  dispatchHistoryUpdated(records, activeRecordId)
 }
 
 function syncGet<T = any>(keys: string[]): Promise<T> {
@@ -307,7 +321,7 @@ export function useTranslatePage() {
     for (const key of Object.keys(runtime)) delete runtime[key]
   }
 
-  function exitHistoryPreview(options: { restoreLanguages?: boolean } = {}): boolean {
+  function exitHistoryPreview(options: { restoreLanguages?: boolean; notify?: boolean } = {}): boolean {
     const snapshot = historyPreviewSnapshot.value
     if (!snapshot) return false
     historyPreviewSnapshot.value = null
@@ -320,7 +334,14 @@ export function useTranslatePage() {
     }
     cards.value = cloneCards(snapshot.cards)
     clearRuntime()
+    if (options.notify !== false) dispatchHistoryUpdated(historyRecords.value, '')
     return true
+  }
+
+  function clearActiveHistorySelection() {
+    if (!activeHistoryId.value) return
+    activeHistoryId.value = ''
+    dispatchHistoryUpdated(historyRecords.value, '')
   }
 
   function cardForRef(kind: TranslateCardKind, ref: string): TranslateCardItem | null {
@@ -650,15 +671,19 @@ export function useTranslatePage() {
   }
 
   async function translateAll() {
-    exitHistoryPreview()
+    exitHistoryPreview({ notify: false })
     activeHistoryId.value = ''
+    dispatchHistoryUpdated(historyRecords.value, '')
     clearHistoryTitleOverrides()
     const activeCards = cards.value.filter((card) => !card.collapsed)
     const text = sourceText.value.trim()
     if (!text || !activeCards.length) return
+    const runId = randomId()
+    activeTranslateRunId = runId
     const config = await loadConfig()
+    if (activeTranslateRunId !== runId) return
     const run: TranslateHistoryRun = {
-      runId: randomId(),
+      runId,
       recordId: '',
       startedAt: Date.now(),
       sourceText: text,
@@ -667,7 +692,6 @@ export function useTranslatePage() {
       cards: cards.value.map((card) => ({ ...card })),
       limit: normalizeHistoryLimit((config as any).maxSessionsCount),
     }
-    activeTranslateRunId = run.runId
     for (const card of activeCards) {
       void runCard(card).then(() => saveHistoryRunSnapshot(run))
     }
@@ -729,7 +753,34 @@ export function useTranslatePage() {
       historyRecords.value = [record, ...historyRecords.value].slice(0, run.limit)
     }
     activeHistoryId.value = record.id
-    writeHistoryToLocalStorage(historyRecords.value)
+    writeHistoryToLocalStorage(historyRecords.value, record.id)
+  }
+
+  function startNewTranslation(options: { notify?: boolean } = {}) {
+    if (autoTranslateTimer) {
+      clearTimeout(autoTranslateTimer)
+      autoTranslateTimer = null
+    }
+    suppressAutoTranslateUntil = Date.now() + 1000
+    activeTranslateRunId = ''
+    exitHistoryPreview({ notify: false })
+    historyPreviewSnapshot.value = null
+    restoringHistoryPreview = false
+    activeHistoryId.value = ''
+    sourceText.value = ''
+    clearHistoryTitleOverrides()
+    clearRuntime()
+    if (options.notify !== false) dispatchHistoryUpdated(historyRecords.value, '')
+  }
+
+  function deleteHistory(recordId: string): boolean {
+    const index = historyRecords.value.findIndex((item) => item.id === recordId)
+    if (index < 0) return false
+    const wasActive = activeHistoryId.value === recordId
+    historyRecords.value = historyRecords.value.filter((item) => item.id !== recordId)
+    if (wasActive) startNewTranslation({ notify: false })
+    writeHistoryToLocalStorage(historyRecords.value, activeHistoryId.value)
+    return true
   }
 
   function restoreHistory(recordId: string) {
@@ -774,6 +825,7 @@ export function useTranslatePage() {
         restoringHistoryPreview = false
       })
     }
+    dispatchHistoryUpdated(historyRecords.value, record.id)
   }
 
   async function refreshChannelCatalog() {
@@ -856,13 +908,13 @@ export function useTranslatePage() {
   watch(sourceText, () => {
     if (initializing.value) return
     if (restoringHistoryPreview) return
-    exitHistoryPreview()
+    if (!exitHistoryPreview()) clearActiveHistorySelection()
   })
 
   watch([sourceLang, targetLang], () => {
     if (initializing.value) return
     if (restoringHistoryPreview) return
-    exitHistoryPreview({ restoreLanguages: false })
+    if (!exitHistoryPreview({ restoreLanguages: false })) clearActiveHistorySelection()
   })
 
   watch([sourceText, sourceLang, targetLang], () => {
@@ -937,6 +989,8 @@ export function useTranslatePage() {
     reorderCards,
     refreshCard,
     translateAll,
+    startNewTranslation,
+    deleteHistory,
     restoreHistory,
     swapLanguages,
   }

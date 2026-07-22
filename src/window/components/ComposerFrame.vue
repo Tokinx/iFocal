@@ -1,5 +1,8 @@
 <template>
-  <div class="mx-auto w-full max-w-[52rem] space-y-2">
+  <div
+    class="mx-auto w-full max-w-[52rem] space-y-2"
+    @focusout="handleComposerFocusOut"
+  >
     <div class="relative flex min-h-8 items-center gap-2">
       <div class="flex min-w-0 flex-1 items-center gap-2 pr-10">
         <slot name="toolbar" />
@@ -25,11 +28,12 @@
     <div class="relative rounded-2xl border border-slate-700/8 p-1 backdrop-blur">
       <Textarea
         v-model="innerValue"
-        v-autosize="maxLines"
-        :rows="2"
+        v-autosize="{ maxLines, minLines, expandOnFocus, expanded: !expandOnFocus || composerFocused }"
+        :rows="minLines"
         :placeholder="placeholder"
         :aria-label="ariaLabel"
         class="resize-none rounded-xl border-0 bg-white pb-11"
+        @focus="composerFocused = true"
         @keydown.enter.exact.prevent="trySend"
         @paste="emit('paste', $event)"
       />
@@ -79,7 +83,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, type Directive } from 'vue'
+import { computed, nextTick, ref, type Directive } from 'vue'
 import Icon from '@/components/ui/icon/Icon.vue'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -93,6 +97,8 @@ const props = withDefaults(
     showScrollToBottomButton?: boolean
     placeholder?: string
     ariaLabel?: string
+    expandOnFocus?: boolean
+    minLines?: number
     maxLines?: number
     bgClass?: string
     blurClass?: string
@@ -105,6 +111,8 @@ const props = withDefaults(
     showScrollToBottomButton: false,
     placeholder: '输入你想了解的内容',
     ariaLabel: '输入内容',
+    expandOnFocus: false,
+    minLines: 2,
     maxLines: 8,
   },
 )
@@ -122,6 +130,15 @@ const innerValue = computed({
   set: (value: string) => emit('update:modelValue', value),
 })
 
+const composerFocused = ref(false)
+
+function handleComposerFocusOut(event: FocusEvent) {
+  const currentTarget = event.currentTarget
+  const nextTarget = event.relatedTarget
+  if (currentTarget instanceof HTMLElement && nextTarget instanceof Node && currentTarget.contains(nextTarget)) return
+  composerFocused.value = false
+}
+
 const canSend = computed(() => {
   if (typeof props.canSend === 'boolean') return props.canSend
   return Boolean(innerValue.value.trim())
@@ -132,30 +149,46 @@ function trySend() {
   emit('send')
 }
 
-const vAutosize: Directive<HTMLElement, number | undefined> = {
+type AutosizeOptions = {
+  maxLines?: number
+  minLines?: number
+  expandOnFocus?: boolean
+  expanded?: boolean
+}
+
+type AutosizeTextarea = HTMLTextAreaElement & {
+  __ifocalAutosizeOptions__?: AutosizeOptions
+}
+
+const vAutosize: Directive<HTMLElement, AutosizeOptions> = {
   mounted(el, binding) {
     const textarea = resolveTextarea(el)
     if (!textarea) return
-    const onInput = () => adjustTextareaHeight(textarea, binding.value)
-    textarea.style.overflowY = 'hidden'
+    textarea.__ifocalAutosizeOptions__ = binding.value
+    const onInput = () => adjustTextareaHeight(textarea, textarea.__ifocalAutosizeOptions__)
     textarea.addEventListener('input', onInput)
     void nextTick(() => adjustTextareaHeight(textarea, binding.value))
-    ;(el as any).__autosizeCleanup__ = () => textarea.removeEventListener('input', onInput)
+    ;(el as any).__autosizeCleanup__ = () => {
+      textarea.removeEventListener('input', onInput)
+    }
   },
   updated(el, binding) {
     const textarea = resolveTextarea(el)
     if (!textarea) return
+    textarea.__ifocalAutosizeOptions__ = binding.value
     adjustTextareaHeight(textarea, binding.value)
   },
   beforeUnmount(el) {
     const cleanup = (el as any).__autosizeCleanup__ as (() => void) | undefined
     cleanup?.()
+    const textarea = resolveTextarea(el)
+    if (textarea) delete textarea.__ifocalAutosizeOptions__
   },
 }
 
-function resolveTextarea(el: HTMLElement): HTMLTextAreaElement | null {
-  if (el.tagName === 'TEXTAREA') return el as HTMLTextAreaElement
-  return el.querySelector('textarea') as HTMLTextAreaElement | null
+function resolveTextarea(el: HTMLElement): AutosizeTextarea | null {
+  if (el.tagName === 'TEXTAREA') return el as AutosizeTextarea
+  return el.querySelector('textarea') as AutosizeTextarea | null
 }
 
 function parsePx(value: string | null): number {
@@ -170,16 +203,27 @@ function getLineHeightPx(el: HTMLElement): number {
   return Math.round((parsePx(styles.fontSize) || 14) * 1.4)
 }
 
-function adjustTextareaHeight(textarea: HTMLTextAreaElement, maxLines?: number) {
+function adjustTextareaHeight(textarea: HTMLTextAreaElement, options: AutosizeOptions = {}) {
   const styles = getComputedStyle(textarea)
   const padding = parsePx(styles.paddingTop) + parsePx(styles.paddingBottom)
   const border = parsePx(styles.borderTopWidth) + parsePx(styles.borderBottomWidth)
   const lineHeight = getLineHeightPx(textarea)
-  const maxHeight = lineHeight * Math.max(1, Number(maxLines || 8)) + padding + border
+  const minLines = Math.max(1, Number(options.minLines || 2))
+  const maxLines = Math.max(minLines, Number(options.maxLines || 8))
+  const minHeight = lineHeight * minLines + padding + border
+  const maxHeight = lineHeight * maxLines + padding + border
+  const collapsed = !!options.expandOnFocus && options.expanded === false
 
   textarea.style.height = 'auto'
-  textarea.style.maxHeight = `${Math.ceil(maxHeight)}px`
-  textarea.style.height = `${Math.min(textarea.scrollHeight, Math.ceil(maxHeight))}px`
+  textarea.style.maxHeight = `${Math.ceil(collapsed ? minHeight : maxHeight)}px`
+  if (collapsed) {
+    textarea.style.height = `${Math.ceil(minHeight)}px`
+    textarea.style.overflowY = 'hidden'
+    textarea.scrollTop = 0
+    return
+  }
+
+  textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, minHeight), Math.ceil(maxHeight))}px`
   textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden'
 }
 </script>

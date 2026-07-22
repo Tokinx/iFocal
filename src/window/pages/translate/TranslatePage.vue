@@ -3,7 +3,7 @@
     <div class="relative h-full min-h-0 overflow-hidden rounded-xl bg-[#faf8f5]">
       <ScrollArea
         ref="scrollAreaRef"
-        class="ifocal-scroll-style h-full rounded-xl border-4 border-[#faf8f5] bg-white px-4 shadow-none [&>div>div]:scroll-smooth"
+        class="ifocal-scroll-style h-full rounded-xl border-4 border-[#faf8f5] bg-white px-4 shadow-none"
         :style="{ '--ifocal-bottom-gap': `${Math.max(footerHeight, 132) + 16}px` }"
       >
         <TranslateTopBar
@@ -84,7 +84,11 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import TranslateTopBar from './components/TranslateTopBar.vue'
 import TranslateSourcePanel from './components/TranslateSourcePanel.vue'
 import TranslateChannelList from './components/TranslateChannelList.vue'
-import { TRANSLATE_HISTORY_RESTORE_EVENT, useTranslatePage } from './useTranslatePage'
+import {
+  TRANSLATE_HISTORY_DELETE_EVENT,
+  TRANSLATE_HISTORY_RESTORE_EVENT,
+  useTranslatePage,
+} from './useTranslatePage'
 
 const store = useTranslatePage()
 let loadPromise: Promise<void> | null = null
@@ -93,12 +97,14 @@ const scrollAreaRef = ref<InstanceType<typeof ScrollArea> | null>(null)
 const footerEl = ref<HTMLElement | null>(null)
 const footerHeight = ref(0)
 const showScrollToBottomButton = ref(false)
-const autoScrollEnabled = ref(true)
+const userHasScrolled = ref(false)
 let viewportEl: HTMLElement | null = null
 let footerResizeObserver: ResizeObserver | null = null
 let contentResizeObserver: ResizeObserver | null = null
 let scrollFrame: number | null = null
-let pendingForcedScroll = false
+let programmaticScrollReleaseFrame: number | null = null
+let pendingForcedTop = false
+let programmaticScroll = false
 
 const hasResults = computed(() => {
   return Object.values(store.runtime).some((runtime) => runtime.loading || runtime.result || runtime.error)
@@ -122,46 +128,68 @@ function distanceToBottom(element: HTMLElement): number {
 function syncScrollState() {
   if (!viewportEl) return
   const nearBottom = distanceToBottom(viewportEl) <= 48
-  autoScrollEnabled.value = nearBottom
   showScrollToBottomButton.value = !nearBottom
 }
 
 function onViewportScroll() {
+  if (viewportEl && !programmaticScroll) {
+    userHasScrolled.value = viewportEl.scrollTop > 1
+  }
   syncScrollState()
 }
 
-function scrollToBottom(force = false) {
+function setViewportScrollTop(top: number, behavior: ScrollBehavior = 'auto') {
   if (!viewportEl) return
-  if (!force && !autoScrollEnabled.value) {
-    showScrollToBottomButton.value = true
-    return
-  }
-  viewportEl.scrollTop = viewportEl.scrollHeight
-  autoScrollEnabled.value = true
+  programmaticScroll = true
+  viewportEl.scrollTo({ top, behavior })
+  if (programmaticScrollReleaseFrame !== null) cancelAnimationFrame(programmaticScrollReleaseFrame)
+  programmaticScrollReleaseFrame = requestAnimationFrame(() => {
+    programmaticScrollReleaseFrame = null
+    programmaticScroll = false
+    syncScrollState()
+  })
+}
+
+function scrollToTop(force = false) {
+  if (!viewportEl) return
+  if (!force && userHasScrolled.value) return
+  if (force) userHasScrolled.value = false
+  setViewportScrollTop(0)
+}
+
+function scrollToBottom() {
+  if (!viewportEl) return
+  userHasScrolled.value = true
+  setViewportScrollTop(viewportEl.scrollHeight, 'smooth')
   showScrollToBottomButton.value = false
 }
 
-async function scheduleScrollToBottom(force = false) {
-  pendingForcedScroll ||= force
+async function scheduleScrollToTop(force = false) {
+  pendingForcedTop ||= force
   await nextTick()
   if (scrollFrame !== null) cancelAnimationFrame(scrollFrame)
   scrollFrame = requestAnimationFrame(() => {
     scrollFrame = null
-    const shouldForce = pendingForcedScroll
-    pendingForcedScroll = false
-    scrollToBottom(shouldForce)
+    const shouldForce = pendingForcedTop
+    pendingForcedTop = false
+    scrollToTop(shouldForce)
+    syncScrollState()
   })
 }
 
 function handleScrollToBottomClick() {
-  autoScrollEnabled.value = true
-  scrollToBottom(true)
+  scrollToBottom()
+}
+
+function startNewTranslation() {
+  store.startNewTranslation()
+  void scheduleScrollToTop(true)
 }
 
 function handleTranslate() {
   if (!store.sourceText.value.trim() || !hasEnabledCard.value) return
   store.translateAll()
-  void scheduleScrollToBottom(true)
+  void scheduleScrollToTop(true)
 }
 
 async function handleSidebarHistoryRestore(event: Event) {
@@ -169,7 +197,16 @@ async function handleSidebarHistoryRestore(event: Event) {
   if (!recordId) return
   await loadPromise
   store.restoreHistory(recordId)
-  void scheduleScrollToBottom(true)
+  void scheduleScrollToTop(true)
+}
+
+async function handleSidebarHistoryDelete(event: Event) {
+  const recordId = String((event as CustomEvent<{ recordId?: string }>).detail?.recordId || '')
+  if (!recordId) return
+  await loadPromise
+  const deletingActiveRecord = store.activeHistoryId.value === recordId
+  if (!store.deleteHistory(recordId)) return
+  if (deletingActiveRecord) void scheduleScrollToTop(true)
 }
 
 function bindViewport() {
@@ -179,15 +216,18 @@ function bindViewport() {
   syncScrollState()
   if (typeof ResizeObserver === 'undefined') return
   contentResizeObserver = new ResizeObserver(() => {
-    if (autoScrollEnabled.value) scrollToBottom()
+    if (!userHasScrolled.value) scrollToTop()
     else syncScrollState()
   })
   contentResizeObserver.observe(viewportEl)
   if (viewportEl.firstElementChild) contentResizeObserver.observe(viewportEl.firstElementChild)
 }
 
+defineExpose({ startNewTranslation })
+
 onMounted(() => {
   window.addEventListener(TRANSLATE_HISTORY_RESTORE_EVENT, handleSidebarHistoryRestore)
+  window.addEventListener(TRANSLATE_HISTORY_DELETE_EVENT, handleSidebarHistoryDelete)
   loadPromise = store.loadAll()
   void nextTick(() => {
     bindViewport()
@@ -203,7 +243,7 @@ onMounted(() => {
 watch(
   () => [store.cards.value, store.runtime],
   () => {
-    void scheduleScrollToBottom(false)
+    void scheduleScrollToTop(false)
   },
   { deep: true },
 )
@@ -211,20 +251,24 @@ watch(
 watch(
   () => store.initializing.value,
   (initializing) => {
-    if (!initializing) void scheduleScrollToBottom(true)
+    if (!initializing) void scheduleScrollToTop(true)
   },
 )
 
 onBeforeUnmount(() => {
   window.removeEventListener(TRANSLATE_HISTORY_RESTORE_EVENT, handleSidebarHistoryRestore)
+  window.removeEventListener(TRANSLATE_HISTORY_DELETE_EVENT, handleSidebarHistoryDelete)
   viewportEl?.removeEventListener('scroll', onViewportScroll)
   footerResizeObserver?.disconnect()
   contentResizeObserver?.disconnect()
   if (scrollFrame !== null) cancelAnimationFrame(scrollFrame)
+  if (programmaticScrollReleaseFrame !== null) cancelAnimationFrame(programmaticScrollReleaseFrame)
   footerResizeObserver = null
   contentResizeObserver = null
   scrollFrame = null
-  pendingForcedScroll = false
+  programmaticScrollReleaseFrame = null
+  pendingForcedTop = false
+  programmaticScroll = false
   viewportEl = null
 })
 </script>
