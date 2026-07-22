@@ -1,30 +1,51 @@
 <template>
-  <div class="mx-auto max-w-[52rem] space-y-2">
-    <!-- 顶部操作按钮 -->
-    <div class="relative flex min-h-8 items-center gap-2">
+  <ComposerFrame
+    :model-value="modelValue"
+    :sending="sending"
+    :can-send="Boolean(modelValue.trim()) || attachments.length > 0"
+    :bg-class="bgClass"
+    :blur-class="blurClass"
+    :show-scroll-to-bottom-button="showScrollToBottomButton"
+    placeholder="输入你想了解到内容"
+    aria-label="输入你想了解的内容"
+    @update:modelValue="$emit('update:modelValue', $event)"
+    @send="$emit('send')"
+    @stop="$emit('stop')"
+    @scrollToBottom="$emit('scrollToBottom')"
+    @paste="handlePaste"
+  >
+    <template #toolbar>
       <!-- 模型选择 Dropdown -->
-      <ModelSelect :current-model-name="currentModelName" :grouped-models="groupedModels"
-        :selected-pair-key="selectedPairKey" :pinned-model-keys="pinnedModelKeys" :bg-class="bgClass"
-        :blur-class="blurClass" @selectModel="selectModel" @togglePin="(key) => $emit('togglePinnedModel', key)" />
+      <ModelSelect
+        :current-model-name="currentModelName"
+        :grouped-models="groupedModels"
+        :selected-pair-key="selectedPairKey"
+        :pinned-model-keys="pinnedModelKeys"
+        :bg-class="bgClass"
+        :blur-class="blurClass"
+        @selectModel="selectModel"
+        @togglePin="(key) => $emit('togglePinnedModel', key)"
+      />
 
       <DropdownMenu>
         <DropdownMenuTrigger as-child>
-          <Button variant="outline" size="icon" :class="['h-8 w-8 shrink-0 rounded-xl border border-slate-300/50 shadow-xs', bgClass, blurClass]">
+          <Button
+            variant="outline"
+            size="icon"
+            :class="['h-8 w-8 shrink-0 rounded-xl border border-slate-300/50 shadow-xs', bgClass, blurClass]"
+          >
             <Icon icon="ri:apps-2-ai-line" class="h-5 w-5" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" :class="['w-56', bgClass, blurClass]">
           <ScrollArea class="h-60">
             <div class="space-y-3 p-3">
-              <!-- 流式开关 -->
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-2">
-                  <Icon icon="ri:dvd-ai-line" class="h-4 w-4" />
-                  <span class="text-sm font-medium">流式响应</span>
+                  <Icon icon="ri:dvd-ai-line" class="h-4 w-4" /><span class="text-sm font-medium">流式响应</span>
                 </div>
                 <Switch :model-value="enableStreaming" @update:modelValue="$emit('toggleStreaming', $event)" />
               </div>
-              <!-- 思考模式 -->
               <div>
                 <div class="flex items-center justify-between">
                   <div class="flex items-center gap-2">
@@ -33,20 +54,27 @@
                   </div>
                   <Switch :model-value="enableReasoning" @update:modelValue="$emit('toggleReasoning', $event)" />
                 </div>
-                <div :class="[
-                  'overflow-hidden transition-all duration-200',
-                  enableReasoning ? 'max-h-24 opacity-100 mt-1' : 'max-h-0 opacity-0 py-0'
-                ]">
+                <div
+                  :class="[
+                    'overflow-hidden transition-all duration-200',
+                    enableReasoning ? 'max-h-24 opacity-100 mt-1' : 'max-h-0 opacity-0 py-0',
+                  ]"
+                >
                   <div class="grid grid-cols-4" :class="[bgClass]">
-                    <Button v-for="item in reasoningEffortOptions" :key="item.value" variant="ghost" size="sm"
-                      @click="$emit('changeReasoningEffort', item.value)" class="h-6 text-xs px-0"
-                      :class="[item.value === reasoningEffort ? '!bg-black !text-white' : '']">
+                    <Button
+                      v-for="item in reasoningEffortOptions"
+                      :key="item.value"
+                      variant="ghost"
+                      size="sm"
+                      @click="$emit('changeReasoningEffort', item.value)"
+                      class="h-6 px-0 text-xs"
+                      :class="[item.value === reasoningEffort ? '!bg-black !text-white' : '']"
+                    >
                       {{ item.label }}
                     </Button>
                   </div>
                 </div>
               </div>
-              <!-- 启用上下文 -->
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-2">
                   <Icon icon="ri:message-ai-3-line" class="h-4 w-4" />
@@ -55,56 +83,70 @@
                 <Switch :model-value="enableContext" @update:modelValue="$emit('toggleContext', $event)" />
               </div>
               <DropdownMenuSeparator class="my-2" />
-              <!-- 监听剪切板 -->
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-2">
-                  <Icon icon="ri:file-ai-line" class="h-4 w-4" />
-                  <span class="text-sm font-medium">监听剪切板</span>
+                  <Icon icon="ri:file-ai-line" class="h-4 w-4" /><span class="text-sm font-medium">监听剪切板</span>
                 </div>
-                <Switch :model-value="autoPasteGlobalAssistant"
-                  @update:modelValue="$emit('toggleClipboardListening', $event)" />
+                <Switch
+                  :model-value="autoPasteGlobalAssistant"
+                  @update:modelValue="$emit('toggleClipboardListening', $event)"
+                />
               </div>
-              <!-- 文件上传 -->
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-2">
-                  <Icon icon="ri:attachment-2" class="h-4 w-4" />
-                  <span class="text-sm font-medium">文件上传</span>
+                  <Icon icon="ri:attachment-2" class="h-4 w-4" /><span class="text-sm font-medium">文件上传</span>
                 </div>
                 <Switch :model-value="enableFileUpload" @update:modelValue="$emit('toggleFileUpload', $event)" />
               </div>
-              <!-- MCP 功能 -->
               <div v-if="mcpServers.length" class="space-y-2">
                 <div class="flex items-center justify-between">
                   <div class="flex items-center gap-2">
-                    <Icon icon="ri:apps-2-ai-line" class="h-4 w-4" />
-                    <span class="text-sm font-medium">MCP 功能</span>
+                    <Icon icon="ri:apps-2-ai-line" class="h-4 w-4" /><span class="text-sm font-medium">MCP 功能</span>
                   </div>
                   <Switch :model-value="enableMcpTools" @update:modelValue="$emit('toggleMcpTools', !!$event)" />
                 </div>
-                <div :class="[
-                  'overflow-hidden transition-all duration-200',
-                  enableMcpTools ? 'max-h-56 opacity-100' : 'max-h-0 opacity-0'
-                ]">
-                  <!-- MCP 工具调用步数 -->
+                <div
+                  :class="[
+                    'overflow-hidden transition-all duration-200',
+                    enableMcpTools ? 'max-h-56 opacity-100' : 'max-h-0 opacity-0',
+                  ]"
+                >
                   <div class="pl-6">
                     <div class="mb-1 text-xs text-muted-foreground">工具调用步数</div>
                     <div class="grid grid-cols-4 gap-1" :class="[bgClass]">
-                      <Button v-for="item in maxStepsOptions" :key="item.value" variant="ghost" size="sm"
-                        @click="$emit('changeMaxSteps', item.value)" class="h-6 text-xs px-0"
-                        :class="[item.value === maxSteps ? '!bg-black !text-white' : '']">
+                      <Button
+                        v-for="item in maxStepsOptions"
+                        :key="item.value"
+                        variant="ghost"
+                        size="sm"
+                        @click="$emit('changeMaxSteps', item.value)"
+                        class="h-6 px-0 text-xs"
+                        :class="[item.value === maxSteps ? '!bg-black !text-white' : '']"
+                      >
                         {{ item.label }}
                       </Button>
                     </div>
                   </div>
                   <div class="mt-2 space-y-2 pl-6">
-                    <div v-for="server in mcpServers" :key="server.name" class="flex items-center justify-between gap-3">
+                    <div
+                      v-for="server in mcpServers"
+                      :key="server.name"
+                      class="flex min-w-0 items-center justify-between gap-3"
+                    >
                       <span
-                        :class="['min-w-0 truncate text-xs', mcpServerToggles[server.name] ? 'text-foreground' : 'text-muted-foreground']"
-                        :title="server.name">
+                        :class="[
+                          'min-w-0 truncate text-xs',
+                          mcpServerToggles[server.name] ? 'text-foreground' : 'text-muted-foreground',
+                        ]"
+                        :title="server.name"
+                      >
                         {{ server.name }}
                       </span>
-                      <Switch :model-value="!!mcpServerToggles[server.name]" size="sm"
-                        @update:modelValue="$emit('toggleMcpServer', server.name, !!$event)" />
+                      <Switch
+                        :model-value="!!mcpServerToggles[server.name]"
+                        size="sm"
+                        @update:modelValue="$emit('toggleMcpServer', server.name, !!$event)"
+                      />
                     </div>
                   </div>
                 </div>
@@ -117,114 +159,85 @@
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger as-child>
-            <Button variant="outline" size="icon"
-              :class="['h-8 w-8 shrink-0 rounded-xl border border-slate-300/50 shadow-xs hover:bg-red-500/10 hover:text-red-600 hover:border-red-500/20', bgClass, blurClass]"
-              :disabled="sending" @click="$emit('clearMessages')">
+            <Button
+              variant="outline"
+              size="icon"
+              :class="[
+                'h-8 w-8 shrink-0 rounded-xl border border-slate-300/50 shadow-xs hover:border-red-500/20 hover:bg-red-500/10 hover:text-red-600',
+                bgClass,
+                blurClass,
+              ]"
+              :disabled="sending"
+              @click="$emit('clearMessages')"
+            >
               <Icon icon="ri:eraser-line" class="h-4 w-4" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>
-            <p>清空消息</p>
-          </TooltipContent>
+          <TooltipContent><p>清空消息</p></TooltipContent>
         </Tooltip>
       </TooltipProvider>
+    </template>
 
-      <div class="flex-1"></div>
-
-      <Button variant="outline" size="icon" :class="[
-        'absolute right-0 top-0 h-8 w-8 shrink-0 rounded-xl border border-slate-300/50 shadow-xs transition-opacity duration-150',
-        bgClass,
-        blurClass,
-        showScrollToBottomButton ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
-      ]" title="滚动到底部" @click="$emit('scrollToBottom')">
-        <Icon icon="ri:arrow-down-line" class="h-4 w-4" />
-      </Button>
-    </div>
-
-    <!-- 输入框容器 -->
-    <div :class="['relative rounded-2xl p-1 border border-slate-700/8 backdrop-blur']">
-      <Textarea v-model="innerValue" v-autosize="8" :rows="2" placeholder="输入你想了解到内容"
-        class="resize-none pb-11 bg-white rounded-xl border-0" @keydown.enter.exact.prevent="trySend"
-        @paste="handlePaste" />
-      <div class="absolute bottom-2 left-2 right-2 flex items-center justify-between pointer-events-none">
-        <!-- 输入框功能区 -->
-        <div class="flex items-center pointer-events-auto">
-          <!-- 附件预览区域 -->
-          <div v-if="attachments.length > 0" class="flex flex-wrap gap-2">
-            <div v-for="(file, idx) in attachments" :key="idx"
-              class="relative group flex items-center gap-2 py-1 pl-1 pr-2 rounded-lg bg-white/60 border border-slate-100">
-              <!-- 文件图标 -->
-              <Icon :icon="getFileIcon(file.type)" class="h-4 w-4 text-muted-foreground shrink-0" />
-              <!-- 文件名 -->
-              <span class="text-xs text-foreground truncate max-w-[150px]">{{ file.name }}</span>
-              <!-- 文件大小 -->
-              <span class="text-xs text-muted-foreground">{{ formatFileSize(file.size) }}</span>
-              <!-- 删除按钮 -->
-              <Button variant="outline" size="icon"
-                class="rounded-md h-4 w-4 absolute top-1 left-1 !bg-red-500 !text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                @click="removeAttachment(idx)">
-                <Icon icon="ri:close-line" class="h-3 w-3" />
-              </Button>
-            </div>
-          </div>
-          <!-- 上传文件按钮 -->
-          <TooltipProvider v-else-if="enableFileUpload">
-            <Tooltip>
-              <TooltipTrigger as-child>
-                <Button variant="ghost" size="icon" class="rounded-lg h-7 w-7 hover:bg-zinc-200/80 relative"
-                  @click="triggerFileInput">
-                  <Icon icon="ri:attachment-2" class="h-4 w-4 text-muted-foreground" />
-                  <input ref="fileInputRef" type="file" :accept="acceptedFileTypes" class="hidden"
-                    @change="handleFileSelect" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>添加图片和文件</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        </div>
-
-        <div class="flex-1"></div>
-
-        <!-- 右侧：发送/停止按钮 -->
-        <div class="flex gap-1 pointer-events-auto">
-          <!-- 发送按钮 -->
-          <Button variant="ghost" size="icon" class="h-7 w-7 rounded-lg !bg-stone-800 !text-white hover:!bg-stone-900"
-            @click="trySend" v-show="canSend && !sending">
-            <Icon icon="ri:send-plane-2-fill" class="h-3 w-3" />
-          </Button>
-          <!-- 停止按钮 -->
-          <Button variant="ghost" size="icon"
-            class="group h-7 w-7 rounded-lg !bg-stone-800 !text-white hover:!bg-stone-900" @click="$emit('stop')"
-            v-show="sending" title="停止生成">
-            <span class="relative flex h-3.5 w-3.5 items-center justify-center">
-              <span class="ifocal-loading absolute opacity-100 duration-800 group-hover:opacity-0"
-                style="--ifocal-loading-size: 14px; --ifocal-loading-stroke: 2px; --ifocal-loading-color: currentColor;" />
-              <Icon icon="ri:stop-fill" class="absolute h-3 w-3 opacity-0 duration-150 group-hover:opacity-100" />
-            </span>
+    <template #input-start>
+      <div v-if="attachments.length > 0" class="flex flex-wrap gap-2">
+        <div
+          v-for="(file, idx) in attachments"
+          :key="idx"
+          class="group relative flex items-center gap-2 rounded-lg border border-slate-100 bg-white/60 py-1 pl-1 pr-2"
+        >
+          <Icon :icon="getFileIcon(file.type)" class="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span class="max-w-[150px] truncate text-xs text-foreground">{{ file.name }}</span>
+          <span class="text-xs text-muted-foreground">{{ formatFileSize(file.size) }}</span>
+          <Button
+            variant="outline"
+            size="icon"
+            class="absolute left-1 top-1 h-4 w-4 rounded-md !bg-red-500 !text-white opacity-0 transition-opacity group-hover:opacity-100"
+            @click="removeAttachment(idx)"
+          >
+            <Icon icon="ri:close-line" class="h-3 w-3" />
           </Button>
         </div>
       </div>
-    </div>
-  </div>
+      <TooltipProvider v-else-if="enableFileUpload">
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <Button
+              variant="ghost"
+              size="icon"
+              class="relative h-7 w-7 rounded-lg hover:bg-zinc-200/80"
+              @click="triggerFileInput"
+            >
+              <Icon icon="ri:attachment-2" class="h-4 w-4 text-muted-foreground" />
+              <input
+                ref="fileInputRef"
+                type="file"
+                :accept="acceptedFileTypes"
+                class="hidden"
+                @change="handleFileSelect"
+              />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent><p>添加图片和文件</p></TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    </template>
+  </ComposerFrame>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, type Directive } from 'vue'
+import { ref } from 'vue'
 import Icon from '@/components/ui/icon/Icon.vue'
 import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Switch } from '@/components/ui/switch'
+import ComposerFrame from '@/window/components/ComposerFrame.vue'
 import type { ReasoningEffort } from '@/shared/config'
 import type { McpServerEntry } from '@/shared/mcp'
 import ModelSelect from '@/window/components/ModelSelect.vue'
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
@@ -256,7 +269,6 @@ const props = defineProps<{
   showScrollToBottomButton: boolean
   bgClass?: string
   blurClass?: string
-  blurClassSm?: string
 }>()
 
 const emit = defineEmits<{
@@ -285,7 +297,7 @@ defineExpose({
   clearAttachments: () => {
     attachments.value = []
     emit('attachmentsChange', [])
-  }
+  },
 })
 
 // 文件上传相关
@@ -384,12 +396,14 @@ function addAttachmentFromFile(file: File): boolean {
   }
 
   // 只保留一个文件
-  attachments.value = [{
-    name: file.name,
-    size: file.size,
-    type: file.type,
-    file: file
-  }]
+  attachments.value = [
+    {
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      file: file,
+    },
+  ]
   return true
 }
 
@@ -414,79 +428,7 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
 }
 
-const blurClassSm = computed(() => props.blurClass ? 'backdrop-blur-sm' : '')
-const innerValue = computed({
-  get: () => props.modelValue,
-  set: v => emit('update:modelValue', v)
-})
-const canSend = computed(() => {
-  const text = (innerValue.value || '').trim()
-  return text.length > 0 || attachments.value.length > 0
-})
-
-function trySend() {
-  if (props.sending) return
-  if (!canSend.value) return
-  emit('send')
-}
-
 function selectModel(key: string) {
   emit('selectModel', key)
-}
-
-// 本地 v-autosize 指令
-const vAutosize: Directive<HTMLElement, number | undefined> = {
-  mounted(el, binding) {
-    const textarea = resolveTextarea(el)
-    if (!textarea) return
-    const onInput = () => adjustTextareaHeight(textarea, binding.value)
-    textarea.style.overflowY = 'hidden'
-    textarea.addEventListener('input', onInput)
-    void nextTick(() => adjustTextareaHeight(textarea, binding.value))
-      ; (el as any).__autosizeCleanup__ = () => textarea.removeEventListener('input', onInput)
-  },
-  updated(el, binding) {
-    const textarea = resolveTextarea(el)
-    if (!textarea) return
-    adjustTextareaHeight(textarea, binding.value)
-  },
-  beforeUnmount(el) {
-    const cleanup = (el as any).__autosizeCleanup__ as (() => void) | undefined
-    if (cleanup) cleanup()
-  }
-}
-
-function resolveTextarea(el: HTMLElement): HTMLTextAreaElement | null {
-  if (el.tagName === 'TEXTAREA') return el as HTMLTextAreaElement
-  const inner = el.querySelector('textarea')
-  return inner as HTMLTextAreaElement | null
-}
-
-function parsePx(v: string | null): number {
-  if (!v) return 0
-  const n = parseFloat(v)
-  return Number.isFinite(n) ? n : 0
-}
-
-function getLineHeightPx(el: HTMLElement): number {
-  const cs = getComputedStyle(el)
-  const lh = cs.lineHeight
-  if (lh && lh !== 'normal') return parsePx(lh)
-  const fs = parsePx(cs.fontSize) || 14
-  return Math.round(fs * 1.4)
-}
-
-function adjustTextareaHeight(textarea: HTMLTextAreaElement, maxLines?: number) {
-  const cs = getComputedStyle(textarea)
-  const padding = parsePx(cs.paddingTop) + parsePx(cs.paddingBottom)
-  const border = parsePx(cs.borderTopWidth) + parsePx(cs.borderBottomWidth)
-  const lineHeight = getLineHeightPx(textarea)
-  const maxRows = Math.max(1, Number(maxLines || 8))
-  const maxHeight = lineHeight * maxRows + padding + border
-  textarea.style.height = 'auto'
-  const newHeight = Math.min(textarea.scrollHeight, Math.ceil(maxHeight))
-  textarea.style.maxHeight = `${Math.ceil(maxHeight)}px`
-  textarea.style.height = `${newHeight}px`
-  textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden'
 }
 </script>

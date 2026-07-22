@@ -9,8 +9,8 @@
     </div> -->
 
     <nav class="flex shrink-0 flex-col gap-[3px]" aria-label="功能导航">
-      <div :class="['rounded-xl', activeRouteName === 'assistant' && 'bg-white font-semibold !text-stone-800']">
-        <div class="flex h-10 w-full items-center text-md text-stone-500 hover:bg-stone-500/6 hover:text-stone-800"
+      <div :class="['rounded-xl', activeRouteName === 'assistant' && 'bg-[#faf8f5] font-semibold !text-stone-800']">
+        <div class="flex h-10 w-full items-center text-md text-stone-500 hover:bg-[#f2f0ed] hover:text-stone-800"
           :class="[activeRouteName === 'assistant' ? 'rounded-t-xl' : 'rounded-xl']">
           <button class="flex h-full min-w-0 flex-1 items-center gap-[9px] pl-2.5 text-left"
             @click="$emit('navigate', 'assistant')">
@@ -56,14 +56,14 @@
 
       <button
         class="flex h-[39px] w-full items-center gap-[9px] rounded-[10px] px-2.5 text-left text-[13px] text-stone-500 hover:bg-stone-500/6 hover:text-stone-800"
-        :class="activeRouteName === 'translate' ? 'text-stone-500 bg-stone-500/6' : ''"
+        :class="activeRouteName === 'translate' ? 'text-stone-500 bg-[#faf8f5] hover:!bg-[#f2f0ed]' : ''"
         @click="$emit('navigate', 'translate')">
         <Icon icon="ri:translate-2" class="h-[17px] w-[17px]" /><span>翻译</span>
       </button>
 
-      <div :class="['rounded-xl', activeRouteName === 'settings' && 'bg-white font-semibold !text-stone-800']">
+      <div :class="['rounded-xl', activeRouteName === 'settings' && 'bg-[#faf8f5] font-semibold !text-stone-800']">
         <button
-          class="flex h-10 w-full items-center gap-2 px-2.5 text-left text-[13px] text-stone-500 hover:bg-stone-500/6 hover:text-stone-800"
+          class="flex h-10 w-full items-center gap-2 px-2.5 text-left text-[13px] text-stone-500 hover:bg-[#f2f0ed] hover:text-stone-800"
           :class="[activeRouteName === 'settings' ? 'rounded-t-xl' : 'rounded-xl']"
           @click="$emit('navigate', 'settings')">
           <Icon icon="ri:settings-4-line" class="h-[17px] w-[17px]" /><span>设置</span>

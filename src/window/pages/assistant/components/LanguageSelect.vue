@@ -1,30 +1,18 @@
 <template>
-  <DropdownMenu>
-    <DropdownMenuTrigger as-child>
-      <Button variant="outline" :class="['h-8 shrink-0 px-3 rounded-xl border border-slate-300/50 shadow-xs', bgClass, blurClass]">
-        <span class="truncate text-sm">{{ currentLangLabel }}</span>
-        <Icon icon="ri:arrow-down-s-line" class="h-8 w-8 shrink-0" />
-      </Button>
-    </DropdownMenuTrigger>
-    <DropdownMenuContent align="end" :class="['', bgClass, blurClass]">
-      <DropdownMenuItem v-for="lang in supportedLanguages" :key="lang.value"
-        @click="$emit('selectLanguage', lang.value)" class=" cursor-pointer">
-        {{ lang.label }}
-        <Icon v-if="currentTargetLang === lang.value" icon="ri:check-line" class="ml-auto h-4 w-4" />
-      </DropdownMenuItem>
-    </DropdownMenuContent>
-  </DropdownMenu>
+  <LanguageDropdown
+    :model-value="currentTargetLang"
+    :options="supportedLanguages"
+    :fallback-label="currentLangLabel"
+    :bg-class="bgClass"
+    :blur-class="blurClass"
+    button-class="max-w-44"
+    aria-label="选择回复语言"
+    @update:modelValue="$emit('selectLanguage', $event)"
+  />
 </template>
 
 <script setup lang="ts">
-import Icon from '@/components/ui/icon/Icon.vue';
-import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import LanguageDropdown from '@/window/components/LanguageDropdown.vue'
 
 defineProps<{
   currentLangLabel: string

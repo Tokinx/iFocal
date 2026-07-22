@@ -1,23 +1,28 @@
 <template>
-
   <DropdownMenu v-model:open="open">
     <DropdownMenuTrigger as-child>
       <slot name="trigger">
-        <Button variant="outline"
-          class="w-full h-9 rounded-lg border-dashed border-slate-300 text-slate-500 hover:bg-slate-50">
+        <Button
+          variant="outline"
+          class="w-full h-9 rounded-lg border-dashed border-slate-300 text-slate-500 hover:bg-slate-50"
+        >
           <Icon icon="ri:add-line" class="h-4 w-4 mr-1" />
           添加翻译渠道
         </Button>
       </slot>
     </DropdownMenuTrigger>
-    <DropdownMenuContent align="end" class="min-w-72 p-1">
+    <DropdownMenuContent :align="contentAlign" class="min-w-72 p-1">
       <Input v-model="keyword" placeholder="搜索渠道/模型" class="h-9 mb-1 rounded-xl" @keydown.stop />
       <ScrollArea class="h-72">
         <template v-if="machineList.length">
           <DropdownMenuLabel class="text-slate-500 text-xs">机器翻译</DropdownMenuLabel>
-          <DropdownMenuItem v-for="channel in machineList" :key="channel.id" :disabled="usedMachineRefs.has(channel.id)"
-            :class="['cursor-pointer', usedMachineRefs.has(channel.id) ? 'opacity-50' : '']"
-            @click="!usedMachineRefs.has(channel.id) && handleAdd('machine', channel.id)">
+          <DropdownMenuItem
+            v-for="channel in machineList"
+            :key="channel.id"
+            :disabled="usedMachineRefs.has(channel.id) && !toggleable"
+            :class="['cursor-pointer', usedMachineRefs.has(channel.id) && !toggleable ? 'opacity-50' : '']"
+            @click="handleSelect('machine', channel.id)"
+          >
             <Icon icon="ri:translate-2" class="h-4 w-4 text-emerald-600" />
             <span class="truncate">{{ channel.name }}</span>
             <Icon v-if="usedMachineRefs.has(channel.id)" icon="ri:check-line" class="ml-auto h-4 w-4" />
@@ -27,9 +32,13 @@
         <template v-for="(group, channelName, groupIndex) in filteredGroupedAiModels" :key="channelName">
           <DropdownMenuSeparator v-if="groupIndex || machineList.length" />
           <DropdownMenuLabel class="text-slate-500 text-xs">{{ channelName }}</DropdownMenuLabel>
-          <DropdownMenuItem v-for="model in group" :key="model.key" :disabled="usedAiRefs.has(model.key)"
-            :class="['cursor-pointer', usedAiRefs.has(model.key) ? 'opacity-50' : '']"
-            @click="!usedAiRefs.has(model.key) && handleAdd('ai', model.key)">
+          <DropdownMenuItem
+            v-for="model in group"
+            :key="model.key"
+            :disabled="usedAiRefs.has(model.key) && !toggleable"
+            :class="['cursor-pointer', usedAiRefs.has(model.key) && !toggleable ? 'opacity-50' : '']"
+            @click="handleSelect('ai', model.key)"
+          >
             <Icon icon="proicons:sparkle-2" class="h-4 w-4 text-stone-700" />
             <span class="truncate">{{ model.model }}</span>
             <Icon v-if="usedAiRefs.has(model.key)" icon="ri:check-line" class="ml-auto h-4 w-4" />
@@ -61,14 +70,23 @@ import {
 import type { MachineTranslateChannel } from '@/shared/machine-translation'
 import type { TranslateCardItem, TranslateCardKind } from '../useTranslatePage'
 
-const props = defineProps<{
-  machineChannels: MachineTranslateChannel[]
-  groupedAiModels: Record<string, Array<{ key: string; channel: string; model: string }>>
-  cards: TranslateCardItem[]
-}>()
+const props = withDefaults(
+  defineProps<{
+    machineChannels: MachineTranslateChannel[]
+    groupedAiModels: Record<string, Array<{ key: string; channel: string; model: string }>>
+    cards: TranslateCardItem[]
+    contentAlign?: 'start' | 'center' | 'end'
+    toggleable?: boolean
+  }>(),
+  {
+    contentAlign: 'end',
+    toggleable: false,
+  },
+)
 
 const emit = defineEmits<{
   (e: 'add', kind: TranslateCardKind, ref: string): void
+  (e: 'remove', id: string): void
 }>()
 
 const open = ref(false)
@@ -91,8 +109,10 @@ const machineList = computed<MachineTranslateChannel[]>(() => {
   if (!q) return props.machineChannels
   return props.machineChannels.filter((c) => {
     return (
-      c.name.toLowerCase().includes(q)
-      || String(c.provider || '').toLowerCase().includes(q)
+      c.name.toLowerCase().includes(q) ||
+      String(c.provider || '')
+        .toLowerCase()
+        .includes(q)
     )
   })
 })
@@ -106,8 +126,8 @@ const filteredGroupedAiModels = computed(() => {
     const filtered = channelMatch
       ? group
       : group.filter((model) => {
-        return model.model.toLowerCase().includes(q) || model.key.toLowerCase().includes(q)
-      })
+          return model.model.toLowerCase().includes(q) || model.key.toLowerCase().includes(q)
+        })
     if (filtered.length) result[channelName] = filtered
   }
   return result
@@ -121,6 +141,15 @@ const aiResultCount = computed(() => {
 
 function handleAdd(kind: TranslateCardKind, ref: string) {
   emit('add', kind, ref)
-  open.value = false
+  if (!props.toggleable) open.value = false
+}
+
+function handleSelect(kind: TranslateCardKind, ref: string) {
+  const selected = props.cards.find((card) => card.kind === kind && card.ref === ref)
+  if (selected) {
+    if (props.toggleable) emit('remove', selected.id)
+    return
+  }
+  handleAdd(kind, ref)
 }
 </script>
